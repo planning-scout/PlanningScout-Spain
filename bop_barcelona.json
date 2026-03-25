@@ -1,0 +1,21 @@
+{
+  "client_id": "urban_es_01",
+  "client_name": "UrbanScout Barcelona",
+  "target_bulletin": "https://bop.diba.cat",
+  "pdf_triggers": [
+    "denegación de licencia",
+    "desfavorable",
+    "restauración de la legalidad",
+    "infracción urbanística",
+    "caducidad de la licencia",
+    "orden de cese",
+    "clausura de la actividad",
+    "cambio de uso"
+  ],
+  "exclude_words": [
+    "aprobación definitiva",
+    "concesión",
+    "adjudicación",
+    "nombramiento"
+  ]
+}
