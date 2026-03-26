@@ -1,14 +1,11 @@
-name: Check Spanish Lead
+name: Daily Urbanismo Scanner
 on:
-  workflow_dispatch:
-    inputs:
-      pdf_url:
-        description: 'Paste the BOP PDF URL here'
-        required: true
-        default: 'https://bop.diba.cat/anuncio/descargar-pdf/3912642'
+  schedule:
+    - cron: '0 9 * * 1-5' # Runs every weekday at 9:00 AM
+  workflow_dispatch: # Allows manual run
 
 jobs:
-  scan_pdf:
+  scan:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -20,9 +17,20 @@ jobs:
           python-version: '3.10'
 
       - name: Install Libraries
-        run: pip install requests pdfplumber urllib3
+        run: pip install requests pdfplumber beautifulsoup4 urllib3
 
-      - name: Run Sniper Script
-        run: python test_bop.py
-        env:
-          TARGET_URL: ${{ github.event.inputs.pdf_url }}
+      - name: Run Crawler
+        run: python crawler_bop.py
+
+      - name: Scan Found Links
+        run: |
+          # Read the JSON and loop through links
+          python -c "
+          import json, os
+          with open('found_links.json') as f:
+              links = json.load(f)
+          for link in links:
+              print(f'\n--- SCANNING: {link} ---')
+              os.environ['TARGET_URL'] = link
+              os.system('python test_bop.py')
+          "
