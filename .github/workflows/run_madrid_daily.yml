@@ -1,36 +1,32 @@
-name: Daily Urbanismo Scanner
+name: ConstructorScout — Madrid Daily Scrape
+
 on:
   schedule:
-    - cron: '0 9 * * 1-5' # Runs every weekday at 9:00 AM
-  workflow_dispatch: # Allows manual run
+    - cron: '0 7 * * 1-5'  # Monday-Friday at 7am UTC
+  workflow_dispatch:
 
 jobs:
-  scan:
+  scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - name: Checkout Code
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: Install Libraries
-        run: pip install requests pdfplumber beautifulsoup4 urllib3
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: Run Crawler
-        run: python crawler_bop.py
-
-      - name: Scan Found Links
+      - name: Run Madrid scraper
+        env:
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          OPENAI_API_KEY:           ${{ secrets.OPENAI_API_KEY }}
+          GMAIL_FROM:               ${{ secrets.GMAIL_FROM }}
+          GMAIL_APP_PASSWORD:       ${{ secrets.GMAIL_APP_PASSWORD }}
+          GMAIL_TO_DEMO_MADRID:     ${{ secrets.GMAIL_TO_DEMO_MADRID }}
         run: |
-          # Read the JSON and loop through links
-          python -c "
-          import json, os
-          with open('found_links.json') as f:
-              links = json.load(f)
-          for link in links:
-              print(f'\n--- SCANNING: {link} ---')
-              os.environ['TARGET_URL'] = link
-              os.system('python test_bop.py')
-          "
+          python core/engine.py --client clients/demo_madrid.json
