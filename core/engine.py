@@ -208,7 +208,13 @@ def discover_form(soup):
 # SEARCH KEYWORDS — broad coverage of granted permits
 # ══════════════════════════════════════════════════════
 KEYWORDS = [
-    "licencia de obras mayor concedida",
+    "licencia de obra mayor",          # The golden phrase
+    "conceder licencia obra mayor",
+    "proyecto de ejecución",           # Always means a massive build
+    "construcción de nave industrial", # Warehouses
+    "construcción de viviendas",       # Residential blocks
+    "nueva planta",                    # Ground-up construction
+    "reforma integral",       # Massive renovations
     "se concede licencia de obras",
     "se otorga licencia urbanística",
     "licencia urbanística concedida",
@@ -225,11 +231,12 @@ KEYWORDS = [
 GRANT_PHRASES = [
     "se concede","se otorga","se autoriza","concesión de licencia",
     "licencia concedida","favorable","otorgamiento","se acuerda conceder",
-    "resolución estimatoria","expedición de licencia","se acuerda otorgar",
+    "resolución estimatoria","expedición de licencia","se acuerda otorgar","aprobar definitivamente",
 ]
 DENY_PHRASES = [
     "denegación","se deniega","inadmisión","desestimación","se desestima",
-    "resolución denegatoria","no se concede","caducidad","archivo",
+    "resolución denegatoria","no se concede","caducidad","archivo","información pública", 
+    "somete a información"
 ]
 
 def search_keyword(keyword, P, date_from, date_to):
