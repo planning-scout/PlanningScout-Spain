@@ -233,25 +233,27 @@ DENY_PHRASES = [
 ]
 
 def search_keyword(keyword, P, date_from, date_to):
-    """Search BOCM for one keyword, return list of result URLs."""
+    """Search BOCM using the exact hardcoded Drupal routing structure."""
     urls  = []
     seen  = set()
     page  = 0
-    fmt   = "%d/%m/%Y"
+    fmt   = "%d-%m-%Y"  # Fixed date format to match BOCM's exact requirement
 
     while True:
-        q = {**P["hidden"], P["text"]: keyword,
-             P["dfrom"]: date_from.strftime(fmt),
-             P["dto"]:   date_to.strftime(fmt)}
-        if P["section_field"] and P["section_value"]:
-            q[P["section_field"]] = P["section_value"]
-        if page > 0:
-            q["page"] = page
+        start_str = date_from.strftime(fmt)
+        end_str = date_to.strftime(fmt)
 
-        if P["method"] == "post":
-            r = safe_post(P["action"], q)
-        else:
-            r = safe_get(P["action"] + "?" + urlencode(q))
+        # Using the exact URL routing you discovered
+        base_url = f"{BOCM_BASE}/advanced-search/p/field_bulletin_field_date/date__{start_str}/field_bulletin_field_date_1/date__{end_str}/seccion/8387"
+
+        params = {
+            "search_api_views_fulltext_1": keyword
+        }
+        if page > 0:
+            params["page"] = page
+
+        req_url = base_url + "?" + urlencode(params)
+        r = safe_get(req_url)
 
         if not r or r.status_code != 200:
             log(f"    Page {page} failed"); break
