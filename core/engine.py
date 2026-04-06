@@ -613,33 +613,34 @@ CONSTRUCTION_INDICATORS = [
 ]
 
 def classify_permit(text):
-    """
-    Returns (is_useful, reject_reason) where:
-    - is_useful=True means this is a granted CONSTRUCTION permit worth saving
-    - reject_reason explains why it was rejected (for logging)
-    """
-    t = text.lower()
+    """Basic keyword heuristic to decide if we should send to LLM."""
+    text_lower = text.lower()
+    
+    # 1. Hard Negatives (Noise)
+    negatives = [
+        "nombramiento", "festejos", "comisión informativa", 
+        "modificación presupuestaria", "impuesto sobre actividades",
+        "juez de paz", "eurotaxi", "suplemento de crédito"
+    ]
+    for neg in negatives:
+        if neg in text_lower:
+            return False, f"Negative keyword found: {neg}"
 
-    # 1. Hard denial check
-    if any(p in t for p in DENY_PHRASES):
-        return False, "denial language"
+    # 2. Hard Positives (Gold)
+    positives = [
+        "obra mayor", "nueva planta", "proyecto de urbanización",
+        "cambio de uso", "plan especial", "licencia de edificación",
+        "ejecución material", "pem "
+    ]
+    for pos in positives:
+        if pos in text_lower:
+            return True, "Positive keyword found"
 
-    # 2. Application phase check — "se ha solicitado" = not yet granted
-    if any(p in t for p in APPLICATION_PHRASES):
-        return False, "solicitud (application, not grant)"
-
-    # 3. Must have a grant phrase
-    if not any(p in t for p in GRANT_PHRASES):
-        return False, "no grant language found"
-
-    # 4. Check if it's a small activity licence we don't care about
-    is_small_activity = any(w in t for w in SMALL_ACTIVITY_WORDS)
-    is_construction   = any(w in t for w in CONSTRUCTION_INDICATORS)
-
-    if is_small_activity and not is_construction:
-        return False, "small activity licence (not construction)"
-
-    return True, ""
+    # 3. Default fallback (if it looks somewhat like a permit)
+    if "licencia" in text_lower and "conceder" in text_lower:
+        return True, "Contains generic grant language"
+        
+    return False, "No relevant keywords found"
 
 # ════════════════════════════════════════════════════════════
 # DATA EXTRACTION
@@ -746,24 +747,26 @@ def ai_extract(text, url, pub_date):
         from openai import OpenAI
         client = OpenAI(api_key=OPENAI_API_KEY)
 
-        prompt = f"""Eres un experto en boletines oficiales españoles (BOCM).
+        sys_prompt = f"""
+You are an expert real estate and construction analyst in Spain.
+Extract the following information from the official bulletin text into a strict JSON format.
 
-Dado el texto de una licencia de obras o urbanística CONCEDIDA, extrae:
-1. Dirección completa del inmueble (calle, número, municipio)
-2. Nombre del solicitante/promotor (empresa o persona)
-3. Tipo de obra (uno de exactamente: "obra mayor nueva construcción", "obra mayor rehabilitación", "obra mayor industrial", "licencia de actividad", "otro")
-4. Presupuesto de ejecución material o base imponible ICIO en euros (número, sin símbolo €)
-5. Fecha de concesión (YYYY-MM-DD)
-6. Descripción de las obras (máx. 200 caracteres)
+RULES:
+1. ONLY return valid JSON. No markdown formatting, no explanations.
+2. If this is a generic administrative document (budget modification, hiring, elections), return {{"permit_type": "None", "confidence": "Low"}}.
+3. For "declared_value_eur", ONLY extract the Presupuesto de Ejecución Material (PEM) or construction budget. Ignore generic municipal budget numbers or subsidies. Return ONLY a number (e.g., 150000.50).
+4. If the exact street address is missing, use the Municipality/Town name for the "address" field (e.g., "Tres Cantos, Madrid"). DO NOT leave it blank if you know the town.
+5. If the company/promoter name is missing, write "Particular" or "Ayuntamiento" depending on the context.
+6. Make the "description" a highly commercial, 1-sentence summary (e.g., "Construcción de nave industrial con oficinas" or "Cambio de uso de local a 3 viviendas").
 
-Responde SOLO en JSON (sin markdown, sin texto previo o posterior):
-{{"address":null,"applicant":null,"permit_type":"otro","declared_value_eur":null,"date_granted":null,"description":null,"confidence":"high/medium/low"}}
-
-Reglas:
-- Si falta un dato, usa null
-- declared_value_eur debe ser número puro (ej. 450000.0), nunca string
-- Para "se ha solicitado" (sólo aplicación, no concesión) → confidence="low"
-- Para "se concede" o "se otorga" → confidence="high"
+Required JSON keys:
+- company_name (string)
+- address (string)
+- permit_type (string: 'Obra Mayor', 'Nueva Planta', 'Urbanización', 'Cambio de Uso', 'None')
+- description (string)
+- declared_value_eur (number or null)
+- confidence (string: 'High', 'Medium', 'Low')
+"""
 
 Texto:
 {text[:4500]}"""
