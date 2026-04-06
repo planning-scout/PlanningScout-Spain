@@ -743,17 +743,19 @@ def keyword_extract(text, url, pub_date):
     return res
 
 def ai_extract(text, url, pub_date):
+    if not USE_AI:
+        return keyword_extract(text, url, pub_date)
+
     try:
         from openai import OpenAI
         client = OpenAI(api_key=OPENAI_API_KEY)
 
-        sys_prompt = f"""
-You are an expert real estate and construction analyst in Spain.
+        sys_prompt = """You are an expert real estate and construction analyst in Spain.
 Extract the following information from the official bulletin text into a strict JSON format.
 
 RULES:
 1. ONLY return valid JSON. No markdown formatting, no explanations.
-2. If this is a generic administrative document (budget modification, hiring, elections), return {{"permit_type": "None", "confidence": "Low"}}.
+2. If this is a generic administrative document (budget modification, hiring, elections, subsidies), return {"permit_type": "None", "confidence": "Low"}.
 3. For "declared_value_eur", ONLY extract the Presupuesto de Ejecución Material (PEM) or construction budget. Ignore generic municipal budget numbers or subsidies. Return ONLY a number (e.g., 150000.50).
 4. If the exact street address is missing, use the Municipality/Town name for the "address" field (e.g., "Tres Cantos, Madrid"). DO NOT leave it blank if you know the town.
 5. If the company/promoter name is missing, write "Particular" or "Ayuntamiento" depending on the context.
@@ -768,41 +770,46 @@ Required JSON keys:
 - confidence (string: 'High', 'Medium', 'Low')
 """
 
-Texto:
-{text[:4500]}"""
+        user_prompt = f"URL: {url}\n\nTexto:\n{text[:4500]}"
 
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role":"user","content":prompt}],
-            temperature=0, max_tokens=600
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0, 
+            max_tokens=600,
+            response_format={ "type": "json_object" }
         )
+        
         raw = resp.choices[0].message.content.strip()
-        raw = re.sub(r'^```(?:json)?\s*','',raw,flags=re.M)
-        raw = re.sub(r'```\s*$','',raw,flags=re.M)
-        d   = json.loads(raw.strip())
-        d["source_url"]      = url
+        d = json.loads(raw)
+        
+        d["source_url"] = url
         d["extraction_mode"] = "ai"
 
-        dg = d.get("date_granted") or pub_date or extract_date_from_url(url)
-        d["date_granted"] = parse_spanish_date(dg)
+        dg = d.get("date_granted") or pub_date
+        d["date_granted"] = str(dg)
 
-        if isinstance(d.get("declared_value_eur"), str):
+        # Fix the European Number formatting safely
+        val = d.get("declared_value_eur")
+        if isinstance(val, str):
             try:
-                v = d["declared_value_eur"].replace(".","").replace(",",".").replace("€","").strip()
+                v = val.replace(".", "").replace(",", ".").replace("€", "").strip()
                 d["declared_value_eur"] = float(v)
-            except: d["declared_value_eur"] = None
+            except:
+                d["declared_value_eur"] = None
 
         return d
-    except json.JSONDecodeError as e:
-        log(f"    AI JSON error ({e}) → keyword fallback")
-        return keyword_extract(text, url, pub_date)
+
     except Exception as e:
         log(f"    AI error ({e}) → keyword fallback")
         return keyword_extract(text, url, pub_date)
 
 def extract(text, url, pub_date):
-    return ai_extract(text,url,pub_date) if USE_AI else keyword_extract(text,url,pub_date)
-
+    return ai_extract(text, url, pub_date) if USE_AI else keyword_extract(text, url, pub_date)
+    
 # ════════════════════════════════════════════════════════════
 # GOOGLE SHEETS
 # ════════════════════════════════════════════════════════════
@@ -899,6 +906,8 @@ def write_permit(p, pdf_url=""):
 # ════════════════════════════════════════════════════════════
 # EMAIL DIGEST
 # ════════════════════════════════════════════════════════════
+# EMAIL DIGEST
+# ════════════════════════════════════════════════════════════
 def send_digest():
     ws = get_sheet()
     if not ws: log("❌ No sheet"); return
@@ -915,8 +924,14 @@ def send_digest():
             except: pass
 
         def val(r):
-            try: return float(str(r[5]).replace(",",".")) if r[5] else 0
-            except: return 0
+            try: 
+                # Remove dots (thousands), change comma to dot
+                clean_str = str(r[5]).replace(".", "").replace(",", ".")
+                import re
+                num_str = re.sub(r'[^\d.]', '', clean_str)
+                return float(num_str) if num_str else 0.0
+            except: return 0.0
+        
         recent.sort(key=val, reverse=True)
         total = sum(val(r) for r in recent)
         log(f"📧 Digest: {len(recent)} permits, total €{int(total):,}")
@@ -927,14 +942,27 @@ def send_digest():
             raw_val = str(r[5]).strip() if len(r) > 5 and r[5] else ""
             if raw_val:
                 try:
-                    # Remove thousands dots, replace decimal comma with dot
                     clean_val = raw_val.replace(".", "").replace(",", ".")
+                    import re
+                    clean_val = re.sub(r'[^\d.]', '', clean_val)
                     dec = f"€{int(float(clean_val)):,}"
                 except ValueError:
                     dec = f"€ {raw_val}" # Fallback if it's text
             else:
                 dec = "—"
-            est = f"€{int(float(r[6])):,}" if r[6] else "—"
+            
+            raw_est = str(r[6]).strip() if len(r) > 6 and r[6] else ""
+            if raw_est:
+                try:
+                    clean_est = raw_est.replace(".", "").replace(",", ".")
+                    import re
+                    clean_est = re.sub(r'[^\d.]', '', clean_est)
+                    est = f"€{int(float(clean_est)):,}"
+                except ValueError:
+                    est = f"€ {raw_est}"
+            else:
+                est = "—"
+
             rhtml += f"""<tr style="border-bottom:1px solid #eee">
               <td style="padding:11px 8px;font-weight:600">{r[2] or "—"}</td>
               <td style="padding:11px 8px;color:#444;font-size:13px">{r[3] or "—"}</td>
