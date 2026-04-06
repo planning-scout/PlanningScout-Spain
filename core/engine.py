@@ -920,7 +920,17 @@ def send_digest():
 
         rhtml = ""
         for r in recent:
-            dec = f"€{int(float(r[5])):,}" if r[5] else "—"
+            # Clean European number formatting (e.g., 2.262.425,28 -> 2262425.28)
+            raw_val = str(r[5]).strip() if len(r) > 5 and r[5] else ""
+            if raw_val:
+                try:
+                    # Remove thousands dots, replace decimal comma with dot
+                    clean_val = raw_val.replace(".", "").replace(",", ".")
+                    dec = f"€{int(float(clean_val)):,}"
+                except ValueError:
+                    dec = f"€ {raw_val}" # Fallback if it's text
+            else:
+                dec = "—"
             est = f"€{int(float(r[6])):,}" if r[6] else "—"
             rhtml += f"""<tr style="border-bottom:1px solid #eee">
               <td style="padding:11px 8px;font-weight:600">{r[2] or "—"}</td>
