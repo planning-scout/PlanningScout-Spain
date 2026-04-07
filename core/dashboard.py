@@ -4,6 +4,8 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime, timedelta
 import re
+import html as html_lib
+import os
 
 # ════════════════════════════════════════════════════════════
 # PAGE CONFIG
@@ -12,23 +14,23 @@ st.set_page_config(
     page_title="PlanningScout — Madrid",
     page_icon="🏗️",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded",  # always starts expanded
 )
 
 # ════════════════════════════════════════════════════════════
 # AUTH
 # ════════════════════════════════════════════════════════════
-qp             = st.query_params
-url_token      = qp.get("token", "")
-url_profile    = qp.get("perfil", "")
-client_tokens  = {}
+qp              = st.query_params
+url_token       = qp.get("token", "")
+url_profile     = qp.get("perfil", "")
+client_tokens   = {}
 try:
     ct = st.secrets.get("client_tokens", {})
     client_tokens = dict(ct) if ct else {}
 except Exception:
     pass
 
-require_token     = str(st.secrets.get("REQUIRE_TOKEN", "false")).lower() == "true"
+require_token      = str(st.secrets.get("REQUIRE_TOKEN", "false")).lower() == "true"
 forced_profile_key = None
 if url_token and url_token in client_tokens:
     forced_profile_key = client_tokens[url_token]
@@ -37,147 +39,213 @@ elif url_profile:
 
 if require_token and not forced_profile_key:
     st.markdown("""
-    <div style="min-height:80vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;">
-    <div style="text-align:center;max-width:380px;padding:48px 32px;background:white;
-         border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.1);border:1px solid #e2e8f0;">
+    <div style="min-height:80vh;display:flex;align-items:center;justify-content:center;">
+    <div style="text-align:center;max-width:380px;padding:48px 32px;background:#fff;
+         border-radius:16px;box-shadow:0 8px 40px rgba(0,0,0,.1);border:1px solid #e2e8f0;
+         font-family:system-ui,sans-serif;">
       <div style="font-size:44px;margin-bottom:20px;">🔒</div>
-      <h2 style="font-size:22px;color:#0d1a2b;margin-bottom:10px;font-weight:700;">Acceso restringido</h2>
-      <p style="color:#64748b;font-size:14px;line-height:1.6;margin-bottom:28px;">
-        Accede a través del enlace personalizado que te enviamos,<br>
-        o regístrate para obtener tu mes gratuito.
+      <h2 style="font-size:22px;color:#0d1a2b;margin:0 0 12px;font-weight:700;">Acceso restringido</h2>
+      <p style="color:#64748b;font-size:14px;line-height:1.6;margin:0 0 28px;">
+        Accede mediante el enlace personalizado que te enviamos,
+        o regístrate para tu mes gratuito.
       </p>
       <a href="https://planningscout.com" style="display:inline-block;background:#1e3a5f;
-         color:white;padding:12px 28px;border-radius:10px;font-weight:600;
+         color:#fff;padding:12px 28px;border-radius:10px;font-weight:600;
          font-size:14px;text-decoration:none;">Ir a planningscout.com →</a>
     </div></div>""", unsafe_allow_html=True)
     st.stop()
 
 # ════════════════════════════════════════════════════════════
-# DESIGN SYSTEM
-# Colors: navy #1e3a5f | amber #c8860a | green #16a34a
-# Logo slate: #5a5a78  | text: #0d1a2b | muted: #64748b
+# LOGO PATH  
+# navbar.png lives in the same folder as dashboard.py (core/)
 # ════════════════════════════════════════════════════════════
-SHEET_ID = st.secrets.get("SHEET_ID", "")
+LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "navbar.png")
+SHEET_ID  = st.secrets.get("SHEET_ID", "")
 
+# ════════════════════════════════════════════════════════════
+# CSS — surgical, no conflicts, sidebar reopen button kept
+# Key rules:
+#   - block-container: proper padding + max-width
+#   - sidebar: white bg, padding inside
+#   - NO hiding of collapsedControl (that's the reopen button)
+#   - All lead card classes defined here
+# ════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ─ Streamlit chrome cleanup ─ */
-#MainMenu, footer { visibility: hidden; }
-header { visibility: hidden; }
+/* ── Streamlit chrome ── */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
 
-/* ─ Sidebar: clean white with subtle left border ─ */
+/* ── App background ── */
+.stApp { background: #f0f2f5 !important; }
+
+/* ── Main content: breathing room on both sides ── */
+.block-container {
+    padding-top: 32px !important;
+    padding-bottom: 48px !important;
+    padding-left: 48px !important;
+    padding-right: 48px !important;
+    max-width: 1100px !important;
+}
+
+/* ── Sidebar: white, clean, padded ── */
 [data-testid="stSidebar"] {
     background: #ffffff !important;
     border-right: 1px solid #e2e8f0 !important;
-    box-shadow: 2px 0 8px rgba(0,0,0,.03) !important;
-}
-[data-testid="stSidebar"] > div:first-child {
-    padding: 0 !important;
 }
 [data-testid="stSidebarContent"] {
-    padding: 0 !important;
+    padding: 0 20px 32px 20px !important;
 }
 
-/* ─ Main content: constrained width, proper padding ─ */
-.block-container {
-    padding: 28px 40px 40px !important;
-    max-width: 1060px !important;
-}
-
-/* ─ App background ─ */
-.stApp { background: #f7f8fa !important; }
-
-/* ─ Remove Streamlit's default radio button ugliness ─ */
-.stRadio > label { display: none !important; }
-.stRadio > div { gap: 6px !important; }
-
-/* ─ Slider label color fix ─ */
-.stSlider label { color: #334155 !important; font-size: 13px !important; font-weight: 600 !important; }
-.stSlider [data-testid="stWidgetLabel"] p { color: #334155 !important; }
-
-/* ─ Selectbox / multiselect label ─ */
-.stSelectbox label, .stMultiSelect label, .stNumberInput label {
+/* ── Sidebar labels: dark text, good contrast ── */
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stRadio label,
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {
     color: #334155 !important;
     font-size: 13px !important;
     font-weight: 600 !important;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
 }
 
-/* ─ Expander: clean, not fighting with sidebar ─ */
-[data-testid="stExpander"] {
-    background: white !important;
-    border: 1.5px solid #e2e8f0 !important;
-    border-radius: 12px !important;
-    margin-bottom: 0 !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,.04) !important;
-}
-[data-testid="stExpander"] summary {
-    padding: 12px 16px !important;
-}
-[data-testid="stExpander"] summary p {
-    color: #334155 !important;
+/* ── Sidebar radio options: readable ── */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label span {
+    color: #0d1a2b !important;
     font-size: 13px !important;
-    font-weight: 600 !important;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
 }
 
-/* ─ Download button ─ */
+/* ── Sidebar selectbox / number input ── */
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stNumberInput label,
+[data-testid="stSidebar"] .stMultiSelect label,
+[data-testid="stSidebar"] .stSlider label {
+    color: #334155 !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+}
+
+/* ── Sidebar slider value text ── */
+[data-testid="stSidebar"] .stSlider [data-testid="stTickBar"] span,
+[data-testid="stSidebar"] .stSlider p {
+    color: #334155 !important;
+}
+
+/* ── Sidebar expander ── */
+[data-testid="stSidebar"] [data-testid="stExpander"] {
+    background: #f7f8fa !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary p {
+    color: #334155 !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+}
+
+/* ── Download button ── */
 .stDownloadButton button {
-    background: white !important;
+    background: #ffffff !important;
     color: #1e3a5f !important;
     border: 1.5px solid #cbd5e1 !important;
     border-radius: 8px !important;
     font-size: 13px !important;
     font-weight: 600 !important;
+    padding: 6px 16px !important;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
 }
 .stDownloadButton button:hover {
     border-color: #1e3a5f !important;
     background: #eff4fb !important;
 }
 
-/* ─ Button (refresh) ─ */
+/* ── Refresh button ── */
 .stButton button {
-    background: white !important;
+    background: #ffffff !important;
     color: #334155 !important;
     border: 1.5px solid #e2e8f0 !important;
     border-radius: 8px !important;
     font-size: 13px !important;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
 }
 .stButton button:hover {
     border-color: #1e3a5f !important;
     color: #1e3a5f !important;
 }
 
-/* ─ Metric card ─ */
-.ps-metric {
-    background: white;
+/* ── Metric cards ── */
+.ps-m {
+    background: #ffffff;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
     padding: 16px 20px;
     text-align: center;
-    box-shadow: 0 1px 4px rgba(0,0,0,.04);
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
 }
-.ps-metric .val {
+.ps-m .v {
     font-family: 'Fraunces', Georgia, serif;
-    font-size: 28px;
-    font-weight: 600;
+    font-size: 26px;
+    font-weight: 700;
     color: #1e3a5f;
     line-height: 1;
     display: block;
+    margin-bottom: 5px;
 }
-.ps-metric .lbl {
+.ps-m .l {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
+    font-size: 9.5px;
     color: #94a3b8;
     text-transform: uppercase;
-    letter-spacing: .07em;
-    margin-top: 5px;
-    display: block;
+    letter-spacing: .08em;
 }
 
-/* ─ LEAD CARD — matches mockup exactly ─ */
-.lead-card {
-    background: white;
+/* ── Tip box ── */
+.ps-tip {
+    background: #fffbeb;
+    border-left: 3px solid #c8860a;
+    border-radius: 0 8px 8px 0;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #64748b;
+    line-height: 1.6;
+    margin: 18px 0;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+.ps-tip strong { color: #9a6200; }
+
+/* ── Section header ── */
+.ps-sh {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 0 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e2e8f0;
+}
+.ps-sh h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 19px;
+    font-weight: 700;
+    color: #0d1a2b;
+    margin: 0;
+}
+.ps-sh .cnt {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: #1e3a5f;
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 100px;
+}
+
+/* ═══════════════════════════════════════════
+   LEAD CARDS — matching the mockup exactly
+   Light grey header, white body, grey footer
+═══════════════════════════════════════════ */
+.lcard {
+    background: #ffffff;
     border: 1.5px solid #e2e8f0;
     border-radius: 14px;
     overflow: hidden;
@@ -186,66 +254,67 @@ header { visibility: hidden; }
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
     transition: box-shadow .2s, border-color .2s;
 }
-.lead-card:hover {
+.lcard:hover {
     box-shadow: 0 6px 24px rgba(0,0,0,.09);
     border-color: #cbd5e1;
 }
 
-/* Card header: light grey like the mockup */
-.lc-head {
+/* Card header — light grey bg (matches mockup) */
+.lcard-h {
     background: #f7f8fa;
     border-bottom: 1px solid #e2e8f0;
-    padding: 14px 20px;
+    padding: 13px 20px;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
 }
-.lc-loc {
+.lcard-loc {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     min-width: 0;
     flex: 1;
 }
-.lc-dot {
+.lcard-dot {
     width: 8px; height: 8px;
     border-radius: 50%;
     background: #16a34a;
     flex-shrink: 0;
-    margin-top: 2px;
+    margin-top: 4px;
 }
-.lc-muni {
+.lcard-muni {
     font-size: 14px;
     font-weight: 700;
     color: #0d1a2b;
     line-height: 1.3;
+    word-break: break-word;
 }
-.lc-badges {
+.lcard-badges {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
     flex-shrink: 0;
     flex-wrap: wrap;
     justify-content: flex-end;
 }
 /* Score pill — dark navy like mockup */
-.score-pill {
+.sp {
     font-family: 'JetBrains Mono', monospace;
     font-size: 12px;
     font-weight: 500;
-    background: #1e3a5f;
-    color: white;
-    padding: 5px 12px;
+    padding: 4px 11px;
     border-radius: 100px;
     white-space: nowrap;
+    color: #fff;
 }
-.score-pill.gold   { background: #15803d; }
-.score-pill.orange { background: #b45309; }
-.score-pill.navy   { background: #1e3a5f; }
-.score-pill.dim    { background: #94a3b8; }
-/* Status badge — outlined like mockup */
-.status-badge {
+.sp-g { background: #15803d; }   /* 65+ green */
+.sp-o { background: #b45309; }   /* 40+ amber */
+.sp-n { background: #1e3a5f; }   /* 20+ navy */
+.sp-d { background: #94a3b8; }   /* <20 dim   */
+
+/* Status badge — outlined (matches mockup) */
+.sb {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
     font-weight: 500;
@@ -253,231 +322,176 @@ header { visibility: hidden; }
     border-radius: 100px;
     white-space: nowrap;
 }
-.status-verde    { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
-.status-amber    { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
-.status-navy     { background: #eff4fb; color: #1e3a5f; border: 1px solid #bfdbfe; }
+.sb-g { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.sb-a { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+.sb-n { background: #eff4fb; color: #1e3a5f; border: 1px solid #bfdbfe; }
 
 /* Card body */
-.lc-body { padding: 18px 20px; }
-.lc-ref {
+.lcard-b { padding: 16px 20px; }
+
+.lcard-ref {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10.5px;
     color: #94a3b8;
-    margin-bottom: 6px;
+    margin-bottom: 5px;
     letter-spacing: .03em;
 }
-.lc-title {
+.lcard-title {
     font-family: 'Fraunces', Georgia, serif;
     font-size: 17px;
     font-weight: 600;
     color: #0d1a2b;
-    margin-bottom: 6px;
+    margin-bottom: 5px;
     line-height: 1.3;
 }
-.lc-addr {
+.lcard-addr {
     font-size: 13px;
     color: #64748b;
     display: flex;
     align-items: flex-start;
     gap: 5px;
-    margin-bottom: 16px;
+    margin-bottom: 14px;
     line-height: 1.4;
 }
-.lc-addr-icon { flex-shrink: 0; margin-top: 1px; }
 
-/* Data table inside card — matches mockup */
-.lc-table {
+/* Data table inside card */
+.lcard-t {
     border: 1px solid #e2e8f0;
     border-radius: 10px;
     overflow: hidden;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
 }
-.lc-row {
+.lcard-r {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 14px;
+    padding: 9px 14px;
     border-bottom: 1px solid #f1f5f9;
     gap: 12px;
 }
-.lc-row:last-child { border-bottom: none; }
-.lc-key {
+.lcard-r:last-child { border-bottom: none; }
+.lcard-k {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
     color: #94a3b8;
     text-transform: uppercase;
     letter-spacing: .08em;
     flex-shrink: 0;
-    min-width: 80px;
+    min-width: 75px;
 }
-.lc-val {
+.lcard-v {
     font-size: 13px;
     color: #334155;
     text-align: right;
     line-height: 1.4;
+    word-break: break-word;
 }
-.lc-val-pem {
-    font-size: 16px;
+.lcard-v-pem {
+    font-size: 17px;
     font-weight: 700;
     color: #1e3a5f;
     font-family: 'Fraunces', Georgia, serif;
 }
-.lc-tags { display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; }
-.lc-tag-amber {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    background: #fffbeb;
-    color: #b45309;
-    border: 1px solid #fde68a;
-    padding: 3px 9px;
-    border-radius: 6px;
+.lcard-tags { display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; }
+.tag-a {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    background: #fffbeb; color: #b45309; border: 1px solid #fde68a;
+    padding: 3px 8px; border-radius: 5px;
 }
-.lc-tag-navy {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    background: #eff4fb;
-    color: #1e3a5f;
-    border: 1px solid #bfdbfe;
-    padding: 3px 9px;
-    border-radius: 6px;
+.tag-n {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    background: #eff4fb; color: #1e3a5f; border: 1px solid #bfdbfe;
+    padding: 3px 8px; border-radius: 5px;
+}
+.tag-g {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0;
+    padding: 3px 8px; border-radius: 5px;
 }
 
 /* Card footer */
-.lc-footer {
+.lcard-f {
     background: #f7f8fa;
     border-top: 1px solid #e2e8f0;
-    padding: 11px 20px;
+    padding: 10px 20px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     flex-wrap: wrap;
 }
-.lc-btn {
+.lcard-btn {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
     font-size: 12px;
     font-weight: 600;
     color: #334155;
-    background: white;
+    background: #ffffff;
     border: 1px solid #cbd5e1;
-    padding: 6px 13px;
-    border-radius: 8px;
-    text-decoration: none;
-    transition: border-color .15s, color .15s;
+    padding: 5px 12px;
+    border-radius: 7px;
+    text-decoration: none !important;
     white-space: nowrap;
+    transition: border-color .15s, color .15s;
 }
-.lc-btn:hover { border-color: #1e3a5f; color: #1e3a5f; text-decoration: none; }
-.lc-btn.primary { background: #1e3a5f; color: white; border-color: #1e3a5f; }
-.lc-btn.primary:hover { background: #162e4d; }
-.lc-note {
+.lcard-btn:hover {
+    border-color: #1e3a5f;
+    color: #1e3a5f;
+    text-decoration: none !important;
+}
+.lcard-btn-p {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+    background: #1e3a5f;
+    border: 1px solid #1e3a5f;
+    padding: 5px 12px;
+    border-radius: 7px;
+    text-decoration: none !important;
+    white-space: nowrap;
+    transition: background .15s;
+}
+.lcard-btn-p:hover { background: #162e4d; text-decoration: none !important; }
+.lcard-note {
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
     color: #94a3b8;
     margin-left: auto;
 }
 
-/* ─ Section header ─ */
-.ps-section-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #e2e8f0;
-}
-.ps-section-title {
-    font-family: 'Fraunces', Georgia, serif;
-    font-size: 18px;
-    font-weight: 600;
-    color: #0d1a2b;
-}
-.ps-section-count {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    background: #1e3a5f;
-    color: white;
-    padding: 4px 12px;
-    border-radius: 100px;
-}
-
-/* ─ Tip box ─ */
-.ps-tip {
-    background: #fffbeb;
-    border-left: 3px solid #c8860a;
-    border-radius: 0 8px 8px 0;
-    padding: 11px 16px;
-    font-size: 13px;
-    color: #64748b;
-    margin-bottom: 18px;
-    line-height: 1.55;
-}
-.ps-tip strong { color: #9a6200; }
-
-/* ─ Empty state ─ */
+/* ── Empty state ── */
 .ps-empty {
     text-align: center;
-    padding: 60px 24px;
-    background: white;
+    padding: 56px 24px;
+    background: #fff;
     border: 1.5px solid #e2e8f0;
     border-radius: 14px;
-}
-.ps-empty .icon { font-size: 40px; margin-bottom: 14px; }
-.ps-empty h3 { font-family: 'Fraunces',Georgia,serif; font-size:19px; color:#0d1a2b; margin-bottom:8px; }
-.ps-empty p { font-size:13px; color:#64748b; line-height:1.6; }
-
-/* ─ Sidebar interior ─ */
-.sb-logo {
-    padding: 20px 20px 14px;
-    border-bottom: 1px solid #e2e8f0;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-.sb-logo-icon {
-    width: 32px; height: 32px;
-    background: #1e3a5f;
-    border-radius: 8px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 16px;
-}
-.sb-logo-text {
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-    font-size: 15px;
-    font-weight: 700;
-    color: #0d1a2b;
-    letter-spacing: -.2px;
 }
-.sb-logo-text em { color: #5a5a78; font-style: normal; }
-.sb-section {
-    padding: 16px 16px 0;
+.ps-empty h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 19px; color: #0d1a2b; margin: 14px 0 8px;
 }
-.sb-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    font-weight: 500;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: .1em;
-    margin-bottom: 10px;
-    display: block;
-}
-.sb-divider {
-    height: 1px;
-    background: #e2e8f0;
-    margin: 16px 0 0;
-}
+.ps-empty p { font-size: 13px; color: #64748b; line-height: 1.6; margin: 0; }
 
-/* ─ Mobile: profile pills ─ */
+/* ── Mobile ── */
 @media (max-width: 768px) {
-    .block-container { padding: 16px 14px 40px !important; }
-    .lc-head { padding: 12px 14px; }
-    .lc-body { padding: 14px 14px; }
-    .lc-footer { padding: 10px 14px; }
-    .ps-metric .val { font-size: 22px; }
-    .lc-title { font-size: 15px; }
-    .lc-val-pem { font-size: 14px; }
+    .block-container {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+        padding-top: 16px !important;
+    }
+    .lcard-h { padding: 11px 14px; }
+    .lcard-b { padding: 13px 14px; }
+    .lcard-f { padding: 9px 14px; }
+    .lcard-title { font-size: 15px; }
+    .lcard-v-pem { font-size: 14px; }
+    .ps-m .v { font-size: 22px; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -487,53 +501,59 @@ header { visibility: hidden; }
 # ════════════════════════════════════════════════════════════
 PROFILES = {
     "🔧 Instaladores MEP": {
-        "key": "instaladores", "color": "#0e7490",
-        "tip": "💡 <strong>Contacta al promotor 6-12 meses antes de la obra</strong> para entrar en las especificaciones técnicas de ascensores, HVAC y PCI. La licencia concedida es tu señal de arranque.",
-        "min_score": 0, "min_value": 80_000, "days_default": 30,
-        "permit_types": ["obra mayor", "cambio de uso", "declaración responsable", "licencia primera ocupación", "urbanización"],
+        "key": "instaladores",
+        "tip": "💡 <strong>Contacta al promotor 6-12 meses antes de la obra</strong> — antes de que cierre contratos con tus competidores. La licencia concedida es tu señal de arranque.",
+        "min_score": 0, "min_value": 80_000, "days": 30,
+        "types": ["obra mayor", "cambio de uso", "declaración responsable", "licencia primera ocupación", "urbanización"],
     },
     "🏪 Expansión Retail": {
-        "key": "expansion", "color": "#c2410c",
-        "tip": "💡 <strong>Las urbanizaciones aprobadas = nuevos barrios en 2-3 años.</strong> Identifica la ubicación de tu próxima apertura antes de que el suelo suba de precio.",
-        "min_score": 0, "min_value": 0, "days_default": 60,
-        "permit_types": ["urbanización", "plan especial", "plan parcial", "cambio de uso", "licencia de actividad", "obra mayor nueva construcción"],
+        "key": "expansion",
+        "tip": "💡 <strong>Urbanización aprobada = nuevo barrio en 2-3 años.</strong> Negocia el local comercial ahora antes de que suba el precio del suelo.",
+        "min_score": 0, "min_value": 0, "days": 60,
+        "types": ["urbanización", "plan especial", "plan parcial", "cambio de uso", "licencia de actividad", "obra mayor nueva construcción"],
     },
     "📐 Promotores / RE": {
-        "key": "promotores", "color": "#7c3aed",
-        "tip": "💡 <strong>Una reparcelación aprobada = suelo urbanizable ahora.</strong> Contacta a la Junta de Compensación antes de que la operación salga al mercado.",
-        "min_score": 20, "min_value": 300_000, "days_default": 60,
-        "permit_types": ["urbanización", "plan parcial", "plan especial", "obra mayor nueva construcción", "cambio de uso"],
+        "key": "promotores",
+        "tip": "💡 <strong>Reparcelación aprobada = suelo urbanizable.</strong> Contacta a la Junta de Compensación antes de que la operación salga al mercado.",
+        "min_score": 20, "min_value": 300_000, "days": 60,
+        "types": ["urbanización", "plan parcial", "plan especial", "obra mayor nueva construcción", "cambio de uso"],
     },
     "🏢 Gran Constructora": {
-        "key": "constructora", "color": "#be123c",
-        "tip": "💡 <strong>Aprobación definitiva = licitación en 12-18 meses.</strong> Empieza a preparar el dossier técnico y las alianzas antes que la competencia.",
-        "min_score": 35, "min_value": 2_000_000, "days_default": 90,
-        "permit_types": ["urbanización", "plan especial", "plan parcial", "obra mayor industrial", "obra mayor nueva construcción"],
+        "key": "constructora",
+        "tip": "💡 <strong>Aprobación definitiva = licitación en 12-18 meses.</strong> Empieza ya a preparar el dossier técnico y alianzas.",
+        "min_score": 35, "min_value": 2_000_000, "days": 90,
+        "types": ["urbanización", "plan especial", "plan parcial", "obra mayor industrial", "obra mayor nueva construcción"],
     },
     "🏭 Industrial / Log.": {
-        "key": "industrial", "color": "#374151",
-        "tip": "💡 <strong>Una licencia de nave = obra en 3-6 meses.</strong> Contacta al promotor ahora para la demolición previa o la ejecución completa.",
-        "min_score": 0, "min_value": 200_000, "days_default": 60,
-        "permit_types": ["obra mayor industrial", "urbanización", "obra mayor nueva construcción", "cambio de uso"],
+        "key": "industrial",
+        "tip": "💡 <strong>Licencia de nave = obra en 3-6 meses.</strong> Contacta al promotor para la demolición previa o ejecución completa.",
+        "min_score": 0, "min_value": 200_000, "days": 60,
+        "types": ["obra mayor industrial", "urbanización", "obra mayor nueva construcción", "cambio de uso"],
     },
     "🛒 Compras / Materiales": {
-        "key": "compras", "color": "#5a5a78",
-        "tip": "💡 <strong>Todos los proyectos grandes son tu oportunidad.</strong> Con el nombre del promotor puedes presentar materiales antes de que la constructora adjudique suministros.",
-        "min_score": 0, "min_value": 150_000, "days_default": 30,
-        "permit_types": [],
+        "key": "compras",
+        "tip": "💡 <strong>Todo proyecto grande = oportunidad de suministro.</strong> Preséntate antes de que la constructora adjudique materiales.",
+        "min_score": 0, "min_value": 150_000, "days": 30,
+        "types": [],
     },
     "🏙️ Vista General": {
-        "key": "general", "color": "#1e3a5f",
-        "tip": "Vista completa de todos los proyectos. Selecciona un perfil para ver solo los leads de tu sector.",
-        "min_score": 0, "min_value": 0, "days_default": 14,
-        "permit_types": [],
+        "key": "general",
+        "tip": "Vista completa de todos los proyectos. Selecciona un perfil para ver solo los leads relevantes para tu sector.",
+        "min_score": 0, "min_value": 0, "days": 14,
+        "types": [],
     },
 }
 
 # ════════════════════════════════════════════════════════════
 # HELPERS
 # ════════════════════════════════════════════════════════════
-def parse_value(v):
+def e(v):
+    """HTML-escape a value. Prevents raw data from breaking HTML."""
+    if not v or str(v).strip() in ("", "nan", "None", "—"):
+        return ""
+    return html_lib.escape(str(v).strip())
+
+def parse_val(v):
     if not v or str(v).strip() in ("", "—", "N/A", "nan"):
         return 0.0
     s = re.sub(r'[^\d,.]', '', str(v))
@@ -548,64 +568,56 @@ def parse_value(v):
     except Exception:
         return 0.0
 
-def parse_score(v):
+def parse_sc(v):
     try:
         return int(float(str(v).strip())) if str(v).strip() else 0
     except Exception:
         return 0
 
-def fmt_eur(v):
-    if v == 0:
-        return "—"
-    if v >= 1_000_000:
-        return f"€{v/1_000_000:.1f}M"
-    if v >= 1_000:
-        return f"€{int(v/1000)}K"
+def fmt(v):
+    if v == 0: return "—"
+    if v >= 1_000_000: return f"€{v/1_000_000:.1f}M"
+    if v >= 1_000:     return f"€{int(v/1000)}K"
     return f"€{int(v):,}"
 
-def clean(v, fallback=""):
-    s = str(v or fallback).strip()
-    return "" if s in ("nan", "None", "—", "none") else s
+def sc_class(sc):
+    if sc >= 65: return "sp-g"
+    if sc >= 40: return "sp-o"
+    if sc >= 20: return "sp-n"
+    return "sp-d"
 
-def score_pill_class(sc):
-    if sc >= 65: return "gold"
-    if sc >= 40: return "orange"
-    if sc >= 20: return "navy"
-    return "dim"
-
-def score_label(sc):
+def sc_emoji(sc):
     if sc >= 65: return "🟢"
     if sc >= 40: return "🟠"
     if sc >= 20: return "🟡"
     return "⚪"
 
-def build_lead_card(row):
-    """Build the lead card HTML matching the mockup design."""
-    sc    = int(row.get("score", 0))
-    pem   = row.get("pem", 0)
-    muni  = clean(row.get("municipio"), "Madrid")
-    addr  = clean(row.get("direccion"))
-    prom  = clean(row.get("promotor"))
-    tipo  = clean(row.get("tipo"))
-    desc  = clean(row.get("descripcion"))
-    fecha = clean(row.get("fecha"))
-    fecha_found = clean(row.get("fecha_encontrado"))
-    maps  = clean(row.get("maps"))
-    bocm  = clean(row.get("bocm_url"))
-    pdf   = clean(row.get("pdf_url"))
-    expd  = clean(row.get("expediente"))
-    conf  = clean(row.get("confianza"))
+def lead_card(row):
+    """
+    Build a lead card HTML that matches the mockup.
+    ALL data values are html.escape()'d to prevent broken HTML.
+    NO inline styles with escaped quotes — only CSS classes.
+    """
+    sc      = parse_sc(row.get("score_raw", 0))
+    pem     = parse_val(row.get("pem_raw", ""))
+    muni    = e(row.get("municipio", "Madrid")) or "Madrid"
+    addr    = e(row.get("direccion", ""))
+    prom    = e(row.get("promotor", ""))
+    tipo    = e(row.get("tipo", ""))
+    desc    = e(row.get("descripcion", ""))
+    fecha   = e(row.get("fecha", ""))
+    fnd     = e(row.get("fecha_encontrado", ""))
+    maps    = str(row.get("maps", "") or "").strip()
+    bocm    = str(row.get("bocm_url", "") or "").strip()
+    pdf     = str(row.get("pdf_url", "") or "").strip()
+    expd    = e(row.get("expediente", ""))
+    conf    = str(row.get("confianza", "") or "").strip()
 
-    pem_str   = fmt_eur(pem)
-    sp_class  = score_pill_class(sc)
-    sp_emoji  = score_label(sc)
+    pem_str = fmt(pem)
+    spc     = sc_class(sc)
+    spe     = sc_emoji(sc)
 
-    # Publication date from URL or fecha field
-    pub_date = fecha if fecha else ""
-    if fecha_found:
-        pub_date = fecha_found[:10]
-
-    # Reference from BOCM URL
+    # Format BOCM reference
     bocm_ref = ""
     if bocm:
         m = re.search(r'BOCM[-_](\d{8})', bocm, re.I)
@@ -613,117 +625,100 @@ def build_lead_card(row):
             d = m.group(1)
             bocm_ref = f"BOCM-{d}"
 
-    ref_str = bocm_ref if bocm_ref else ""
-    if pub_date:
-        try:
-            dt = datetime.strptime(pub_date, "%Y-%m-%d")
-            pub_fmt = dt.strftime("%-d %b %Y") if hasattr(datetime, 'strptime') else pub_date
-        except Exception:
-            pub_fmt = pub_date
-        ref_str = f"{ref_str} · Publicado: {pub_fmt}" if ref_str else f"Publicado: {pub_date}"
+    # Format publication date
+    pub_date = fnd[:10] if fnd else fecha
+    try:
+        dt = datetime.strptime(pub_date, "%Y-%m-%d")
+        pub_fmt = dt.strftime("%-d %b %Y")
+    except Exception:
+        pub_fmt = pub_date
 
-    # Title: prefer address-based title
-    if addr:
-        title_text = addr
-    elif desc:
-        title_text = desc[:90]
-    else:
-        title_text = tipo or muni
+    ref_parts = [p for p in [bocm_ref, f"Publicado: {pub_fmt}" if pub_fmt else ""] if p]
+    ref_str   = " · ".join(ref_parts)
 
-    # Status badge based on tipo/desc
-    status_text = ""
-    status_class = "status-verde"
-    t_low = tipo.lower() + desc.lower()
-    if "definitiv" in t_low:
-        status_text = "Aprobación definitiva"
-        status_class = "status-verde"
-    elif "inicial" in t_low or "provisional" in t_low:
-        status_text = "Aprobación inicial"
-        status_class = "status-amber"
-    elif "concede" in t_low or "otorga" in t_low or "obra mayor" in t_low:
-        status_text = "Licencia concedida"
-        status_class = "status-verde"
-    elif "urbanización" in t_low:
-        status_text = "Urbanización"
-        status_class = "status-navy"
+    # Choose title
+    title = addr if addr else (desc[:90] if desc else tipo)
 
-    # ── CARD HEADER ──
-    badge_html = f'<span class="score-pill {sp_class}">{sp_emoji} {sc} / 100</span>'
-    if status_text:
-        badge_html = f'<span class="status-badge {status_class}">{status_text}</span>' + badge_html
+    # Status badge from tipo
+    status_html = ""
+    tl = tipo.lower() + " " + desc.lower()
+    if "definitiv" in tl:
+        status_html = '<span class="sb sb-g">Aprobación definitiva</span>'
+    elif "inicial" in tl:
+        status_html = '<span class="sb sb-a">Aprobación inicial</span>'
+    elif "concede" in tl or "otorga" in tl:
+        status_html = '<span class="sb sb-g">Licencia concedida</span>'
+    elif tipo:
+        status_html = f'<span class="sb sb-n">{tipo[:30]}</span>'
 
-    head_html = f"""
-    <div class="lc-head">
-      <div class="lc-loc">
-        <div class="lc-dot"></div>
-        <span class="lc-muni">{muni}</span>
-      </div>
-      <div class="lc-badges">{badge_html}</div>
-    </div>"""
+    # ── HEADER ──
+    head = f"""
+<div class="lcard-h">
+  <div class="lcard-loc">
+    <div class="lcard-dot"></div>
+    <span class="lcard-muni">{muni}</span>
+  </div>
+  <div class="lcard-badges">
+    {status_html}
+    <span class="sp {spc}">{spe} {sc} / 100</span>
+  </div>
+</div>"""
 
-    # ── CARD BODY ──
-    ref_html   = f'<div class="lc-ref">{ref_str}</div>' if ref_str else ""
-    title_html = f'<div class="lc-title">{title_text}</div>'
+    # ── BODY ──
+    ref_html   = f'<div class="lcard-ref">{ref_str}</div>' if ref_str else ""
+    title_html = f'<div class="lcard-title">{title}</div>'
     addr_html  = ""
-    if addr and addr != title_text:
-        addr_html = f'''<div class="lc-addr">
-          <span class="lc-addr-icon">📍</span>{addr}
-        </div>'''
+    if addr and addr != title:
+        addr_html = f'<div class="lcard-addr"><span>📍</span><span>{addr}</span></div>'
 
-    # ── DATA TABLE ──
-    table_rows = ""
+    # ── TABLE ROWS ──
+    rows = ""
     if tipo:
-        table_rows += f'<div class="lc-row"><span class="lc-key">Tipo</span><span class="lc-val">{tipo}</span></div>'
-
+        rows += f'<div class="lcard-r"><span class="lcard-k">Tipo</span><span class="lcard-v">{tipo}</span></div>'
     if pem > 0:
-        table_rows += f'<div class="lc-row"><span class="lc-key">PEM Total</span><span class="lc-val lc-val-pem">{pem_str}</span></div>'
+        rows += f'<div class="lcard-r"><span class="lcard-k">PEM Total</span><span class="lcard-v-pem">{pem_str}</span></div>'
 
-    # Check for etapas in description
-    etapa_matches = re.findall(r'[Ee]tapa\s+(\d+)[^\d€]*€?([\d.,]+[MmKk]?)', desc)
-    if etapa_matches:
-        etapa_tags = ""
-        for num, val in etapa_matches[:4]:
-            etapa_tags += f'<span class="lc-tag-amber">Etapa {num}: {val}</span>'
-        table_rows += f'<div class="lc-row"><span class="lc-key">Etapas</span><div class="lc-tags">{etapa_tags}</div></div>'
+    # Detect etapas from description
+    etapa_m = re.findall(r'[Ee]tapa\s*(\d+)[^€\d]*?(\d[\d.,]+\s*(?:M|K|€)?)', e(row.get("descripcion", "")))
+    if etapa_m:
+        etag = "".join(f'<span class="tag-a">Etapa {n}: {v}</span>' for n, v in etapa_m[:3])
+        rows += f'<div class="lcard-r"><span class="lcard-k">Etapas</span><div class="lcard-tags">{etag}</div></div>'
 
     if prom:
-        table_rows += f'<div class="lc-row"><span class="lc-key">Promotor</span><span class="lc-val">{prom[:70]}</span></div>'
-
+        rows += f'<div class="lcard-r"><span class="lcard-k">Promotor</span><span class="lcard-v">{prom}</span></div>'
     if expd:
-        table_rows += f'<div class="lc-row"><span class="lc-key">Expediente</span><span class="lc-val" style="font-family:\'JetBrains Mono\',monospace;font-size:11px;">{expd}</span></div>'
+        rows += f'<div class="lcard-r"><span class="lcard-k">Expediente</span><span class="lcard-v">{expd}</span></div>'
+    if conf in ("high", "medium", "low"):
+        conf_map = {"high": ("Alta fiabilidad", "tag-g"), "medium": ("Media fiabilidad", "tag-a"), "low": ("Baja fiabilidad", "tag-a")}
+        ct, cc = conf_map[conf]
+        rows += f'<div class="lcard-r"><span class="lcard-k">Fiabilidad</span><div class="lcard-tags"><span class="{cc}">{ct}</span></div></div>'
 
-    if conf in ("high", "medium", "low") and table_rows:
-        conf_map = {"high": ("Alta", "status-verde"), "medium": ("Media", "status-amber"), "low": ("Baja", "status-amber")}
-        conf_txt, conf_cls = conf_map[conf]
-        table_rows += f'<div class="lc-row"><span class="lc-key">Estado</span><div class="lc-tags"><span class="status-badge {conf_cls}">{conf_txt} fiabilidad</span></div></div>'
+    table_html = f'<div class="lcard-t">{rows}</div>' if rows else ""
 
-    table_html = f'<div class="lc-table">{table_rows}</div>' if table_rows else ""
-
-    # ── FOOTER LINKS ──
-    footer_links = ""
+    # ── FOOTER ──
+    links = ""
     if bocm:
-        footer_links += f'<a href="{bocm}" target="_blank" class="lc-btn primary">↗ Ver en el BOCM</a>'
+        links += f'<a href="{bocm}" target="_blank" rel="noopener" class="lcard-btn-p">↗ Ver en el BOCM</a>'
     if maps:
-        footer_links += f'<a href="{maps}" target="_blank" class="lc-btn">📍 Mapa</a>'
+        links += f'<a href="{maps}" target="_blank" rel="noopener" class="lcard-btn">📍 Mapa</a>'
     if pdf:
-        footer_links += f'<a href="{pdf}" target="_blank" class="lc-btn">📑 PDF</a>'
+        links += f'<a href="{pdf}" target="_blank" rel="noopener" class="lcard-btn">📑 PDF</a>'
     if prom:
-        q = prom.replace(" ", "+")
-        footer_links += f'<a href="https://www.linkedin.com/search/results/all/?keywords={q}" target="_blank" class="lc-btn">🔍 Promotor</a>'
-    footer_note = '<span class="lc-note">Datos públicos oficiales · BOCM</span>'
+        q = html_lib.escape(prom).replace("&amp;", "%26").replace(" ", "+")
+        links += f'<a href="https://www.linkedin.com/search/results/all/?keywords={q}" target="_blank" rel="noopener" class="lcard-btn">🔍 Promotor</a>'
 
     return f"""
-<div class="lead-card">
-  {head_html}
-  <div class="lc-body">
+<div class="lcard">
+  {head}
+  <div class="lcard-b">
     {ref_html}
     {title_html}
     {addr_html}
     {table_html}
   </div>
-  <div class="lc-footer">
-    {footer_links}
-    {footer_note}
+  <div class="lcard-f">
+    {links}
+    <span class="lcard-note">Datos públicos oficiales · BOCM</span>
   </div>
 </div>"""
 
@@ -744,45 +739,42 @@ COL_MAP = {
 @st.cache_data(ttl=300)
 def load_data():
     try:
-        sa_info = dict(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(
-            sa_info, scopes=[
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive",
-            ])
+        sa = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(sa, scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ])
         gc = gspread.authorize(creds)
         ws = gc.open_by_key(st.secrets.get("SHEET_ID", SHEET_ID)).worksheet("Permits")
         data = ws.get_all_records()
         return pd.DataFrame(data) if data else pd.DataFrame()
-    except Exception as e:
-        st.error(f"❌ Error conectando a Google Sheets: {e}")
+    except Exception as ex:
+        st.error(f"Error conectando a Google Sheets: {ex}")
         return pd.DataFrame()
 
-# Load data first
 with st.spinner("Cargando proyectos…"):
     df_raw = load_data()
 
 if df_raw.empty:
     st.markdown("""
     <div class="ps-empty" style="margin:40px auto;max-width:500px;">
-      <div class="icon">📡</div>
+      <div style="font-size:40px;">📡</div>
       <h3>Sin datos todavía</h3>
-      <p>El scraper aún no ha procesado proyectos.<br>
-      Ejecuta <strong>--weeks 8</strong> en GitHub Actions para hacer el backfill inicial.</p>
+      <p>El scraper no ha procesado ningún proyecto aún.<br>
+      Ejecuta <strong>--weeks 8</strong> en GitHub Actions para el backfill inicial.</p>
     </div>""", unsafe_allow_html=True)
     st.stop()
 
 df = df_raw.rename(columns={k: v for k, v in COL_MAP.items() if k in df_raw.columns})
-df["pem"]      = df["pem_raw"].apply(parse_value)   if "pem_raw"          in df.columns else pd.Series(0.0, index=df.index)
-df["est"]      = df["est_raw"].apply(parse_value)   if "est_raw"          in df.columns else pd.Series(0.0, index=df.index)
-df["score"]    = df["score_raw"].apply(parse_score) if "score_raw"        in df.columns else pd.Series(0, index=df.index)
+df["pem"]      = df["pem_raw"].apply(parse_val)  if "pem_raw"          in df.columns else pd.Series(0.0, index=df.index)
+df["score"]    = df["score_raw"].apply(parse_sc) if "score_raw"        in df.columns else pd.Series(0,   index=df.index)
 df["fecha_dt"] = pd.to_datetime(
     df["fecha_encontrado"].str[:10], errors="coerce"
 ) if "fecha_encontrado" in df.columns else pd.NaT
 
 all_munis = sorted([
     m for m in (df["municipio"].dropna().unique().tolist() if "municipio" in df.columns else [])
-    if str(m).strip() and str(m) != "nan"
+    if str(m).strip() and str(m) not in ("nan","")
 ])
 
 profile_names = list(PROFILES.keys())
@@ -791,105 +783,102 @@ if forced_profile_key:
     default_idx = profile_names.index(matched)
     is_locked   = True
 else:
-    default_idx = len(profile_names) - 1
+    default_idx = len(profile_names) - 1   # Vista General
     is_locked   = False
 
 # ════════════════════════════════════════════════════════════
 # SIDEBAR
 # ════════════════════════════════════════════════════════════
 with st.sidebar:
-    # Logo
-    st.markdown("""
-    <div class="sb-logo">
-      <div class="sb-logo-icon">🏗️</div>
-      <div class="sb-logo-text">Planning<em>Scout</em></div>
-    </div>""", unsafe_allow_html=True)
+
+    # Logo image — loaded from same folder as this file
+    try:
+        st.image(LOGO_PATH, width=190)
+    except Exception:
+        st.markdown("### 🏗️ PlanningScout")
+
+    st.markdown('<div style="height:4px;border-bottom:1px solid #e2e8f0;margin:0 0 16px;"></div>', unsafe_allow_html=True)
 
     # Profile selector
-    st.markdown('<div class="sb-section"><span class="sb-label">Perfil de cliente</span></div>', unsafe_allow_html=True)
+    st.markdown('<p style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;">Perfil de cliente</p>', unsafe_allow_html=True)
 
     if is_locked:
-        matched_prof = profile_names[default_idx]
         st.markdown(f"""
-        <div style="margin:0 16px 0;padding:10px 14px;background:#eff4fb;
-             border:1.5px solid rgba(30,58,95,.2);border-radius:10px;
-             font-size:13px;font-weight:600;color:#1e3a5f;">
-          {matched_prof}
+        <div style="background:#eff4fb;border:1.5px solid rgba(30,58,95,.2);border-radius:10px;
+             padding:10px 14px;font-size:13px;font-weight:600;color:#1e3a5f;margin-bottom:16px;
+             font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
+          {profile_names[default_idx]}
         </div>""", unsafe_allow_html=True)
-        selected_profile = matched_prof
+        selected_profile = profile_names[default_idx]
     else:
-        with st.container():
-            selected_profile = st.radio(
-                "Perfil",
-                profile_names,
-                index=default_idx,
-                label_visibility="collapsed",
-            )
+        selected_profile = st.radio(
+            "Perfil",
+            profile_names,
+            index=default_idx,
+            label_visibility="collapsed",
+        )
 
     prof = PROFILES[selected_profile]
 
-    st.markdown('<div class="sb-divider"></div><div class="sb-section" style="padding-top:14px;"><span class="sb-label">Filtros</span></div>', unsafe_allow_html=True)
+    st.markdown('<div style="border-top:1px solid #e2e8f0;margin:14px 0 16px;"></div>', unsafe_allow_html=True)
+    st.markdown('<p style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin:0 0 12px;">Filtros</p>', unsafe_allow_html=True)
 
     days_back = st.selectbox(
         "Período",
         [7, 14, 30, 60, 90],
-        index=[7,14,30,60,90].index(prof["days_default"]) if prof["days_default"] in [7,14,30,60,90] else 1,
+        index=[7,14,30,60,90].index(prof["days"]) if prof["days"] in [7,14,30,60,90] else 1,
         format_func=lambda x: f"Últimos {x} días",
     )
-    min_pem = st.number_input(
-        "PEM mínimo (€)", value=prof["min_value"],
-        min_value=0, step=50_000, format="%d",
-    )
+    min_pem   = st.number_input("PEM mínimo (€)", value=prof["min_value"], min_value=0, step=50_000, format="%d")
     min_score = st.slider("Puntuación mínima", 0, 100, value=prof["min_score"], step=5)
+    muni_sel  = st.multiselect("Municipio", options=all_munis, placeholder="Todos los municipios")
 
-    if all_munis:
-        muni_sel = st.multiselect("Municipio", options=all_munis, placeholder="Todos")
-    else:
-        muni_sel = []
-
-    st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="border-top:1px solid #e2e8f0;margin:16px 0;"></div>', unsafe_allow_html=True)
 
     if st.button("🔄 Actualizar datos"):
         st.cache_data.clear()
         st.rerun()
 
-    # Sharing URL
     if not is_locked:
-        with st.expander("🔗 Compartir con cliente"):
-            prof_key = prof["key"]
-            st.code(f"planningscout.streamlit.app?perfil={prof_key}", language=None)
-            st.caption("El cliente accede directo a su perfil.")
+        with st.expander("🔗 Compartir vista con cliente"):
+            st.code(f"planningscout.streamlit.app?perfil={prof['key']}", language=None)
+            st.caption("El cliente accede directamente a su perfil filtrado.")
 
-    # Last update info
-    last_dt = df["fecha_dt"].max()
+    # Last update
+    last_dt  = df["fecha_dt"].max() if "fecha_dt" in df.columns else None
     last_str = last_dt.strftime("%d %b %Y") if pd.notna(last_dt) else "—"
     st.markdown(f"""
-    <div style="padding:16px 16px 20px;margin-top:8px;">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;">Última actualización</div>
-      <div style="font-size:13px;color:#334155;font-weight:500;">{last_str}</div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8;margin-top:8px;">Fuente: BOCM · CM Madrid</div>
+    <div style="margin-top:20px;padding:12px 14px;background:#f7f8fa;border-radius:8px;
+         border:1px solid #e2e8f0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
+      <p style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#94a3b8;
+         text-transform:uppercase;letter-spacing:.07em;margin:0 0 3px;">Última actualización</p>
+      <p style="font-size:13px;font-weight:600;color:#334155;margin:0;">{last_str}</p>
+      <p style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8;
+         margin:4px 0 0;">BOCM · Comunidad de Madrid</p>
     </div>""", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════
 # MAIN CONTENT
 # ════════════════════════════════════════════════════════════
 
-# ── Page title ──
-prof_color = prof["color"]
+# Page title
+emoji = selected_profile.split()[0]
+name  = " ".join(selected_profile.split()[1:])
 st.markdown(f"""
-<div style="margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid #e2e8f0;">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
-    <span style="font-size:22px;">{selected_profile.split()[0]}</span>
-    <h1 style="font-family:'Fraunces',Georgia,serif;font-size:24px;font-weight:700;
-         color:#0d1a2b;margin:0;line-height:1.2;">{' '.join(selected_profile.split()[1:])}</h1>
+<div style="margin-bottom:24px;padding-bottom:18px;border-bottom:1px solid #e2e8f0;">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+    <span style="font-size:24px;">{emoji}</span>
+    <h1 style="font-family:'Fraunces',Georgia,serif;font-size:26px;font-weight:700;
+         color:#0d1a2b;margin:0;line-height:1.2;">{name}</h1>
   </div>
-  <p style="font-size:13px;color:#64748b;margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
-    Últimos {days_back} días · Datos del BOCM (Comunidad de Madrid)
+  <p style="font-size:13px;color:#64748b;margin:0;
+     font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
+    Últimos {days_back} días &nbsp;·&nbsp; Proyectos detectados del BOCM (Comunidad de Madrid)
   </p>
 </div>
 """, unsafe_allow_html=True)
 
-# ── Filter data ──
+# ── Filter ──
 cutoff = datetime.now() - timedelta(days=days_back)
 df_f   = df[df["fecha_dt"] >= cutoff].copy() if "fecha_dt" in df.columns else df.copy()
 
@@ -897,9 +886,9 @@ if min_score > 0:
     df_f = df_f[(df_f["score"] >= min_score) | (df_f["score"] == 0)]
 df_f = df_f[df_f["pem"] >= min_pem]
 
-if prof["permit_types"] and "tipo" in df_f.columns:
-    pattern = "|".join(re.escape(t) for t in prof["permit_types"])
-    df_f = df_f[df_f["tipo"].str.contains(pattern, case=False, na=False)]
+if prof["types"] and "tipo" in df_f.columns:
+    pat  = "|".join(re.escape(t) for t in prof["types"])
+    df_f = df_f[df_f["tipo"].str.contains(pat, case=False, na=False)]
 
 if muni_sel and "municipio" in df_f.columns:
     df_f = df_f[df_f["municipio"].isin(muni_sel)]
@@ -913,70 +902,68 @@ high_leads = len(df_f[df_f["score"] >= 65])
 avg_score  = int(df_f["score"].mean()) if count > 0 else 0
 
 c1, c2, c3, c4 = st.columns(4)
-metrics = [
-    (str(count), "Proyectos"),
-    (fmt_eur(total_pem), "PEM total"),
-    (str(high_leads), "🟢 Prioritarios"),
-    (f"{avg_score}", "Score medio"),
-]
-for col, (val, lbl) in zip([c1, c2, c3, c4], metrics):
+for col, (val, lbl, color) in zip(
+    [c1, c2, c3, c4],
+    [
+        (str(count),         "Proyectos",       "#1e3a5f"),
+        (fmt(total_pem),     "PEM total",        "#1e3a5f"),
+        (str(high_leads),    "🟢 Prioritarios",  "#16a34a"),
+        (f"{avg_score} pts", "Score medio",      "#5a5a78"),
+    ]
+):
     with col:
-        color = "#16a34a" if lbl == "🟢 Prioritarios" else "#1e3a5f"
         st.markdown(f"""
-        <div class="ps-metric">
-          <span class="val" style="color:{color};">{val}</span>
-          <span class="lbl">{lbl}</span>
+        <div class="ps-m">
+          <span class="v" style="color:{color};">{val}</span>
+          <span class="l">{lbl}</span>
         </div>""", unsafe_allow_html=True)
 
-st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-
-# ── Profile tip ──
+# ── Tip ──
 st.markdown(f'<div class="ps-tip">{prof["tip"]}</div>', unsafe_allow_html=True)
 
 # ── Export ──
 if not df_f.empty:
-    export_cols = [c for c in ["fecha","municipio","direccion","promotor","tipo","pem_raw","est_raw","descripcion","expediente","bocm_url"] if c in df_f.columns]
-    csv = df_f[export_cols].to_csv(index=False).encode("utf-8")
-    col_dl, col_sp = st.columns([1, 3])
-    with col_dl:
+    exp_cols = [c for c in ["fecha","municipio","direccion","promotor","tipo","pem_raw","descripcion","expediente","bocm_url"] if c in df_f.columns]
+    csv = df_f[exp_cols].to_csv(index=False).encode("utf-8")
+    col_btn, col_inf = st.columns([1, 3])
+    with col_btn:
         st.download_button(
-            f"⬇️ Exportar {count} leads (CSV)",
+            f"⬇️ Exportar {count} leads CSV",
             data=csv,
             file_name=f"planningscout_{prof['key']}_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv",
         )
 
-st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
 # ── Leads ──
 if df_f.empty:
     st.markdown(f"""
     <div class="ps-empty">
-      <div class="icon">🔍</div>
+      <div style="font-size:40px;">🔍</div>
       <h3>Sin proyectos con estos filtros</h3>
       <p>
-        Prueba ampliando el período (ahora: {days_back} días),<br>
-        reduciendo el PEM mínimo ({fmt_eur(min_pem)})<br>
-        o cambiando el perfil de cliente.
+        Amplía el período (ahora: {days_back} días),<br>
+        reduce el PEM mínimo ({fmt(min_pem)}),<br>
+        o cambia el perfil en el panel izquierdo.
       </p>
     </div>""", unsafe_allow_html=True)
 else:
     st.markdown(f"""
-    <div class="ps-section-head">
-      <span class="ps-section-title">Proyectos detectados</span>
-      <span class="ps-section-count">{count} resultados</span>
+    <div class="ps-sh">
+      <h2>Proyectos detectados</h2>
+      <span class="cnt">{count} resultado{"s" if count != 1 else ""}</span>
     </div>""", unsafe_allow_html=True)
 
     for _, row in df_f.iterrows():
-        row_d = row.to_dict()
-        st.markdown(build_lead_card(row_d), unsafe_allow_html=True)
+        st.markdown(lead_card(row.to_dict()), unsafe_allow_html=True)
 
 # ── Footer ──
 st.markdown(f"""
-<div style="text-align:center;padding:32px 0 16px;border-top:1px solid #e2e8f0;margin-top:32px;
-     font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#94a3b8;line-height:1.8;">
-  <strong style="color:#5a5a78;">PlanningScout</strong> &nbsp;·&nbsp;
-  Datos del BOCM (Boletín Oficial de la Comunidad de Madrid) &nbsp;·&nbsp; Registros públicos oficiales<br>
-  PEM = Presupuesto de Ejecución Material &nbsp;·&nbsp; {count} proyectos en esta vista &nbsp;·&nbsp; Actualizado {last_str}
+<div style="text-align:center;padding:28px 0 8px;margin-top:28px;border-top:1px solid #e2e8f0;
+     font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8;line-height:1.9;">
+  <strong style="color:#5a5a78;font-size:11px;">PlanningScout Madrid</strong><br>
+  Datos del BOCM (Boletín Oficial de la Comunidad de Madrid) · Registros públicos oficiales<br>
+  PEM = Presupuesto de Ejecución Material · {count} proyectos · Actualizado {last_str}
 </div>
 """, unsafe_allow_html=True)
