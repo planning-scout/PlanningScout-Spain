@@ -220,8 +220,8 @@ SEARCH_KEYWORDS = [
 def is_bad_url(url):
     if not url or "bocm.es" not in url: return True
     low = url.lower()
-    bad_exts  = (".xml",".css",".js",".png",".jpg",".gif",".ico",".woff",".svg",".zip",".epub")
-    bad_paths = ("/advanced-search","/login","/user","/admin","/sites/","/modules/","#","javascript:")
+    bad_exts  = (".xml",".json",".css",".js",".png",".jpg",".gif",".ico",".woff",".svg",".zip",".epub")
+    bad_paths = ("/advanced-search","/login","/user","/admin","/sites/","/modules/","#","javascript:","/CM_Boletin_BOCM/")
     return any(low.endswith(x) for x in bad_exts) or any(x in low for x in bad_paths)
 
 def url_date_ok(url, date_from):
@@ -325,7 +325,10 @@ def get_rss_pdf_links(date_from, date_to):
                 href = a["href"]
                 if ".PDF" in href.upper() or ".pdf" in href:
                     full = urljoin(BOCM_BASE, href) if href.startswith("/") else href
-                    if "bocm.es" in full and full not in pdf_urls:
+                    # Only individual announcement PDFs, NOT full bulletin editions
+                    # CM_Orden_BOCM = individual announcement (1-2 pages) ✓
+                    # CM_Boletin_BOCM = entire day's gazette (100+ pages, mixed content) ✗
+                    if "bocm.es" in full and "CM_Orden_BOCM" in full and full not in pdf_urls:
                         pdf_urls.append(full)
             time.sleep(1)
     except Exception as e:
@@ -527,10 +530,19 @@ HARD_REJECT = [
     "criterio interpretativo vinculante",         # planning interpretation, not a permit
     "regulación del deber de conservación",       # maintenance obligation, not a permit
     # Procurement (not a permit)
+    # "licitación" = tender notice for buying services/goods, NOT a building permit
+    # Individual announcement PDFs that only contain licitación should be rejected
     "licitación", "pliego de cláusulas administrativas",
+    "contrato de servicios", "contrato de suministro",
     # Corrección de errores (typo fix in old document)
     "corrección de errores del bocm",
     "corrección de hipervínculo",
+    # Additional noise from practice
+    "convocatoria de proceso selectivo",
+    "convocatoria de oposiciones",
+    "bases de la convocatoria para",
+    "reglamento de participación ciudadana",
+    "reglamento orgánico municipal",
     # Approval of plans to allow subventions (administrative)
     "aprobación definitiva del plan estratégico de subvenciones",
     "aprobación inicial del expediente de modificación del anexo",
@@ -1246,7 +1258,7 @@ def send_digest():
     <div style="color:#555;font-size:13px;margin-top:2px">PEM total</div>
   </div>
   <div style="flex:1;padding:16px 24px">
-    <div style="font-size:34px;font-weight:700;color:#1565c0">€{int(total/0.03):,}</div>
+    <div style="font-size:34px;font-weight:700;color:#1565c0">{("€"+f"{int(total/0.03):,}") if total > 0 else "N/D"}</div>
     <div style="color:#555;font-size:13px;margin-top:2px">Valor obra estimado</div>
   </div>
 </div>
@@ -1306,7 +1318,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("="*68)
-    log(f"🏗️  ConstructorScout Madrid  —  Engine v4")
+    log(f"🏗️  ConstructorScout Madrid  —  Engine v5")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"🤖  {'AI (GPT-4o-mini)' if USE_AI else 'Keyword extraction'}")
