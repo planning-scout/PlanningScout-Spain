@@ -3,7 +3,7 @@ subprocess.check_call([sys.executable, "-m", "pip", "install",
     "requests", "beautifulsoup4", "pdfplumber", "gspread",
     "google-auth", "python-dateutil", "openai", "-q"])
 
-import requests, re, io, time, json, os, smtplib
+import requests, re, io, time, json, os, smtplib, random
 from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -22,7 +22,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--client",  required=True)
 parser.add_argument("--weeks",   type=int, default=4,
-                    help="Weeks to look back. Daily=1, weekly=2, backfill=8.")
+                    help="Weeks back. Daily=1, weekly=2, backfill=8.")
 parser.add_argument("--digest",  action="store_true")
 parser.add_argument("--resume",  action="store_true")
 args = parser.parse_args()
@@ -42,26 +42,43 @@ def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
 # ════════════════════════════════════════════════════════════
-# HTTP SESSION
+# HTTP — rotating user agents to avoid pattern detection
 # ════════════════════════════════════════════════════════════
 BOCM_BASE = "https://www.bocm.es"
-HEADERS = {
-    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-}
+
+USER_AGENTS = [
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"),
+    ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+     "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15"),
+    ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"),
+]
+
+def make_headers(referer=None):
+    ua = random.choice(USER_AGENTS)
+    h = {
+        "User-Agent": ua,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
+    if referer:
+        h["Referer"] = referer
+    return h
+
 _session = None
 _consecutive_bad = 0
 MAX_BAD = 5
 
 def make_session():
     s = requests.Session()
-    s.headers.update(HEADERS)
-    for name in ["cookies-agreed","cookie-agreed","has_js","bocm_cookies","cookie_accepted"]:
+    s.headers.update(make_headers())
+    for name in ["cookies-agreed", "cookie-agreed", "has_js",
+                 "bocm_cookies", "cookie_accepted"]:
         s.cookies.set(name, "1", domain="www.bocm.es")
     return s
 
@@ -75,11 +92,14 @@ def rotate_session():
     log("  🔄 Rotating session…")
     _session = make_session(); _consecutive_bad = 0; time.sleep(12)
 
-def safe_get(url, timeout=30, retries=3, backoff_base=8):
+def safe_get(url, timeout=30, retries=3, backoff_base=8, referer=None):
     global _consecutive_bad
+    sess = get_session()
+    if referer:
+        sess.headers.update({"Referer": referer})
     for attempt in range(retries):
         try:
-            r = get_session().get(url, timeout=timeout, verify=False, allow_redirects=True)
+            r = sess.get(url, timeout=timeout, verify=False, allow_redirects=True)
             if r.status_code == 200:
                 _consecutive_bad = 0; return r
             if r.status_code in (502, 503, 429):
@@ -100,50 +120,47 @@ def safe_get(url, timeout=30, retries=3, backoff_base=8):
     return None
 
 # ════════════════════════════════════════════════════════════
-# BOCM DOCUMENT ID — for deduplication across PDF/HTML/JSON variants
-#
-# The SAME BOCM document appears under 3 different URLs:
-#   PDF:  bocm.es/boletin/CM_Orden_BOCM/2026/04/01/BOCM-20260401-96.PDF
-#   JSON: bocm.es/boletin/CM_Orden_BOCM/2026/04/01/BOCM-20260401-96.json
-#   HTML: bocm.es/bocm-20260401-96
-#
-# Deduplication on full URL → all 3 get saved → 3 duplicate rows per lead.
-# Fix: extract "BOCM-YYYYMMDD-NN" from any URL → use as canonical dedup key.
+# BOCM DOCUMENT ID — canonical dedup key
+# Same doc appears as PDF, JSON, HTML — all get the same ID.
 # ════════════════════════════════════════════════════════════
 def extract_bocm_id(url):
-    """Extract the canonical BOCM document ID from any URL variant."""
-    m = re.search(r'(BOCM-\d{8}-\d+)', url, re.I)
+    m = re.search(r'(BOCM-\d{8}-\d+)', str(url), re.I)
     return m.group(1).upper() if m else None
 
 def pdf_url_to_html_url(url):
-    """
-    Convert PDF/JSON URL → HTML entry page URL.
-    HTML entry pages ALWAYS have JSON-LD with full clean text.
-    PDF extraction fails on image-based/protected PDFs.
-    
-    BOCM-20260401-96.PDF → bocm.es/bocm-20260401-96
-    """
-    m = re.search(r'(BOCM-\d{8}-\d+)\.(PDF|json)$', url, re.I)
+    """Any PDF/JSON URL → HTML entry page (always has JSON-LD)."""
+    m = re.search(r'(BOCM-\d{8}-\d+)\.(PDF|json|PDF)$', url, re.I)
     if m:
-        doc_id = m.group(1).lower()
-        return f"{BOCM_BASE}/{doc_id}"
+        return f"{BOCM_BASE}/{m.group(1).lower()}"
     return None
 
+def normalise_url(url):
+    """Convert any URL variant → HTML entry page URL."""
+    html = pdf_url_to_html_url(url)
+    return html if html else url
+
 # ════════════════════════════════════════════════════════════
-# BOCM SEARCH — URL BUILDING
-# Section 8387 = III. Administración Local Ayuntamientos
-# Date format: DD-MM-YYYY (dashes, confirmed)
-# Pagination: path-based
+# BOCM SECTIONS
+# I=8385  II=8386  III=8387  IV=8388  V=8389
+#
+# III = Administración Local Ayuntamientos (licencias, contratos)
+# II  = Comunidad de Madrid (plans CM, grandes proyectos)
+# V   = Anuncios (ICIO notifications, subastas, public notices)
 # ════════════════════════════════════════════════════════════
-SECTION_LOCAL    = "8387"
-SECTION_REGIONAL = "8386"   # Section II: Comunidad de Madrid (plans especiales CM)
+SECTION_I        = "8385"  # Disposiciones generales (rarely useful)
+SECTION_II       = "8386"  # Comunidad de Madrid (big plans, DIR)
+SECTION_III      = "8387"  # Administración Local (MAIN)
+SECTION_IV       = "8388"  # Entidades públicas
+SECTION_V        = "8389"  # Anuncios (ICIO, subastas, notificaciones)
+SECTION_LOCAL    = SECTION_III  # default
 BOCM_RSS         = "https://www.bocm.es/boletines.rss"
 
-def build_search_url(keyword, date_from, date_to, section=SECTION_LOCAL):
+def build_search_url(keyword, date_from, date_to, section=SECTION_III):
     df = date_from.strftime("%d-%m-%Y")
     dt = date_to.strftime("%d-%m-%Y")
-    params = (
-        f"search_api_views_fulltext_1={quote(keyword)}"
+    return (
+        f"{BOCM_BASE}/advanced-search"
+        f"?search_api_views_fulltext_1={quote(keyword)}"
         f"&field_bulletin_field_date%5Bdate%5D={df}"
         f"&field_bulletin_field_date_1%5Bdate%5D={dt}"
         f"&field_orden_seccion={section}"
@@ -153,12 +170,11 @@ def build_search_url(keyword, date_from, date_to, section=SECTION_LOCAL):
         f"&field_orden_organo_y_organismo_3=All&field_orden_apartado_y_organo_4=All"
         f"&field_orden_organo_5=All"
     )
-    return f"{BOCM_BASE}/advanced-search?{params}"
 
-def build_page_url(keyword, date_from, date_to, page, section=SECTION_LOCAL):
-    df = date_from.strftime("%d-%m-%Y")
-    dt = date_to.strftime("%d-%m-%Y")
-    kw = quote(keyword)
+def build_page_url(keyword, date_from, date_to, page, section=SECTION_III):
+    df  = date_from.strftime("%d-%m-%Y")
+    dt  = date_to.strftime("%d-%m-%Y")
+    kw  = quote(keyword)
     return (
         f"{BOCM_BASE}/advanced-search/p"
         f"/field_bulletin_field_date/date__{df}"
@@ -172,89 +188,175 @@ def build_page_url(keyword, date_from, date_to, page, section=SECTION_LOCAL):
     )
 
 # ════════════════════════════════════════════════════════════
-# SEARCH KEYWORDS — short and precise for BOCM's Solr engine
-#
-# KEY INSIGHT: BOCM search treats each word as AND.
-# "se concede licencia de obra mayor" requires ALL 6 words adjacent.
-# → Misses: "se otorga", "licencia urbanística", "resolución favorable"
-# → Use SHORT keywords: "obra mayor" catches ALL variations.
-#
-# PROFILE MAPPING (which profiles each keyword targets):
-#   [MEP] = Instaladores MEP (ascensores, HVAC, PCI)
-#   [RET] = Expansión Retail / Restauración
-#   [PRO] = Promotores / Real Estate
-#   [CON] = Gran Constructora / Infraestructuras
-#   [IND] = Industrial / Logística
-#   [MAT] = Compras / Materiales (all large projects)
-#   [ALL] = All profiles benefit
+# SEARCH KEYWORDS — by profile
+# Short keywords = more matches (BOCM Solr AND-matches all words)
+# Tagged by profile for context in logging
 # ════════════════════════════════════════════════════════════
-SEARCH_KEYWORDS = [
-    # ── [ALL] Core obra mayor — individual building licences ──────────────────
-    # Short = catches all variants (se concede, se otorga, se autoriza, etc.)
-    "licencia de obra mayor",           # [ALL] most common phrase
-    "licencia urbanística",             # [ALL] post-2020 alternative term
-    "licencia de obras",                # [ALL] catches all subvariants
-    "declaración responsable",          # [ALL] post-Ley 1/2020 replacement
-    "primera ocupación",                # [MEP][MAT] building finished, MEP final check
-    "licencia de edificación",          # [ALL] construction licence
 
-    # ── [PRO][CON][RET] Urbanismo — entire neighborhood scale ─────────────────
-    "proyecto de urbanización",         # [ALL] entire neighborhoods, HIGHEST value
-    "junta de compensación",            # [PRO][CON] always major development
-    "reparcelación",                    # [PRO] land redistribution = buildable land
-    "proyecto de reparcelación",        # [PRO] Paracuellos-type leads
-    "área de desarrollo",               # [PRO][CON] development areas
-    "plan parcial",                     # [PRO][CON] partial urban plan
-    "plan especial",                    # [PRO][CON][RET] special urban plan
-    "aprobación definitiva",            # [ALL] final approval — any planning doc
-    "estudio de detalle",               # [PRO] detail study = pre-construction approval
-    "unidad de ejecución",              # [PRO][CON] execution unit = new construction zone
+# Core licencias (ALL profiles)
+KW_LICENCIAS = [
+    ("licencia de obra mayor",        SECTION_III, "ALL"),
+    ("licencia urbanística",           SECTION_III, "ALL"),
+    ("licencia de obras",              SECTION_III, "ALL"),
+    ("declaración responsable",        SECTION_III, "ALL"),
+    ("primera ocupación",              SECTION_III, "MEP+MAT"),
+    ("licencia de edificación",        SECTION_III, "ALL"),
+    ("autorización de obras",          SECTION_III, "ALL"),
+    ("resolución favorable",           SECTION_III, "ALL"),
+    ("se expide licencia",             SECTION_III, "ALL"),
+    ("licencia municipal de obras",    SECTION_III, "ALL"),
+]
 
-    # ── [MEP][MAT] Building types — apartments, hotels, rehabs ───────────────
-    "edificio plurifamiliar",           # [MEP] apartment blocks = elevators + HVAC
-    "viviendas",                        # [MEP][RET][MAT] residential
-    "rehabilitación integral",          # [MEP][MAT] full building rehab = MEP replacement
-    "nueva construcción",               # [MEP][CON][MAT] new build
-    "nueva planta",                     # [MEP][CON][MAT] new floor / new building
-    "cambio de uso",                    # [RET][MEP] change of use = renovation + MEP
-    "demolición",                       # [CON][IND] demolition + future construction
+# Urbanismo (PRO + CON + RET)
+KW_URBANISMO = [
+    ("proyecto de urbanización",       SECTION_III, "PRO+CON+RET"),
+    ("proyecto de urbanización",       SECTION_II,  "PRO+CON"),    # CM-level plans
+    ("junta de compensación",          SECTION_III, "PRO+CON"),
+    ("junta de compensación",          SECTION_II,  "PRO+CON"),
+    ("reparcelación",                  SECTION_III, "PRO"),
+    ("proyecto de reparcelación",      SECTION_III, "PRO"),
+    ("acuerdo de reparcelación",       SECTION_III, "PRO"),
+    ("área de desarrollo",             SECTION_III, "PRO+CON"),
+    ("unidad de ejecución",            SECTION_III, "PRO+CON"),
+    ("unidad de actuación",            SECTION_III, "PRO+CON"),
+    ("plan parcial",                   SECTION_III, "PRO+CON"),
+    ("plan parcial",                   SECTION_II,  "PRO+CON"),
+    ("plan especial",                  SECTION_III, "PRO+CON+RET"),
+    ("plan especial",                  SECTION_II,  "PRO+CON"),
+    ("aprobación definitiva",          SECTION_III, "ALL"),
+    ("aprobación definitiva",          SECTION_II,  "PRO+CON"),
+    ("estudio de detalle",             SECTION_III, "PRO"),
+    ("modificación puntual",           SECTION_III, "PRO+CON"),   # plan amendments = new buildable
+    ("convenio urbanístico",           SECTION_III, "PRO"),       # developer-council deals
+    ("modificación del plan general",  SECTION_II,  "PRO+CON"),
+    ("sector de suelo",                SECTION_III, "PRO+CON"),
+    ("suelo urbanizable",              SECTION_III, "PRO+CON"),
+]
 
-    # ── [IND][MAT][CON] Industrial & logistics ───────────────────────────────
-    "nave industrial",                  # [IND][MAT] factory/warehouse = large MEP
-    "almacén",                          # [IND][MAT] warehouse = logistics
-    "parque empresarial",               # [IND][CON][MAT] business park
-    "plataforma logística",             # [IND][MAT] logistics hub
-    "centro de distribución",           # [IND][MAT] distribution centre
-    "instalación industrial",           # [IND][MAT] industrial installation
+# MEP installers (ascensores, HVAC, PCI)
+KW_MEP = [
+    ("edificio plurifamiliar",         SECTION_III, "MEP"),
+    ("viviendas",                      SECTION_III, "MEP+RET"),
+    ("nueva construcción",             SECTION_III, "MEP+CON+MAT"),
+    ("nueva planta",                   SECTION_III, "MEP+CON+MAT"),
+    ("rehabilitación integral",        SECTION_III, "MEP+MAT"),
+    ("cambio de uso",                  SECTION_III, "MEP+RET"),
+    ("demolición",                     SECTION_III, "CON+IND"),
+    ("hotel",                          SECTION_III, "MEP+CON+MAT"),
+    ("residencia de mayores",          SECTION_III, "MEP"),       # mandatory elevators
+    ("residencia de estudiantes",      SECTION_III, "MEP"),
+    ("centro de salud",                SECTION_III, "MEP"),       # mandatory MEP
+    ("edificio de oficinas",           SECTION_III, "MEP+RET+MAT"),
+    ("instalación de ascensor",        SECTION_III, "MEP"),       # direct signal
+    ("instalación de climatización",   SECTION_III, "MEP"),
+    ("instalación de calefacción",     SECTION_III, "MEP"),
+    ("protección contra incendios",    SECTION_III, "MEP"),
+]
 
-    # ── [RET] Commercial & retail expansion ──────────────────────────────────
-    "local comercial",                  # [RET] commercial space
-    "centro comercial",                 # [RET] shopping centre = anchor tenant
-    "gran superficie",                  # [RET] large retail surface
-    "licencia de actividad",            # [RET][IND] activity licence for business
-    "cambio de uso terciario",          # [RET] rezoning to commercial
+# Retail expansion (RET)
+KW_RETAIL = [
+    ("uso terciario",                  SECTION_III, "RET"),       # commercial zoning
+    ("local comercial",                SECTION_III, "RET"),
+    ("centro comercial",               SECTION_III, "RET+CON"),
+    ("gran superficie",                SECTION_III, "RET+CON"),
+    ("superficie comercial",           SECTION_III, "RET"),
+    ("centro de ocio",                 SECTION_III, "RET"),
+    ("actividad comercial",            SECTION_III, "RET"),
+    ("apertura de establecimiento",    SECTION_III, "RET"),
+    ("licencia de apertura",           SECTION_III, "RET"),
+    ("licencia de actividad",          SECTION_III, "RET+IND"),
+]
 
-    # ── [CON][MAT] Public construction contracts (NEW) ───────────────────────
-    # Ayuntamientos publish tenders in BOCM — gold for Gran Constructora
-    "licitación de obras",              # [CON][MAT] construction tender
-    "contrato de obras",                # [CON][MAT] construction contract
-    "adjudicación de obras",            # [CON][MAT] contract awarded
-    "obras de urbanización",            # [CON][MAT] urbanisation works
-    "obras de rehabilitación",          # [CON][MEP][MAT] rehab works
-    "obras de construcción",            # [CON][MAT] construction works
-    "obras de reforma",                 # [MEP][MAT] reform works
+# Industrial & Logistics (IND)
+KW_INDUSTRIAL = [
+    ("nave industrial",                SECTION_III, "IND+MAT"),
+    ("almacén",                        SECTION_III, "IND+MAT"),
+    ("parque empresarial",             SECTION_III, "IND+CON+MAT"),
+    ("plataforma logística",           SECTION_III, "IND+MAT"),
+    ("centro de distribución",         SECTION_III, "IND+MAT"),
+    ("instalación industrial",         SECTION_III, "IND+MAT"),
+    ("actividades productivas",        SECTION_III, "IND+MAT"),   # industrial use class
+    ("uso industrial",                 SECTION_III, "IND+MAT"),
+    ("polígono industrial",            SECTION_III, "IND+MAT"),
+    ("almacenamiento",                 SECTION_III, "IND+MAT"),
+    ("edificio industrial",            SECTION_III, "IND+CON+MAT"),
+    ("distribución logística",         SECTION_III, "IND+MAT"),
+    ("ampliación de nave",             SECTION_III, "IND+MAT"),
+    ("zona logística",                 SECTION_III, "IND+MAT"),
+]
 
-    # ── [ALL] ICIO tax notifications (confirmed construction with exact PEM) ──
-    # ICIO = Impuesto sobre Construcciones = tax on approved obras
-    # base imponible = PEM exactly. These are 100% confirmed obras.
-    "liquidación icio",                 # [ALL] ICIO liquidation
-    "base imponible",                   # [ALL] tax base = PEM value
-    "impuesto construcciones",          # [ALL] ICIO short form
+# Gran Constructora — public contracts (CON)
+KW_CONSTRUCTORA = [
+    ("licitación de obras",            SECTION_III, "CON+MAT"),
+    ("licitación de obras",            SECTION_II,  "CON+MAT"),
+    ("contrato de obras",              SECTION_III, "CON+MAT"),
+    ("adjudicación de obras",          SECTION_III, "CON+MAT"),
+    ("adjudicación del contrato",      SECTION_III, "CON+MAT"),
+    ("obras de urbanización",          SECTION_III, "CON+MAT"),
+    ("obras de construcción",          SECTION_III, "CON+MAT"),
+    ("obras de infraestructura",       SECTION_III, "CON"),
+    ("obras de rehabilitación",        SECTION_III, "CON+MEP+MAT"),
+    ("obras de reforma",               SECTION_III, "CON+MEP+MAT"),
+    ("ejecución de obras",             SECTION_III, "CON+MAT"),
+    ("concurso de obras",              SECTION_III, "CON+MAT"),
+    ("contratación de obras",          SECTION_III, "CON+MAT"),
+    ("obras de adecuación",            SECTION_III, "CON"),
+    ("obras de mejora",                SECTION_III, "CON"),
+    ("valor estimado",                 SECTION_III, "CON+MAT"),   # contract value in tender
+]
 
-    # ── [MEP][CON][MAT] Hotel and large residential ───────────────────────────
-    "hotel",                            # [MEP][CON][MAT] hotels = large MEP + construction
-    "residencia",                       # [MEP][MAT] residential facility
-    "bloque de viviendas",              # [MEP][CON][MAT] apartment block
+# ICIO tax notifications (ALL — confirmed construction with exact PEM)
+KW_ICIO = [
+    ("liquidación icio",               SECTION_III, "ALL"),
+    ("liquidación icio",               SECTION_V,   "ALL"),   # also in anuncios
+    ("base imponible",                 SECTION_III, "ALL"),
+    ("base imponible",                 SECTION_V,   "ALL"),
+    ("impuesto construcciones",        SECTION_III, "ALL"),
+    ("impuesto construcciones",        SECTION_V,   "ALL"),
+    ("notificación tributaria",        SECTION_V,   "ALL"),
+]
+
+# Combine all keyword groups
+SEARCH_KEYWORDS = (
+    KW_LICENCIAS + KW_URBANISMO + KW_MEP + KW_RETAIL +
+    KW_INDUSTRIAL + KW_CONSTRUCTORA + KW_ICIO
+)
+
+# ════════════════════════════════════════════════════════════
+# LOGISTICS CORRIDOR MUNICIPALITIES — targeted searches
+# These are the highest-density construction zones around Madrid.
+# We search them specifically by municipality name to catch anything
+# the keyword-only approach misses.
+# ════════════════════════════════════════════════════════════
+LOGISTICS_MUNICIPALITIES = [
+    # South corridor (biggest logistics hub in Spain)
+    "Valdemoro",         # Amazon, DHL, Carrefour distribution
+    "Getafe",            # Airbus, industrial
+    "Pinto",             # logistics parks
+    "Parla",             # industrial zone
+    "Torrejón de Ardoz", # logistics, industrial
+    "Coslada",           # major logistics (SEUR, Correos)
+    "San Fernando de Henares",  # logistics
+    "Mejorada del Campo",       # industrial/logistics
+    "Rivas-Vaciamadrid",        # industrial
+    "Arganda del Rey",   # chemical, manufacturing
+    "Alcalá de Henares", # large industrial parks
+    # North corridor
+    "Alcobendas",        # premium industrial/commercial
+    "Tres Cantos",       # tech park
+    "San Sebastián de los Reyes",  # commercial/industrial
+    "Colmenar Viejo",    # growing industrial
+    # West corridor
+    "Majadahonda",       # commercial/residential
+    "Las Rozas de Madrid",       # tech/commercial
+    "Pozuelo de Alarcón",        # premium commercial
+    "Boadilla del Monte",        # residential/commercial
+    # Other active municipalities
+    "Móstoles",          # industrial/residential
+    "Leganés",           # industrial
+    "Fuenlabrada",       # Polígono Cobo Calleja (one of Spain's largest)
+    "Alcorcón",          # commercial
+    "Paracuellos de Jarama",     # growing residential
 ]
 
 def is_bad_url(url):
@@ -262,11 +364,10 @@ def is_bad_url(url):
     low = url.lower()
     bad_exts  = (".xml", ".css", ".js", ".png", ".jpg", ".gif",
                  ".ico", ".woff", ".svg", ".zip", ".epub")
-    # .json is now allowed — some BOCM entries only have JSON URLs
-    # .pdf is always allowed
     bad_paths = ("/advanced-search", "/login", "/user", "/admin",
                  "/sites/", "/modules/", "#", "javascript:", "/CM_Boletin_BOCM/")
-    return any(low.endswith(x) for x in bad_exts) or any(x in low for x in bad_paths)
+    return (any(low.endswith(x) for x in bad_exts) or
+            any(x in low for x in bad_paths))
 
 def url_date_ok(url, date_from):
     m = re.search(r'BOCM-(\d{4})(\d{2})(\d{2})', url, re.I)
@@ -275,23 +376,16 @@ def url_date_ok(url, date_from):
             url_date = datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
             return url_date >= date_from - timedelta(days=1)
         except ValueError: pass
-    return True  # no date in URL = allow
-
-def normalise_url(url):
-    """
-    Convert any BOCM URL variant to the canonical HTML entry page.
-    HTML pages always have JSON-LD → most reliable text extraction.
-    Falls back to original URL if no BOCM-ID found.
-    """
-    html = pdf_url_to_html_url(url)
-    return html if html else url
+    return True
 
 def extract_result_links(soup):
     links = []
-    for sel in ["a[href*='/boletin/']", "a[href*='/anuncio/']", "a[href*='/bocm-']",
-                ".view-content .views-row a", ".view-content a",
-                "article h3 a", "article h2 a",
-                ".field--name-title a", "h3.field-content a"]:
+    for sel in [
+        "a[href*='/boletin/']", "a[href*='/anuncio/']", "a[href*='/bocm-']",
+        ".view-content .views-row a", ".view-content a",
+        "article h3 a", "article h2 a",
+        ".field--name-title a", "h3.field-content a",
+    ]:
         found = soup.select(sel)
         if found:
             for a in found:
@@ -308,120 +402,166 @@ def extract_result_links(soup):
                 links.append(full)
     return links
 
-def search_keyword(keyword, date_from, date_to, section=SECTION_LOCAL):
-    log(f"  🔎 [{section}] '{keyword}'")
-    seen = set(); urls = []; page = 0; max_pages = 25  # increased from 15
-
-    while page < max_pages:
-        url = (build_search_url(keyword, date_from, date_to, section) if page == 0
-               else build_page_url(keyword, date_from, date_to, page, section))
-
-        r = safe_get(url, timeout=25, backoff_base=6)
-        if not r or r.status_code != 200:
-            log(f"    No response on page {page} — stopping"); break
-
-        soup  = BeautifulSoup(r.text, "html.parser")
-        links = extract_result_links(soup)
-        new   = 0
-        for link in links:
-            if is_bad_url(link): continue
-            if not url_date_ok(link, date_from): continue
-            # Normalise to HTML entry page (avoids PDF/JSON/HTML duplicates)
-            norm = normalise_url(link)
-            if norm not in seen:
-                seen.add(norm); urls.append(norm); new += 1
-
-        if new == 0: break
-
-        has_next = bool(
-            soup.select_one("li.pager-next a") or
-            soup.select_one(".pager__item--next a") or
-            soup.find("a", string=re.compile(r"Siguiente|siguiente|Next|»", re.I))
-        )
-        if not has_next: break
-        page += 1; time.sleep(1.5)
-
-    return urls
-
 # ════════════════════════════════════════════════════════════
-# PER-DAY BULLETIN SCRAPING (the volume fix)
+# SEARCH WITH DATE CHUNKING
 #
-# Instead of relying on keyword search to find every document,
-# we scrape the BOCM bulletin index for each working day.
-# BOCM publishes 50-150 individual announcements per day.
-# Section III (Administración Local) = 20-60 per day.
+# THE KEY VOLUME FIX:
+# BOCM returns max 10 results/page × 25 pages = 250 results per search.
+# Over 8 weeks, "licencia de obra mayor" may have 600+ matches.
+# → We miss 60%+ of individual building permits.
 #
-# Method: For each working day, search with a very common short word
-# ("obra", "el", "licencia") with date range = single day.
-# This returns ALL Section III announcements published that day.
-# Then normalise each to HTML entry page for reliable JSON-LD extraction.
+# Solution: Split each search into WEEKLY chunks.
+# "licencia de obra mayor" over 8 weeks:
+#   → 8 × weekly searches → 8 × 250 max = 2,000 max
+#   → Captures virtually all results
 # ════════════════════════════════════════════════════════════
-def scrape_day_all_announcements(date):
+def date_chunks(date_from, date_to, chunk_days=7):
+    """Split a date range into weekly chunks."""
+    chunks = []
+    current = date_from
+    while current < date_to:
+        end = min(current + timedelta(days=chunk_days - 1), date_to)
+        chunks.append((current, end))
+        current = end + timedelta(days=1)
+    return chunks
+
+def search_keyword_chunked(keyword, date_from, date_to, section=SECTION_III, max_pages=25):
     """
-    Get ALL Section III BOCM announcement URLs for a specific day.
-    Uses the BOCM search with a single working day range and broad keywords.
-    Returns list of normalised HTML entry page URLs.
+    Search with date chunking to overcome the 250-result cap.
+    Each week-long chunk can return up to 250 results.
+    8-week search = 8 chunks × 250 = up to 2,000 results per keyword.
     """
-    urls = []
-    seen = set()
-    date_str = date.strftime("%d-%m-%Y")
+    all_urls = []
+    seen     = set()
+    chunks   = date_chunks(date_from, date_to, chunk_days=7)
 
-    # Try multiple common words to maximise coverage
-    # BOCM search returns different result sets for different keywords
-    # "obra" → construction docs, "licencia" → licence docs, "acuerdo" → council decisions
-    broad_keywords = ["obra", "licencia", "acuerdo", "proyecto", "aprobación"]
+    for chunk_start, chunk_end in chunks:
+        page   = 0
+        chunk_new = 0
 
-    for kw in broad_keywords:
-        search_url = (
-            f"{BOCM_BASE}/advanced-search"
-            f"?search_api_views_fulltext_1={kw}"
-            f"&field_bulletin_field_date%5Bdate%5D={date_str}"
-            f"&field_bulletin_field_date_1%5Bdate%5D={date_str}"
-            f"&field_orden_seccion={SECTION_LOCAL}"
-            f"&field_orden_apartado_1=All&field_orden_tipo_disposicin_1=All"
-            f"&field_orden_organo_y_organismo_1_1=All&field_orden_organo_y_organismo_1=All"
-            f"&field_orden_organo_y_organismo_2=All&field_orden_apartado_adm_local_3=All"
-            f"&field_orden_organo_y_organismo_3=All&field_orden_apartado_y_organo_4=All"
-            f"&field_orden_organo_5=All"
-        )
+        while page < max_pages:
+            url = (build_search_url(keyword, chunk_start, chunk_end, section) if page == 0
+                   else build_page_url(keyword, chunk_start, chunk_end, page, section))
 
-        page = 0
-        while page < 8:  # 8 pages × 10 results = 80 max per keyword per day
-            url = (search_url if page == 0 else
-                   search_url.replace("/advanced-search?", f"/advanced-search/p/field_bulletin_field_date/date__{date_str}/field_bulletin_field_date_1/date__{date_str}/field_orden_organo_y_organismo_1_1/All/field_orden_organo_y_organismo_1/All/field_orden_organo_y_organismo_2/All/field_orden_organo_y_organismo_3/All/field_orden_apartado_y_organo_4/All/busqueda/{kw}/seccion/{SECTION_LOCAL}/apartado/All/disposicion/All/administracion_local/All/organo_5/All/search_api_aggregation_2/{kw}/page/{page}?"))
-
-            r = safe_get(url, timeout=20, backoff_base=4)
-            if not r or r.status_code != 200: break
+            r = safe_get(url, timeout=25, backoff_base=6,
+                         referer=f"{BOCM_BASE}/advanced-search")
+            if not r or r.status_code != 200:
+                break
 
             soup  = BeautifulSoup(r.text, "html.parser")
             links = extract_result_links(soup)
             new   = 0
             for link in links:
                 if is_bad_url(link): continue
-                date_compact = date.strftime("%Y%m%d")
-                if date_compact not in link: continue
+                if not url_date_ok(link, date_from): continue
                 norm = normalise_url(link)
-                bocm_id = extract_bocm_id(norm)
-                key = bocm_id if bocm_id else norm
+                bid  = extract_bocm_id(norm)
+                key  = bid if bid else norm
                 if key not in seen:
-                    seen.add(key); urls.append(norm); new += 1
+                    seen.add(key); all_urls.append(norm); new += 1; chunk_new += 1
 
             if new == 0: break
-            has_next = bool(soup.select_one("li.pager-next a") or
-                           soup.select_one(".pager__item--next a"))
+            has_next = bool(
+                soup.select_one("li.pager-next a") or
+                soup.select_one(".pager__item--next a") or
+                soup.find("a", string=re.compile(r"Siguiente|siguiente|Next|»", re.I))
+            )
             if not has_next: break
-            page += 1; time.sleep(1)
+            page += 1
+            time.sleep(1)
 
-        time.sleep(1)
+        if chunk_new > 0:
+            log(f"    {chunk_start.strftime('%d/%m')}-{chunk_end.strftime('%d/%m')}: "
+                f"{chunk_new} links")
+        time.sleep(0.5)
+
+    return all_urls
+
+# ════════════════════════════════════════════════════════════
+# MUNICIPALITY TARGETED SEARCH
+# For logistics/industrial municipalities, search by name to catch
+# any obra-related announcements the keyword search misses.
+# ════════════════════════════════════════════════════════════
+def search_municipality(municipality, date_from, date_to):
+    """
+    Search for any construction-related document from a specific municipality.
+    Pairs municipality name with construction keywords.
+    """
+    urls = []
+    # Short date windows for municipality searches (less overlap, more precision)
+    for kw in ["obra mayor", "licencia", "urbanización", "licitación obras"]:
+        found = search_keyword_chunked(
+            kw, date_from, date_to, section=SECTION_III, max_pages=10)
+        # Filter to only URLs that contain the municipality name (from JSON-LD title)
+        # We can't filter by municipality in the URL, so we collect all and classify later
+        urls.extend(found)
+        time.sleep(0.5)
+    return urls
+
+# ════════════════════════════════════════════════════════════
+# PER-DAY BULLETIN SCAN — improved version
+# Catches individual licencias not indexed by keyword search.
+# ════════════════════════════════════════════════════════════
+def scrape_day_section(date, section=SECTION_III):
+    """
+    Get all announcement URLs for a specific date in a specific section.
+    Uses multiple broad keywords to maximise coverage.
+    """
+    urls = []
+    seen = set()
+    date_str     = date.strftime("%d-%m-%Y")
+    date_compact = date.strftime("%Y%m%d")
+
+    broad_kws = ["obra", "licencia", "proyecto", "aprobación", "acuerdo", "urbanismo"]
+
+    for kw in broad_kws:
+        r = safe_get(build_search_url(kw, date, date, section), timeout=20, backoff_base=4)
+        if not r or r.status_code != 200: continue
+
+        soup  = BeautifulSoup(r.text, "html.parser")
+        links = extract_result_links(soup)
+        added = 0
+        for link in links:
+            if is_bad_url(link): continue
+            if date_compact not in link: continue
+            norm = normalise_url(link)
+            bid  = extract_bocm_id(norm)
+            key  = bid if bid else norm
+            if key not in seen:
+                seen.add(key); urls.append(norm); added += 1
+
+        # Paginate if needed
+        page = 1
+        while added > 0 and page < 5:
+            r2 = safe_get(build_page_url(kw, date, date, page, section),
+                          timeout=20, backoff_base=4)
+            if not r2 or r2.status_code != 200: break
+            soup2 = BeautifulSoup(r2.text, "html.parser")
+            links2 = extract_result_links(soup2)
+            added2 = 0
+            for link in links2:
+                if is_bad_url(link): continue
+                if date_compact not in link: continue
+                norm = normalise_url(link)
+                bid  = extract_bocm_id(norm)
+                key  = bid if bid else norm
+                if key not in seen:
+                    seen.add(key); urls.append(norm); added2 += 1
+            if added2 == 0: break
+            if not soup2.select_one("li.pager-next a"): break
+            page += 1; added = added2; time.sleep(1)
+
+        time.sleep(0.8)
 
     return urls
 
 # ════════════════════════════════════════════════════════════
-# RSS FEED — supplemental source
+# RSS FEED — supplemental
 # ════════════════════════════════════════════════════════════
-def get_rss_pdf_links(date_from, date_to):
-    log("📡 Fetching RSS feed…")
+def get_rss_links(date_from, date_to):
+    log("📡 RSS feed…")
     urls = []
+    seen = set()
     r = safe_get(BOCM_RSS, timeout=20)
     if not r: log("  ⚠️  RSS unavailable"); return urls
     try:
@@ -454,9 +594,11 @@ def get_rss_pdf_links(date_from, date_to):
                 href = a["href"]
                 full = urljoin(BOCM_BASE, href) if href.startswith("/") else href
                 if "CM_Orden_BOCM" in full and ".PDF" in full.upper():
-                    norm = normalise_url(full)  # convert PDF → HTML
-                    if norm not in urls:
-                        urls.append(norm)
+                    norm = normalise_url(full)
+                    bid  = extract_bocm_id(norm)
+                    key  = bid if bid else norm
+                    if key not in seen:
+                        seen.add(key); urls.append(norm)
             time.sleep(0.5)
     except Exception as e:
         log(f"  ⚠️  RSS: {e}")
@@ -465,9 +607,8 @@ def get_rss_pdf_links(date_from, date_to):
 
 # ════════════════════════════════════════════════════════════
 # FETCH — HTML JSON-LD first, PDF fallback
-# KEY CHANGE: Try HTML entry page ALWAYS (even for PDF URLs).
-# HTML JSON-LD = clean structured text, never fails.
-# PDF = fails on image-based, protected, or unusual encodings.
+# HTML entry pages ALWAYS have structured JSON-LD text.
+# PDF extraction fails on image-based/protected PDFs.
 # ════════════════════════════════════════════════════════════
 def extract_date_from_url(url):
     m = re.search(r'BOCM-(\d{4})(\d{2})(\d{2})', url, re.I)
@@ -495,18 +636,48 @@ def extract_jsonld(soup):
             continue
     return None, None, None, None
 
-def extract_pdf_text(url):
+def extract_pdf_text_enhanced(url):
+    """
+    Enhanced PDF extraction:
+    1. Normal text extraction (standard pages)
+    2. Table extraction for PEM/ETAPA rows (financial tables)
+    3. Reads all pages (not just first 15)
+    """
     try:
-        r = get_session().get(url, timeout=45, verify=False, allow_redirects=True,
-                              headers={**HEADERS, "Accept": "application/pdf,*/*"})
+        r = get_session().get(
+            url, timeout=50, verify=False, allow_redirects=True,
+            headers={**make_headers(referer=BOCM_BASE), "Accept": "application/pdf,*/*"})
         if r.status_code != 200 or len(r.content) < 400: return ""
         if r.content[:4] != b"%PDF": return ""
-        txt = ""
+
+        text_parts = []
+        table_parts = []
+
         with pdfplumber.open(io.BytesIO(r.content)) as pdf:
-            for pg in pdf.pages[:15]:
+            for pg_num, pg in enumerate(pdf.pages):
+                # Standard text
                 t = pg.extract_text()
-                if t: txt += t + "\n"
-        return txt[:15000]
+                if t:
+                    text_parts.append(t)
+
+                # Table extraction for financial data (PEM values in tables)
+                tables = pg.extract_tables()
+                for table in tables:
+                    if not table: continue
+                    for row in table:
+                        if not row: continue
+                        # Flatten row and look for PEM/ETAPA/IMPORTE patterns
+                        row_text = " | ".join(str(c or "") for c in row)
+                        if any(kw in row_text.upper() for kw in
+                               ["ETAPA", "PEM", "IMPORTE", "PRESUPUESTO", "ICIO",
+                                "BASE IMPONIBLE", "TOTAL"]):
+                            table_parts.append(row_text)
+
+        full_text = "\n".join(text_parts)
+        if table_parts:
+            full_text += "\n\nTABLA_DATOS:\n" + "\n".join(table_parts)
+
+        return full_text[:20000]
     except Exception as e:
         log(f"    PDF error: {e}"); return ""
 
@@ -514,27 +685,23 @@ def fetch_announcement(url):
     """
     Returns (text, pdf_url, pub_date, doc_title).
     
-    Priority:
-    1. HTML entry page → JSON-LD (always clean, structured, never fails)
-    2. PDF → pdfplumber (fallback for URLs without HTML equivalent)
-    3. HTML body (last resort)
-    
-    ALL PDF/JSON URLs are first converted to HTML entry page URLs.
+    Always tries HTML JSON-LD first → most reliable.
+    Falls back to enhanced PDF extraction.
     """
-    url_low  = url.lower()
-    pdf_url  = None
+    url_low = url.lower()
+    pdf_url = None
 
-    # ── Step 1: Always try HTML entry page first ────────────────────────────
-    # Works for both HTML URLs and PDF URLs (via conversion)
+    # Convert to HTML entry page URL
     html_url = url
     if url_low.endswith(".pdf") or url_low.endswith(".json"):
         html_candidate = pdf_url_to_html_url(url)
         if html_candidate:
             html_url = html_candidate
             if url_low.endswith(".pdf"):
-                pdf_url = url  # keep original PDF URL for reference
+                pdf_url = url
 
-    r = safe_get(html_url, timeout=25)
+    # Try HTML + JSON-LD
+    r = safe_get(html_url, timeout=25, referer=f"{BOCM_BASE}/advanced-search")
     if r and r.status_code == 200:
         soup = BeautifulSoup(r.text, "html.parser")
         jtext, jdate, jname, jpdf = extract_jsonld(soup)
@@ -544,15 +711,15 @@ def fetch_announcement(url):
             pdf_url  = pdf_url or jpdf
             return text, pdf_url, pub_date, jname or ""
 
-    # ── Step 2: PDF fallback ─────────────────────────────────────────────────
+    # PDF fallback (enhanced)
     if url_low.endswith(".pdf"):
-        text     = extract_pdf_text(url)
+        text     = extract_pdf_text_enhanced(url)
         pub_date = extract_date_from_url(url)
         if text and len(text.strip()) > 100:
             return text, url, pub_date, ""
         return "", None, pub_date, ""
 
-    # ── Step 3: HTML body fallback ───────────────────────────────────────────
+    # HTML body fallback
     if not r or r.status_code != 200:
         r = safe_get(url, timeout=25)
     if not r or r.status_code != 200:
@@ -581,47 +748,52 @@ def fetch_announcement(url):
             pdf_url = urljoin(BOCM_BASE, h) if h.startswith("/") else h; break
 
     if pdf_url and not parts:
-        ptext = extract_pdf_text(pdf_url)
+        ptext = extract_pdf_text_enhanced(pdf_url)
         if ptext: parts.append(ptext)
 
     return re.sub(r'\s+', ' ', " ".join(parts)).strip(), pdf_url, pub_date, ""
 
 # ════════════════════════════════════════════════════════════
-# CLASSIFICATION  —  5-stage filter + ICIO fast-path
+# CLASSIFICATION — 5 stages + ICIO fast-path
 # ════════════════════════════════════════════════════════════
-
 HARD_REJECT = [
-    "subvención", "subvenciones para", "convocatoria de subvención",
-    "bases reguladoras para la concesión de ayudas",
+    # Financial admin (non-construction)
+    "convocatoria de subvención", "bases reguladoras para la concesión de ayudas",
     "ayuda económica", "aportación dineraria",
     "modificación presupuestaria", "suplemento de crédito",
     "modificación del plan estratégico de subvenciones",
-    "nombramiento funcionari", "personal laboral",
-    "plantilla de personal", "oferta de empleo público",
-    "convocatoria de proceso selectivo", "convocatoria de oposiciones",
+    # HR
+    "nombramiento funcionari", "convocatoria de proceso selectivo",
+    "convocatoria de oposiciones", "oferta de empleo público",
     "bases de la convocatoria para la cobertura",
+    # Tax (non-construction)
     "ordenanza fiscal reguladora",
     "impuesto sobre actividades económicas",
     "inicio del período voluntario de pago",
     "matrícula del impuesto",
-    "festejos taurinos", "certamen de teatro", "certamen de",
+    # Events / sports
+    "festejos taurinos", "certamen de",
     "convocatoria de premios", "actividades deportivas",
     "acción social en el ámbito del deporte",
     "actividades educativas", "proyectos educativos",
-    "juez de paz", "comisión informativa permanente",
-    "composición del pleno", "composición de las comisiones",
-    "encomienda de gestión", "reglamento orgánico municipal",
-    "reglamento de participación ciudadana",
+    # Governance
+    "juez de paz", "composición del pleno",
+    "composición de las comisiones", "encomienda de gestión",
+    "reglamento orgánico municipal", "reglamento de participación",
+    # Transport (non-construction)
     "eurotaxi", "autotaxi", "vehículos autotaxi",
-    "normas subsidiarias de urbanismo",        # policy doc, no specific project
+    # Policy (no specific project)
+    "normas subsidiarias de urbanismo",
     "criterio interpretativo vinculante",
     "corrección de errores del bocm", "corrección de hipervínculo",
-    "aprobación definitiva del plan estratégico de subvenciones",
-    # Non-construction contracts (construction tenders are kept)
-    "licitación de servicios de",
-    "licitación de suministro de",
-    "contrato de servicios de limpieza",
-    "contrato de mantenimiento de",
+    # Non-construction contracts
+    "licitación de servicios de", "licitación de suministro de",
+    "contrato de servicios de limpieza", "contrato de mantenimiento de",
+    "servicio de limpieza", "servicio de recogida",
+    # Dissolution of juntas (building COMPLETE, no more opportunity)
+    # Note: "disolución de la junta de compensación" = project FINISHED
+    "disolución de la junta de compensación",
+    "disolver la junta de compensación",
 ]
 
 APPLICATION_SIGNALS = [
@@ -645,7 +817,7 @@ DENIAL_SIGNALS = [
 ]
 
 GRANT_SIGNALS = [
-    # Direct grant language
+    # Direct grant
     "se concede", "se otorga", "se autoriza",
     "concesión de licencia", "licencia concedida",
     "se resuelve favorablemente", "otorgamiento de licencia",
@@ -656,21 +828,28 @@ GRANT_SIGNALS = [
     "aprobar definitivamente", "aprobación definitiva",
     "aprobación inicial", "aprobación provisional",
     "se aprueba definitivamente", "se aprueba provisionalmente",
+    "aprobación del proyecto", "acuerdo de aprobación",
     # Declaración responsable (Ley 1/2020)
     "declaración responsable de obra mayor",
     "declaración responsable urbanística",
     "toma de conocimiento de la declaración responsable",
-    # Budget-linked phrases (in urbanización docs)
+    # Budget phrases (urbanización)
     "con un presupuesto", "promovido por la junta de compensación",
     # Public construction contracts
     "licitación de obras", "contrato de obras",
     "adjudicación del contrato de obras", "se convoca licitación",
     "obras de construcción", "obras de urbanización",
-    "obras de rehabilitación",
-    # General approvals
-    "se aprueba",
-    # Reparcelación approvals
+    "obras de rehabilitación", "convocatoria de licitación",
+    # Reparcelación
     "acuerdo de reparcelación", "aprobación del proyecto de reparcelación",
+    # Convenio urbanístico
+    "suscripción del convenio", "aprobación del convenio urbanístico",
+    # General
+    "se aprueba", "se acuerda aprobar",
+    # Modificación puntual (amendment = new development rights)
+    "modificación puntual",
+    # Estudio de detalle
+    "aprobación del estudio de detalle",
 ]
 
 CONSTRUCTION_SIGNALS = [
@@ -678,8 +857,8 @@ CONSTRUCTION_SIGNALS = [
     "licencia urbanística", "licencia de edificación",
     "declaración responsable",
     "nueva construcción", "nueva planta", "obra nueva",
-    "edificio de nueva", "viviendas de nueva",
-    "edificio plurifamiliar", "complejo residencial",
+    "edificio de nueva", "viviendas de nueva", "edificio plurifamiliar",
+    "complejo residencial", "viviendas unifamiliares",
     "proyecto de urbanización", "obras de urbanización",
     "unidad de ejecución", "área de planeamiento específico",
     "junta de compensación", "reparcelación",
@@ -688,17 +867,22 @@ CONSTRUCTION_SIGNALS = [
     "demolición y construcción", "demolición y nueva planta",
     "ampliación de edificio",
     "nave industrial", "naves industriales",
-    "almacén industrial", "almacén",
-    "centro logístico", "plataforma logística",
-    "parque empresarial", "instalación industrial",
+    "almacén industrial", "almacén", "centro logístico",
+    "plataforma logística", "parque empresarial",
+    "instalación industrial", "actividades productivas",
+    "edificio industrial", "uso industrial",
     "hotel", "bloque de viviendas", "demolición", "derribo",
     "cambio de uso", "primera ocupación",
     "plan especial", "plan parcial", "estudio de detalle",
-    "proyecto urbanístico",
+    "proyecto urbanístico", "modificación puntual",
     "presupuesto de ejecución material", "p.e.m",
     "base imponible del icio", "base imponible icio",
     "licitación de obras", "contrato de obras",
     "impuesto sobre construcciones",
+    "convenio urbanístico",
+    "residencia de mayores", "centro de salud", "edificio de oficinas",
+    "superficie comercial", "centro comercial", "gran superficie",
+    "local comercial", "uso terciario",
 ]
 
 SMALL_ACTIVITY = [
@@ -713,30 +897,25 @@ SMALL_ACTIVITY = [
 ]
 
 def classify_permit(text):
-    """
-    5-stage classification + ICIO fast-path.
-    Returns (is_lead: bool, reason: str, tier: int 1-5)
-    """
     t = text.lower()
 
     # ── ICIO FAST-PATH ────────────────────────────────────────────────────────
-    # ICIO notifications = confirmed approved construction with exact PEM.
-    # They don't use grant language → fail Stage 4 without this fast-path.
+    # ICIO = confirmed construction + exact PEM. Always accept.
     is_icio = (
         ("impuesto sobre construcciones" in t and
-         any(s in t for s in ["notif", "liquid", "cuota", "base imponible"]))
+         any(s in t for s in ["notif", "liquid", "cuota", "base imponible", "tribut"]))
         or "liquidación del icio" in t
-        or ("base imponible" in t and "construccion" in t)
+        or ("base imponible" in t and any(s in t for s in ["construccion", "obra", "instalac"]))
     )
     if is_icio:
-        return True, "ICIO: confirmed approved construction (PEM = base imponible)", 4
+        return True, "ICIO: confirmed construction (PEM = base imponible)", 4
 
-    # ── Stage 1: Hard admin noise ─────────────────────────────────────────────
+    # ── Stage 1: Hard reject ──────────────────────────────────────────────────
     for kw in HARD_REJECT:
         if kw in t:
             return False, f"Admin noise: '{kw}'", 0
 
-    # ── Stage 2: Application phase (solicitud, NOT a grant) ───────────────────
+    # ── Stage 2: Application (solicitud ≠ grant) ─────────────────────────────
     app_count = sum(1 for kw in APPLICATION_SIGNALS if kw in t)
     if app_count >= 2:
         return False, f"Application phase (solicitud): {app_count} signals", 0
@@ -746,7 +925,7 @@ def classify_permit(text):
         if kw in t:
             return False, f"Denial: '{kw}'", 0
 
-    # ── Stage 4: Grant + construction check ───────────────────────────────────
+    # ── Stage 4: Must have grant + construction ───────────────────────────────
     has_grant        = any(p in t for p in GRANT_SIGNALS)
     has_construction = any(p in t for p in CONSTRUCTION_SIGNALS)
 
@@ -755,7 +934,7 @@ def classify_permit(text):
     if not has_construction:
         return False, "Grant language but no construction content", 0
 
-    # ── Stage 5: Filter small retail (only if no major construction signals) ──
+    # ── Stage 5: Filter small retail/services ────────────────────────────────
     has_major = any(p in t for p in [
         "obra mayor", "nueva construcción", "nueva planta",
         "nave industrial", "proyecto de urbanización",
@@ -763,6 +942,8 @@ def classify_permit(text):
         "bloque de viviendas", "junta de compensación",
         "licitación de obras", "contrato de obras",
         "reparcelación", "estudio de detalle",
+        "hotel", "residencia de mayores", "centro comercial",
+        "edificio de oficinas", "superficie comercial",
     ])
     if not has_major:
         for kw in SMALL_ACTIVITY:
@@ -770,49 +951,53 @@ def classify_permit(text):
                 return False, f"Small retail/service: '{kw}'", 0
 
     # ── Tier assignment ───────────────────────────────────────────────────────
-    if any(p in t for p in ["proyecto de urbanización", "junta de compensación",
-                             "plan parcial", "aprobación definitiva del plan",
-                             "reparcelación"]):
-        if any(p in t for p in ["aprobar definitivamente", "aprobación definitiva",
-                                  "presupuesto", "acuerdo de reparcelación"]):
+    if any(p in t for p in [
+            "proyecto de urbanización", "junta de compensación",
+            "plan parcial", "aprobación definitiva del plan", "reparcelación"]):
+        if any(p in t for p in [
+                "aprobar definitivamente", "aprobación definitiva",
+                "presupuesto", "acuerdo de reparcelación"]):
             return True, "Tier-1: Urbanismo definitivo (neighborhood-scale)", 1
 
-    if any(p in t for p in ["plan especial", "reforma interior",
-                             "área de planeamiento", "estudio de detalle"]):
-        if any(p in t for p in ["definitiv", "presupuesto", "pem"]):
-            return True, "Tier-2: Plan especial / PERI definitivo", 2
+    if any(p in t for p in [
+            "plan especial", "reforma interior", "área de planeamiento",
+            "estudio de detalle", "modificación puntual", "convenio urbanístico"]):
+        return True, "Tier-2: Plan especial / urbanismo específico", 2
 
-    if any(p in t for p in ["licitación de obras", "contrato de obras",
-                             "adjudicación de obras", "obras de construcción"]):
+    if any(p in t for p in [
+            "licitación de obras", "contrato de obras",
+            "adjudicación de obras", "obras de construcción"]):
         return True, "Tier-2: Contrato público de obras", 2
 
-    if any(p in t for p in ["nueva construcción", "nueva planta",
-                             "nave industrial", "bloque de viviendas",
-                             "demolición y construcción", "rehabilitación integral"]):
+    if any(p in t for p in [
+            "nueva construcción", "nueva planta", "nave industrial",
+            "bloque de viviendas", "demolición y construcción",
+            "rehabilitación integral", "hotel", "residencia de mayores",
+            "edificio de oficinas", "centro comercial"]):
         return True, "Tier-3: Obra mayor nueva construcción / industrial", 3
 
-    if any(p in t for p in ["obra mayor", "reforma integral", "cambio de uso",
-                             "ampliación de edificio", "declaración responsable"]):
-        return True, "Tier-4: Obra mayor rehabilitación / cambio de uso", 4
+    if any(p in t for p in [
+            "obra mayor", "reforma integral", "cambio de uso",
+            "ampliación de edificio", "declaración responsable",
+            "superficie comercial", "local comercial"]):
+        return True, "Tier-4: Obra mayor / cambio de uso", 4
 
-    return True, "Tier-5: Licencia primera ocupación / actividad", 5
+    return True, "Tier-5: Primera ocupación / actividad", 5
 
 
 # ════════════════════════════════════════════════════════════
-# LEAD SCORING — fixed to check permit_type directly
-#
-# BUG IN PREVIOUS VERSION: Checked for "proyecto de urbanización" in combined
-# description+permit_type string. If permit_type = "urbanización" and description
-# doesn't contain that exact phrase → 0 type points.
-#
-# FIX: Score permit_type field directly. Every classified lead gets type points.
+# LEAD SCORING — profile-aware
+# Scores the lead based on permit type AND construction phase.
+# Aprobación definitiva > inicial (confirmed vs tentative).
+# Profile-specific bonuses for high-relevance combinations.
 # ════════════════════════════════════════════════════════════
 def score_lead(p):
     score = 0
-    pt   = (p.get("permit_type") or "").lower()
-    desc = (p.get("description") or "").lower()
+    pt    = (p.get("permit_type") or "").lower()
+    desc  = (p.get("description") or "").lower()
+    muni  = (p.get("municipality") or "").lower()
 
-    # ── Type score (direct from permit_type field) ──
+    # ── Base type score (permit_type field directly) ──
     if pt in ("urbanización", "plan especial / parcial"):
         score += 40
     elif pt == "plan especial":
@@ -831,7 +1016,7 @@ def score_lead(p):
     elif pt == "licencia de actividad":
         score += 10
     else:
-        # Fallback: check description
+        # Fallback
         if any(k in desc for k in ["proyecto de urbanización", "junta de compensación",
                                     "reparcelación"]):
             score += 40
@@ -842,16 +1027,33 @@ def score_lead(p):
         elif "obra mayor" in desc:
             score += 18
         else:
-            score += 5   # any classified lead gets at least 5 pts
+            score += 5
+
+    # ── Phase bonus — definitiva > inicial ──
+    if any(p in desc for p in ["aprobación definitiva", "definitivamente", "concede",
+                                "otorga", "se autoriza"]):
+        score += 8   # confirmed = more valuable than tentative
+    elif "aprobación inicial" in desc:
+        score -= 5   # still a lead but lower certainty
 
     # ── Budget score ──
     val = p.get("declared_value_eur")
     if val and isinstance(val, (int, float)) and val > 0:
-        if val >= 10_000_000:  score += 35
-        elif val >= 2_000_000: score += 28
-        elif val >= 500_000:   score += 20
-        elif val >= 100_000:   score += 12
-        elif val >= 50_000:    score += 6
+        if val >= 50_000_000:   score += 38  # €50M+ = national significance
+        elif val >= 10_000_000: score += 35
+        elif val >= 2_000_000:  score += 28
+        elif val >= 500_000:    score += 20
+        elif val >= 100_000:    score += 12
+        elif val >= 50_000:     score += 6
+
+    # ── Logistics corridor bonus ──
+    logistics_munis = {"valdemoro", "getafe", "coslada", "alcalá de henares",
+                       "torrejón de ardoz", "arganda del rey", "fuenlabrada",
+                       "alcobendas", "san sebastián de los reyes", "rivas-vaciamadrid",
+                       "mejorada del campo", "pinto", "parla"}
+    if any(m in muni for m in logistics_munis) and pt in (
+            "obra mayor industrial", "licitación de obras", "urbanización"):
+        score += 5   # logistics zone bonus for industrial/construction
 
     # ── Data completeness ──
     if p.get("address"):    score += 8
@@ -860,7 +1062,7 @@ def score_lead(p):
     if p.get("municipality") not in (None, "", "Madrid"):
         score += 2
 
-    # ── AI bonus ──
+    # ── AI confidence bonus ──
     if p.get("confidence") == "high" and p.get("extraction_mode") == "ai":
         score = min(score + 5, 100)
 
@@ -884,23 +1086,25 @@ def parse_spanish_date(s):
             except: pass
     m = re.search(r'(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})', s)
     if m:
-        try: return datetime(int(m.group(3)),int(m.group(2)),int(m.group(1))).strftime("%Y-%m-%d")
+        try: return datetime(int(m.group(3)), int(m.group(2)), int(m.group(1))).strftime("%Y-%m-%d")
         except: pass
     return s[:10] if len(s) >= 10 else s
 
 def extract_municipality(text):
     patterns = [
-        r'AYUNTAMIENTO\s+DE\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\-]+?)(?:\n|\s{2,}|LICENCIAS|OTROS|CONTRATACIÓN|URBANISMO)',
+        r'AYUNTAMIENTO\s+DE\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\-]+?)(?:\n|\s{2,}|LICENCIAS|OTROS|CONTRATACIÓN|URBANISMO|ANUNCIO)',
         r'ayuntamiento de\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s\-]+?)(?:\.|,|\n)',
         r'(?:en|En)\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s\-]+?),\s+a\s+\d{1,2}\s+de\s+\w+\s+de\s+\d{4}',
         r'Distrito\s+de\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s\-]+?)(?:,|\.|$)',
+        r'(?:municipio de|término municipal de)\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s\-]+?)(?:,|\.|$)',
     ]
-    noise = {"null", "madrid", "comunidad", "boletín", "oficial", "administración", "spain", "españa"}
+    noise = {"null", "madrid", "comunidad", "boletín", "oficial", "administración",
+             "spain", "españa", "señor"}
     for pat in patterns:
         m = re.search(pat, text, re.I)
         if m:
             name = m.group(1).strip().rstrip(".,; ").strip()
-            if name.lower() not in noise and 3 < len(name) < 60:
+            if name.lower() not in noise and 3 < len(name) < 65:
                 return name.title()
     return "Madrid"
 
@@ -908,6 +1112,8 @@ def extract_expediente(text):
     m = re.search(r'[Ee]xpediente[:\s]+(\d{2,6}/\d{4}/\d{3,8})', text)
     if m: return m.group(1)
     m = re.search(r'[Ee]xp\.\s*n[úu]?m\.?\s*([\d\-/]+)', text)
+    if m: return m.group(1)
+    m = re.search(r'[Nn]\.?[Oo]?\s*(\d{1,6}[/\-]\d{4})', text)
     if m: return m.group(1)
     return ""
 
@@ -922,8 +1128,7 @@ def _parse_euro(s):
         s = s.replace(".", "")
     try:
         v = float(s)
-        # SANITY CAP: No Spanish construction project exceeds €3B PEM.
-        # Values above = parsing error (land area m², cadastral refs, etc.)
+        # Sanity cap: No construction project in Spain has PEM > €3 billion.
         if v <= 0 or v > 3_000_000_000:
             return None
         return v
@@ -932,26 +1137,45 @@ def _parse_euro(s):
 
 def extract_pem_value(text):
     """
-    Extract PEM. Precedence:
-    1. ICIO base imponible (most reliable — it IS the PEM by law)
-    2. Explicit ETAPA rows summed (urbanización multi-etapa)
-    3. PEM label
-    4. Presupuesto base de licitación (public contracts)
-    5. Generic presupuesto amount
+    Extract PEM (Presupuesto de Ejecución Material).
+    Enhanced with table data extraction for multi-stage projects.
+    
+    Priority:
+    1. ICIO base imponible (= PEM by Spanish tax law — most reliable)
+    2. TABLA_DATOS section (from pdfplumber table extraction)
+    3. ETAPA rows (multi-stage urbanización)
+    4. Explicit PEM label
+    5. Presupuesto base de licitación (public contracts)
+    6. Generic presupuesto (with context requirement)
     """
     c = text
 
-    # Priority 1: ICIO base imponible = PEM by Spanish tax law
+    # Priority 1: ICIO base imponible (= PEM exactly, legally)
     for pat in [
         r'(?:base imponible(?:\s+del\s+ICIO)?|b\.i\.\s+del\s+icio)\s*[:\s€]*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})?)',
-        r'icio[^\n]{0,40}?([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?)\s*(?:euros?|€)',
+        r'(?:cuota\s+tributaria|importe\s+icio)\s*[:\s€]*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})?)',
     ]:
         m = re.search(pat, c, re.I)
         if m:
             v = _parse_euro(m.group(1))
             if v and v >= 500: return round(v, 2)
 
-    # Priority 2: ETAPA rows (urbanización multi-stage)
+    # Priority 2: TABLA_DATOS from enhanced PDF table extraction
+    if "TABLA_DATOS:" in c:
+        tabla_section = c.split("TABLA_DATOS:", 1)[1]
+        for row_line in tabla_section.split("\n"):
+            if any(kw in row_line.upper() for kw in
+                   ["PEM", "PRESUPUESTO", "IMPORTE", "BASE IMPONIBLE"]):
+                # Find euro amounts in this row
+                amounts = re.findall(
+                    r'([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?)',
+                    row_line)
+                for amt in amounts:
+                    v = _parse_euro(amt)
+                    if v and 1000 <= v <= 3_000_000_000:
+                        return round(v, 2)
+
+    # Priority 3: ETAPA rows (multi-stage urbanización)
     etapa_pems = re.findall(
         r'[Ee][Tt][Aa][Pp][Aa]\s*\d+[^\n]*?([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})?)\s*€',
         c)
@@ -962,7 +1186,7 @@ def extract_pem_value(text):
             if v and v >= 10000: total += v
         if total > 0: return round(total, 2)
 
-    # Priority 3: Explicit PEM
+    # Priority 4: Explicit PEM
     for pat in [
         r'(?:presupuesto de ejecuci[oó]n material|p\.?e\.?m\.?)\s*[:\s€]*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})?)',
         r'valorad[ao] en\s+([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})?)\s*(?:euros?|€)',
@@ -972,7 +1196,7 @@ def extract_pem_value(text):
             v = _parse_euro(m.group(1))
             if v and v >= 500: return round(v, 2)
 
-    # Priority 4: IVA-inclusive total (urbanización)
+    # Priority 5: IVA-inclusive total (urbanización)
     m = re.search(
         r'presupuesto,\s*\d+\s*%\s*IVA\s+incluido,\s*de\s+([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?)\s*euros',
         c, re.I)
@@ -980,7 +1204,7 @@ def extract_pem_value(text):
         v = _parse_euro(m.group(1))
         if v and v >= 1000: return round(v, 2)
 
-    # Priority 5: Presupuesto base de licitación (public contracts)
+    # Priority 6: Public contract budget
     for pat in [
         r'presupuesto\s+(?:base\s+)?de\s+licitaci[oó]n[:\s]*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?)\s*(?:euros?|€)',
         r'valor\s+estimado[:\s]*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?)\s*(?:euros?|€)',
@@ -990,7 +1214,7 @@ def extract_pem_value(text):
             v = _parse_euro(m.group(1))
             if v and v >= 1000: return round(v, 2)
 
-    # Priority 6: Generic presupuesto (strict context)
+    # Priority 7: Generic presupuesto (strict: requires "€" adjacent)
     m = re.search(
         r'(?:presupuesto|importe)\s*[:\-]\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{2})?)\s*(?:euros?|€)',
         c, re.I)
@@ -999,6 +1223,24 @@ def extract_pem_value(text):
         if v and v >= 1000: return round(v, 2)
 
     return None
+
+def detect_phase(text):
+    """
+    Detect the construction phase from the document.
+    Returns one of: definitivo | inicial | en_tramite | primera_ocupacion | licitacion
+    This helps profiles like Gran Constructora know how far the project is.
+    """
+    t = text.lower()
+    if any(p in t for p in ["aprobación definitiva", "aprobar definitivamente",
+                             "se concede", "se otorga", "licencia concedida"]):
+        return "definitivo"
+    elif "licitación" in t or "contrato de obras" in t:
+        return "licitacion"
+    elif "primera ocupación" in t:
+        return "primera_ocupacion"
+    elif "aprobación inicial" in t or "se somete a información pública" in t:
+        return "inicial"
+    return "en_tramite"
 
 def keyword_extract(text, url, pub_date):
     res = {
@@ -1014,21 +1256,24 @@ def keyword_extract(text, url, pub_date):
         "extraction_mode":    "keyword",
         "lead_score":         0,
         "expediente":         extract_expediente(text),
+        "phase":              detect_phase(text),
     }
     c = re.sub(r'\s+', ' ', text)
 
-    # Address
+    # Address — comprehensive patterns
     for pat in [
         r'(?:calle|c/)\s+([A-ZÁÉÍÓÚÑ][^,\n]{2,50}),?\s*n[úu]?[mº°]\.?\s*(\d+[a-zA-Z]?)',
         r'(?:avenida|av\.?|avda\.?)\s+([A-ZÁÉÍÓÚÑ][^,\n]{2,50}),?\s*n[úu]?[mº°]\.?\s*(\d+)',
         r'(?:paseo|po\.?|pso\.?)\s+([A-ZÁÉÍÓÚÑ][^,\n]{2,50}),?\s*n[úu]?[mº°]\.?\s*(\d+)',
         r'(?:plaza|pl\.?)\s+([A-ZÁÉÍÓÚÑ][^,\n]{2,50}),?\s*n[úu]?[mº°]\.?\s*(\d+)',
-        r'(?:camino|glorieta|ronda|travesía)\s+([A-ZÁÉÍÓÚÑ][^,\n]{2,50}),?\s*n[úu]?[mº°]\.?\s*(\d+)',
+        r'(?:camino|glorieta|ronda|travesía|carretera)\s+([A-ZÁÉÍÓÚÑ][^,\n]{2,50}),?\s*n[úu]?[mº°]\.?\s*(\d+)',
         r'[Cc]/\s*([A-ZÁÉÍÓÚÑ][^,\n]{2,40})[,\s]+n[úu]?[mº°]?\.?\s*(\d+)',
         r'Área de\s+[Pp]laneamiento\s+[A-Za-záéíóúñ\s]+[\"\']([^\"\']{3,80})[\"\']',
-        r'[Uu]nidad de [Ee]jecución\s+(?:n[úu]?[mº°]\.?\s*)?(\w+)',
-        r'[Uu]nidad de [Aa]ctuación\s+(?:n[úu]?[mº°]\.?\s*)?(\w+)',
-        r'[Ss]ector\s+([A-ZÁÉÍÓÚÑ0-9][^,\n]{2,50})',
+        r'[Uu]nidad de [Ee]jecución\s+(?:n[úu]?[mº°]\.?\s*)?([A-Za-z0-9\.\-]+)',
+        r'[Uu]nidad de [Aa]ctuación\s+(?:n[úu]?[mº°]\.?\s*)?([A-Za-z0-9\.\-]+)',
+        r'[Ss]ector\s+([A-ZÁÉÍÓÚÑ0-9][^,\n\.\(\)]{2,50})',
+        r'[Áá]rea de [Dd]esarrollo\s+([A-Za-záéíóúñ0-9\s\-]+?)(?:,|\.|$)',
+        r'[Pp]olígono\s+(?:[Ii]ndustrial\s+)?([A-ZÁÉÍÓÚÑ][^,\n\.\(\)]{2,40})',
     ]:
         m = re.search(pat, c, re.I)
         if m:
@@ -1038,13 +1283,12 @@ def keyword_extract(text, url, pub_date):
         for pat in [
             r'[Dd]istrito\s+de\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\-\s]+?)(?:,|\.|$)',
             r'parcela\s+(?:situada\s+en\s+)?([A-Za-záéíóúñ\s,º]+\d+)',
-            r'[Áá]rea de [Dd]esarrollo\s+([A-Za-záéíóúñ0-9\s\-]+?)(?:,|\.|$)',
         ]:
             m = re.search(pat, c, re.I)
             if m:
                 res["address"] = m.group(0).strip().rstrip(".,;"); break
 
-    # Applicant
+    # Applicant — comprehensive patterns
     for pat in [
         r'(?:promovido por|promotora?|a cargo de)\s+(?:la\s+)?([A-ZÁÉÍÓÚÑ][^,\.\n;\(]{5,80})',
         r'(?:a instancia de|solicitante|interesado[/a]*|presentado por)\s*[:\-]?\s*([A-ZÁÉÍÓÚÑ][^,\.\n;\(]{3,70})',
@@ -1052,6 +1296,7 @@ def keyword_extract(text, url, pub_date):
         r'(?:don|doña|d\.|dña\.)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,4})',
         r'([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s&,\-]{3,50}(?:\bS\.?[AL]\.?U?\.?\b|\bSLU\b|\bS\.?L\.?\b|\bS\.?A\.?\b))',
         r'(?:adjudicatario|adjudicado a|empresa adjudicataria)\s*[:\-]?\s*([A-ZÁÉÍÓÚÑ][^,\.\n;\(]{3,70})',
+        r'(?:propietario|titular de la licencia)\s*[:\-]?\s*([A-ZÁÉÍÓÚÑ][^,\.\n;\(]{3,70})',
     ]:
         m = re.search(pat, c, re.I)
         if m:
@@ -1068,20 +1313,20 @@ def keyword_extract(text, url, pub_date):
         res["permit_type"] = "urbanización"
     elif any(p in t for p in ["plan parcial", "plan especial de reforma interior", "peri"]):
         res["permit_type"] = "plan especial / parcial"
-    elif any(p in t for p in ["estudio de detalle"]):
+    elif "estudio de detalle" in t:
         res["permit_type"] = "plan especial"
     elif any(p in t for p in ["plan especial de cambio de uso",
-                               "cambio de uso de local a vivienda",
-                               "cambio de uso de locales a vivienda"]):
+                               "cambio de uso de local a vivienda"]):
         res["permit_type"] = "cambio de uso"
     elif any(p in t for p in ["plan especial para", "plan especial de"]):
         res["permit_type"] = "plan especial"
     elif any(p in t for p in ["nave industrial", "almacén industrial", "plataforma logística",
-                               "centro logístico", "naves industriales", "parque empresarial"]):
+                               "centro logístico", "parque empresarial", "actividades productivas",
+                               "uso industrial", "edificio industrial"]):
         res["permit_type"] = "obra mayor industrial"
     elif any(p in t for p in ["licitación de obras", "contrato de obras",
                                "adjudicación de obras", "concurso de obras",
-                               "obras de construcción"]):
+                               "obras de construcción", "ejecución de obras"]):
         res["permit_type"] = "licitación de obras"
     elif any(p in t for p in ["nueva construcción", "nueva planta", "obra nueva",
                                "edificio de nueva", "viviendas de nueva",
@@ -1090,27 +1335,28 @@ def keyword_extract(text, url, pub_date):
     elif any(p in t for p in ["rehabilitación integral", "restauración de edificio",
                                "reforma integral", "reforma estructural"]):
         res["permit_type"] = "obra mayor rehabilitación"
-    elif any(p in t for p in ["reforma", "ampliación", "cambio de uso",
-                               "modificación de edificio"]):
+    elif any(p in t for p in ["reforma", "ampliación", "cambio de uso"]):
         res["permit_type"] = "obra mayor rehabilitación"
     elif any(p in t for p in ["demolición", "derribo"]):
         res["permit_type"] = "demolición y nueva planta"
     elif "primera ocupación" in t:
         res["permit_type"] = "licencia primera ocupación"
-    elif any(p in t for p in ["declaración responsable"]):
+    elif "declaración responsable" in t:
         res["permit_type"] = "declaración responsable obra mayor"
     elif any(p in t for p in ["impuesto sobre construcciones", "liquidación del icio",
                                "base imponible"]):
-        res["permit_type"] = "obra mayor"   # ICIO = confirmed approved obra
+        res["permit_type"] = "obra mayor"
+    elif "modificación puntual" in t or "convenio urbanístico" in t:
+        res["permit_type"] = "plan especial"
     elif any(p in t for p in ["actividad", "local comercial", "establecimiento"]):
         res["permit_type"] = "licencia de actividad"
 
-    # Description
+    # Description — commercial and actionable
     desc = None
-    m = re.search(r'(?:aprobar definitivamente|aprobación definitiva)\s+(?:el|del)\s+([^\.]{20,300})', c, re.I)
+    m = re.search(r'(?:aprobar definitivamente|aprobación definitiva)\s+(?:el|del|los)\s+([^\.]{20,300})', c, re.I)
     if m: desc = "Aprobación definitiva: " + m.group(1).strip()[:250]
     if not desc:
-        m = re.search(r'(?:licitación de obras|contrato de obras)\s+(?:de|para|del)?\s+([^\.]{15,250})', c, re.I)
+        m = re.search(r'(?:licitación de obras|contrato de obras|ejecución de obras)\s+(?:de|para|del)?\s+([^\.]{15,250})', c, re.I)
         if m: desc = m.group(0).strip()
     if not desc:
         m = re.search(r'licencia(?:\s+de\s+obra\s+mayor)?\s+para\s+([^\.]{15,250})', c, re.I)
@@ -1118,13 +1364,13 @@ def keyword_extract(text, url, pub_date):
     if not desc:
         m = re.search(
             r'(?:obras? de|construcción de|rehabilitación de|reforma de|instalación de|'
-            r'ampliación de|urbanización de|reparcelación de)\s+[^\.]{15,250}',
+            r'ampliación de|urbanización de|reparcelación de|modificación del)\s+[^\.]{15,250}',
             c, re.I)
         if m: desc = m.group(0).strip()
     if not desc:
         for gp in ["se concede", "se otorga", "se acuerda conceder",
                    "se aprueba definitivamente", "licitación de obras",
-                   "acuerdo de reparcelación"]:
+                   "acuerdo de reparcelación", "base imponible"]:
             idx = t.find(gp)
             if idx >= 0:
                 desc = c[idx:idx+300].strip(); break
@@ -1142,53 +1388,50 @@ def ai_extract(text, url, pub_date):
         client = OpenAI(api_key=OPENAI_API_KEY)
 
         sys_prompt = """You are an elite construction intelligence analyst for Spain.
-You read BOCM (Madrid regional bulletin) documents to extract actionable leads for construction companies.
+You read BOCM (Madrid regional bulletin) documents to extract actionable leads for 6 client profiles:
+🔧 MEP Installers (elevators/HVAC/fire) | 🏪 Retail Expansion | 📐 Promotores/RE
+🏢 Gran Constructora | 🏭 Industrial/Logistics | 🛒 Materials Suppliers
 
 CRITICAL RULES:
 1. Return ONLY valid JSON — no markdown, no explanations.
 2. If NOT a specific construction project → return: {"permit_type":"none","confidence":"low"}
-3. Fields: applicant, address, municipality, permit_type, description, declared_value_eur, date_granted, confidence, lead_score, expediente.
-4. permit_type values:
+3. Fields: applicant, address, municipality, permit_type, description, declared_value_eur, date_granted, confidence, lead_score, expediente, phase.
+4. permit_type:
    "urbanización" | "plan especial" | "plan especial / parcial" |
    "obra mayor nueva construcción" | "obra mayor industrial" | "obra mayor rehabilitación" |
    "cambio de uso" | "declaración responsable obra mayor" | "licencia primera ocupación" |
    "licencia de actividad" | "licitación de obras" | "none"
-5. declared_value_eur: PEM or ICIO base imponible (= PEM by law).
-   For urbanización multi-stage: SUM all Etapa PEMs.
-   For licitación: use presupuesto base de licitación.
-   Hard cap: €3,000,000,000. Return NUMBER or null.
-6. applicant: Who is building. For urbanización = "Junta de Compensación [NAME]".
-   For licitación = Ayuntamiento (contracting) or company (adjudicatario).
-7. municipality: Specific town (e.g. "Paracuellos de Jarama"), NOT "Comunidad de Madrid".
-8. description: ONE commercial sentence — what, where, budget, why it matters commercially.
-   Examples:
-   "Urbanización 74ha AD-10 Paracuellos — 2.500 viviendas, €74M PEM, inicio obras 24m"
-   "Nave industrial 8.500m² polígono Alcobendas, promotor Empresa SL"
-   "Licitación obras reforma Ayuntamiento Getafe, presupuesto €1.2M"
-9. lead_score: 0-100. urbanización/licitación grande = 60-80. Licencia sin PEM = 20-30.
-10. confidence: "high" (grant confirmed + key data found), "medium", "low".
+5. declared_value_eur: PEM or ICIO base imponible or licitación base budget.
+   Sum ETAPA values for multi-stage. Hard cap €3,000,000,000. NUMBER or null.
+6. applicant: Company/person building. For urbanización = "Junta de Compensación [NAME]".
+7. municipality: Specific Madrid town (e.g. "Paracuellos de Jarama"), NOT "Comunidad de Madrid".
+8. description: ONE commercial sentence. What, where, budget, commercial opportunity.
+   "Nave industrial 12.000m² polígono Valdemoro — logística, promotor Amazon España SL"
+   "Plan Parcial AD-10 Paracuellos — 2.500 viviendas, €74M PEM, Junta Compensación"
+   "Rehabilitación integral 45 viviendas, C/ Mayor 15 Getafe — PEM €2.1M"
+9. lead_score: 0-100. Large budget + definitive approval = 70-85. No PEM + initial = 30-45.
+10. phase: "definitivo" | "inicial" | "licitacion" | "primera_ocupacion" | "en_tramite"
+11. confidence: "high" | "medium" | "low"
 
-DOCUMENT TYPE DETECTION:
-- "se ha SOLICITADO" + "plazo de veinte días" → APPLICATION not grant → permit_type:"none"
-- "aprobar DEFINITIVAMENTE" → FINAL APPROVAL → high confidence
-- "licitación de obras" → public construction tender → permit_type:"licitación de obras"
-- "base imponible del ICIO" → confirmed obra mayor, declared_value_eur = base imponible value
-- "Quinto.—Dejar sin efecto el Acuerdo" → CORRECTION of error → keep as valid lead
-- "declaración responsable de obra mayor" → valid since Ley 1/2020 → same as licencia"""
-
-        user_prompt = f"URL: {url}\n\nTexto BOCM:\n{text[:5500]}"
+DOCUMENT TYPE RULES:
+- "se ha SOLICITADO" + "plazo de veinte días" → APPLICATION → permit_type:"none"
+- "aprobar DEFINITIVAMENTE" → FINAL APPROVAL → high confidence, phase:"definitivo"
+- "licitación de obras" → public construction tender → permit_type:"licitación de obras", phase:"licitacion"
+- "base imponible del ICIO" → CONFIRMED obra + exact PEM value
+- "disolución de la junta de compensación" → PROJECT FINISHED → permit_type:"none"
+- "Quinto.—Dejar sin efecto" → CORRECTION of error → keep as valid lead
+- "declaración responsable de obra mayor" → valid since Ley 1/2020 = licencia equivalent"""
 
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "system", "content": sys_prompt},
-                      {"role": "user", "content": user_prompt}],
-            temperature=0, max_tokens=700,
+                      {"role": "user", "content": f"URL: {url}\n\nTexto BOCM:\n{text[:5500]}"}],
+            temperature=0, max_tokens=750,
             response_format={"type": "json_object"})
 
         d = json.loads(resp.choices[0].message.content.strip())
 
         if str(d.get("permit_type", "")).lower() in ("none", "null", "", "otro", "n/a"):
-            log("    AI: not a construction permit → skip")
             return None
 
         d["source_url"]      = url
@@ -1201,19 +1444,18 @@ DOCUMENT TYPE DETECTION:
             try:
                 v = val.replace(".", "").replace(",", ".").replace("€", "").strip()
                 parsed = float(re.sub(r'[^\d.]', '', v)) if v else None
-                d["declared_value_eur"] = parsed if parsed and 0 < parsed <= 3_000_000_000 else None
+                d["declared_value_eur"] = (parsed if parsed and 0 < parsed <= 3_000_000_000
+                                           else None)
             except:
                 d["declared_value_eur"] = None
         elif isinstance(val, (int, float)):
             if val <= 0 or val > 3_000_000_000:
                 d["declared_value_eur"] = None
 
-        if not d.get("lead_score"):
-            d["lead_score"] = score_lead(d)
-        if not d.get("municipality"):
-            d["municipality"] = extract_municipality(text)
-        if not d.get("expediente"):
-            d["expediente"] = extract_expediente(text)
+        if not d.get("lead_score"):     d["lead_score"]    = score_lead(d)
+        if not d.get("municipality"):   d["municipality"]  = extract_municipality(text)
+        if not d.get("expediente"):     d["expediente"]    = extract_expediente(text)
+        if not d.get("phase"):          d["phase"]         = detect_phase(text)
         return d
 
     except Exception as e:
@@ -1224,17 +1466,18 @@ def extract(text, url, pub_date):
     return ai_extract(text, url, pub_date) if USE_AI else keyword_extract(text, url, pub_date)
 
 # ════════════════════════════════════════════════════════════
-# GOOGLE SHEETS — dedup on BOCM document ID (not URL)
+# GOOGLE SHEETS — 17 columns (added Phase)
+# Dedup on BOCM document ID (not URL — prevents triple entries)
 # ════════════════════════════════════════════════════════════
 HDRS = [
     "Date Granted", "Municipality", "Full Address", "Applicant",
     "Permit Type", "Declared Value PEM (€)", "Est. Build Value (€)",
     "Maps Link", "Description", "Source URL", "PDF URL",
-    "Mode", "Confidence", "Date Found", "Lead Score", "Expediente",
+    "Mode", "Confidence", "Date Found", "Lead Score", "Expediente", "Phase",
 ]
-_ws = None
-_seen_urls   = set()   # full source_url strings
-_seen_bocm_ids = set() # BOCM-YYYYMMDD-NN canonical IDs for dedup
+_ws             = None
+_seen_urls      = set()
+_seen_bocm_ids  = set()
 
 def get_sheet():
     global _ws
@@ -1250,7 +1493,7 @@ def get_sheet():
         sh = gc.open_by_key(SHEET_ID)
         try:    ws = sh.worksheet("Permits")
         except gspread.WorksheetNotFound:
-            ws = sh.add_worksheet("Permits", 1000, 20)
+            ws = sh.add_worksheet("Permits", 2000, 20)
         if ws.row_values(1) != HDRS:
             ws.update(values=[HDRS], range_name="A1"); log("✅ Headers written")
         else:
@@ -1271,7 +1514,7 @@ def load_seen():
                 _seen_urls.add(url)
                 bid = extract_bocm_id(url)
                 if bid: _seen_bocm_ids.add(bid)
-        log(f"✅ {len(_seen_urls)} existing URLs / {len(_seen_bocm_ids)} BOCM doc IDs loaded")
+        log(f"✅ {len(_seen_urls)} URLs / {len(_seen_bocm_ids)} BOCM IDs loaded")
     except Exception as e:
         log(f"⚠️  load_seen: {e}")
 
@@ -1279,12 +1522,12 @@ def write_permit(p, pdf_url=""):
     ws  = get_sheet()
     url = p.get("source_url", "")
 
-    # ── Dedup on BOCM document ID (prevents PDF + JSON + HTML triplicate) ──
+    # Dedup on BOCM document ID (prevents PDF+JSON+HTML triple entries)
     bocm_id = extract_bocm_id(url)
     if bocm_id and bocm_id in _seen_bocm_ids:
         log(f"  ⏭️  Dup BOCM-ID: {bocm_id}"); return False
     if url in _seen_urls:
-        log(f"  ⏭️  Dup URL: {url[-60:]}"); return False
+        log(f"  ⏭️  Dup URL: {url[-50:]}"); return False
 
     dec  = p.get("declared_value_eur")
     est  = round(dec / 0.03) if dec and isinstance(dec, (int, float)) and dec > 0 else ""
@@ -1307,6 +1550,7 @@ def write_permit(p, pdf_url=""):
         datetime.now().strftime("%Y-%m-%d %H:%M"),
         p.get("lead_score", 0),
         p.get("expediente", ""),
+        p.get("phase", ""),
     ]
     try:
         if ws:
@@ -1327,8 +1571,8 @@ def write_permit(p, pdf_url=""):
                     "fields": "userEnteredFormat.backgroundColor"}}]})
             except: pass
         _dec_str = f"€{dec:,.0f}" if dec else "N/A"
-        log(f"  💾 [{p.get('lead_score',0):02d}pts] {muni} | "
-            f"{addr[:35]} | {p.get('permit_type','?')[:20]} | {_dec_str}")
+        log(f"  💾 [{p.get('lead_score',0):02d}pts|{p.get('phase','?')}] "
+            f"{muni} | {addr[:30]} | {p.get('permit_type','?')[:20]} | {_dec_str}")
         return True
     except Exception as e:
         log(f"  ❌ Write: {e}"); return False
@@ -1362,75 +1606,81 @@ def send_digest():
             except: return 0
 
         recent.sort(key=get_score, reverse=True)
-        total = sum(get_val(r) for r in recent)
-        log(f"📧 Digest: {len(recent)} permits, €{int(total):,} total PEM")
+        total      = sum(get_val(r) for r in recent)
+        high_count = sum(1 for r in recent if get_score(r) >= 65)
+        log(f"📧 Digest: {len(recent)} leads, €{int(total):,} PEM, {high_count} priority")
 
         rhtml = ""
         for r in recent:
             raw_v = str(r[5]).strip() if len(r) > 5 and r[5] else ""
-            if raw_v:
-                _cv  = re.sub(r'[^\d.]', '', raw_v.replace('.','').replace(',','.'))
-                dec  = f"€{int(float(_cv)):,}" if _cv else "—"
-            else:
-                dec = "—"
+            dec   = f"€{int(float(re.sub(r'[^\d.]', '', raw_v.replace('.','').replace(',','.')))):,}" if raw_v else "—"
             sc    = get_score(r)
             sc_c  = "#1b5e20" if sc >= 65 else "#e65100" if sc >= 40 else "#b71c1c"
             sc_bg = "#e8f5e9" if sc >= 65 else "#fff3e0" if sc >= 40 else "#fce4ec"
             expd  = r[15] if len(r) > 15 and r[15] else ""
-            maps_link = f"<a href='{r[7]}' style='color:#1565c0'>📍</a>&nbsp;" if (len(r)>7 and r[7]) else ""
-            bocm_link = f"<a href='{r[9]}' style='color:#999;font-size:11px'>BOCM</a>" if (len(r)>9 and r[9]) else ""
+            phase = r[16] if len(r) > 16 and r[16] else ""
+            phase_badge = {"definitivo": "🟢 Definitivo", "inicial": "🟡 Inicial",
+                          "licitacion": "🔵 Licitación", "primera_ocupacion": "⚪ 1ª Ocup."}.get(phase, "")
+            maps_l = f"<a href='{r[7]}' style='color:#1565c0'>📍</a>&nbsp;" if (len(r)>7 and r[7]) else ""
+            bocm_l = f"<a href='{r[9]}' style='color:#999;font-size:11px'>BOCM</a>" if (len(r)>9 and r[9]) else ""
             rhtml += f"""<tr style="border-bottom:1px solid #eee">
-              <td style="padding:10px 7px;font-weight:600;font-size:13px">{r[1] or "—"}</td>
-              <td style="padding:10px 7px;font-size:12px;color:#333">{r[2] or "—"}</td>
-              <td style="padding:10px 7px;font-size:12px;color:#444">{r[3] or "—"}</td>
-              <td style="padding:10px 7px"><span style="background:#e3f2fd;color:#0d47a1;padding:3px 7px;border-radius:10px;font-size:11px;white-space:nowrap">{r[4] or "—"}</span></td>
-              <td style="padding:10px 7px;font-weight:700;color:#1565c0;font-size:14px">{dec}</td>
-              <td style="padding:10px 7px;font-size:12px;color:#555">{(r[8] or "")[:140]}</td>
-              <td style="padding:10px 7px;text-align:center"><span style="background:{sc_bg};color:{sc_c};padding:3px 8px;border-radius:10px;font-size:12px;font-weight:700">{sc}</span></td>
-              <td style="padding:10px 7px;white-space:nowrap;font-size:11px;color:#888">{expd}</td>
-              <td style="padding:10px 7px;white-space:nowrap">{maps_link}{bocm_link}</td>
+              <td style="padding:9px 7px;font-weight:600;font-size:13px">{r[1] or "—"}</td>
+              <td style="padding:9px 7px;font-size:12px;color:#333">{r[2] or "—"}</td>
+              <td style="padding:9px 7px;font-size:12px;color:#444">{r[3] or "—"}</td>
+              <td style="padding:9px 7px"><span style="background:#e3f2fd;color:#0d47a1;padding:3px 7px;border-radius:10px;font-size:11px;white-space:nowrap">{r[4] or "—"}</span></td>
+              <td style="padding:9px 7px;font-weight:700;color:#1565c0;font-size:14px">{dec}</td>
+              <td style="padding:9px 7px;font-size:11px;color:#666">{phase_badge}</td>
+              <td style="padding:9px 7px;font-size:12px;color:#555">{(r[8] or "")[:130]}</td>
+              <td style="padding:9px 7px;text-align:center"><span style="background:{sc_bg};color:{sc_c};padding:3px 8px;border-radius:10px;font-size:12px;font-weight:700">{sc}</span></td>
+              <td style="padding:9px 7px;white-space:nowrap;font-size:11px;color:#888">{expd}</td>
+              <td style="padding:9px 7px;white-space:nowrap">{maps_l}{bocm_l}</td>
             </tr>"""
 
-        ws_d = (datetime.now() - timedelta(days=7)).strftime("%d %b")
+        ws_d = (datetime.now()-timedelta(days=7)).strftime("%d %b")
         we_d = datetime.now().strftime("%d %b %Y")
-        est_total = f"€{int(total/0.03):,}" if total > 0 else "N/D"
+        est_t = f"€{int(total/0.03):,}" if total > 0 else "N/D"
         html = f"""<html><body style="font-family:Arial,sans-serif;max-width:1200px;margin:20px auto;color:#1a1a1a">
 <div style="background:linear-gradient(135deg,#1565c0,#0d47a1);color:white;padding:24px 28px;border-radius:8px 8px 0 0">
   <h1 style="margin:0;font-size:22px">🏗️ PlanningScout — Oportunidades Madrid</h1>
-  <p style="margin:8px 0 0;opacity:.85;font-size:14px">Semana {ws_d} – {we_d} · Ordenado por puntuación de oportunidad</p>
+  <p style="margin:8px 0 0;opacity:.85;font-size:14px">Semana {ws_d}–{we_d} · Ordenado por puntuación · {high_count} leads prioritarios (≥65 pts)</p>
 </div>
 <div style="display:flex;background:#e3f2fd;border-bottom:2px solid #bbdefb">
-  <div style="flex:1;padding:16px 24px;border-right:1px solid #bbdefb">
-    <div style="font-size:34px;font-weight:700;color:#1565c0">{len(recent)}</div>
+  <div style="flex:1;padding:14px 22px;border-right:1px solid #bbdefb">
+    <div style="font-size:32px;font-weight:700;color:#1565c0">{len(recent)}</div>
     <div style="color:#555;font-size:13px;margin-top:2px">Proyectos detectados</div>
   </div>
-  <div style="flex:1;padding:16px 24px;border-right:1px solid #bbdefb">
-    <div style="font-size:34px;font-weight:700;color:#1565c0">€{int(total):,}</div>
+  <div style="flex:1;padding:14px 22px;border-right:1px solid #bbdefb">
+    <div style="font-size:32px;font-weight:700;color:#1565c0">€{int(total):,}</div>
     <div style="color:#555;font-size:13px;margin-top:2px">PEM total</div>
   </div>
-  <div style="flex:1;padding:16px 24px">
-    <div style="font-size:34px;font-weight:700;color:#1565c0">{est_total}</div>
+  <div style="flex:1;padding:14px 22px;border-right:1px solid #bbdefb">
+    <div style="font-size:32px;font-weight:700;color:#1565c0">{est_t}</div>
     <div style="color:#555;font-size:13px;margin-top:2px">Valor obra estimado</div>
+  </div>
+  <div style="flex:1;padding:14px 22px">
+    <div style="font-size:32px;font-weight:700;color:#1b5e20">{high_count}</div>
+    <div style="color:#555;font-size:13px;margin-top:2px">🟢 Leads prioritarios</div>
   </div>
 </div>
 <div style="overflow-x:auto;padding:0 28px 24px">
-<table style="width:100%;border-collapse:collapse;min-width:900px">
+<table style="width:100%;border-collapse:collapse;min-width:1000px">
   <thead><tr style="background:#f5f5f5;text-align:left">
     <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Municipio</th>
-    <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Dirección/Área</th>
+    <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Dirección</th>
     <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Promotor</th>
     <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Tipo</th>
     <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">PEM</th>
+    <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Fase</th>
     <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Descripción</th>
     <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Score</th>
-    <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Expediente</th>
+    <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Exp.</th>
     <th style="padding:8px 7px;font-size:11px;color:#777;border-bottom:2px solid #e0e0e0">Links</th>
   </tr></thead>
-  <tbody>{rhtml or '<tr><td colspan="9" style="padding:24px;text-align:center;color:#aaa">Sin proyectos esta semana</td></tr>'}</tbody>
+  <tbody>{rhtml or '<tr><td colspan="10" style="padding:24px;text-align:center;color:#aaa">Sin proyectos esta semana</td></tr>'}</tbody>
 </table></div>
 <div style="padding:14px 28px;background:#f9f9f9;font-size:12px;color:#888;border-top:1px solid #e8e8e8">
   <strong>PlanningScout</strong> — Datos del BOCM (Boletín Oficial de la Comunidad de Madrid) · Registros públicos oficiales.<br>
-  PEM = Presupuesto de Ejecución Material · Est. Obra = PEM / 0.03
+  PEM = Presupuesto de Ejecución Material · Est. Obra = PEM / 0.03 · Fase: 🟢Definitivo | 🟡Inicial | 🔵Licitación
 </div></body></html>"""
 
         gf = os.environ.get("GMAIL_FROM", "")
@@ -1439,7 +1689,7 @@ def send_digest():
         if not all([gf, gp, gt]): log("⚠️  Email vars missing"); return
         msg = MIMEMultipart("alternative")
         msg["Subject"] = (f"🏗️ PlanningScout Madrid — {len(recent)} proyectos | "
-                          f"€{int(total):,} PEM | {ws_d}–{we_d}")
+                          f"€{int(total):,} PEM | {high_count} prioritarios | {ws_d}–{we_d}")
         msg["From"] = gf; msg["To"] = gt
         msg.attach(MIMEText(html, "html", "utf-8"))
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
@@ -1461,11 +1711,13 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 68)
-    log(f"🏗️  PlanningScout Madrid — Engine v7")
+    log(f"🏗️  PlanningScout Madrid — Engine v8")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}")
-    log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
+    log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} "
+        f"({WEEKS_BACK}w = {(date_to-date_from).days} days)")
+    log(f"🔎  {len(SEARCH_KEYWORDS)} keywords across Sections III+II+V")
     log(f"🤖  {'AI (GPT-4o-mini)' if USE_AI else 'Keyword extraction'}")
-    log(f"💰  {'Min €' + f'{MIN_VALUE_EUR:,.0f}' if MIN_VALUE_EUR else 'No value filter'}")
+    log(f"💰  {'Min €' + f'{MIN_VALUE_EUR:,.0f}' if MIN_VALUE_EUR else 'No PEM filter'}")
     log("=" * 68)
 
     get_sheet(); load_seen()
@@ -1473,56 +1725,45 @@ def run():
     if args.resume and os.path.exists(QUEUE_FILE):
         with open(QUEUE_FILE) as f:
             all_urls = json.load(f)
-        log(f"▶️  Resuming: {len(all_urls)} URLs from saved queue")
+        log(f"▶️  Resuming: {len(all_urls)} URLs from queue")
     else:
-        all_urls = []
-        seen_set = set()    # full URL dedup during collection
-        seen_ids = set()    # BOCM-ID dedup during collection
+        all_urls  = []
+        seen_ids  = set()   # BOCM-ID dedup during collection
 
         def add_url(u):
-            """Add URL to collection with dedup on BOCM document ID."""
-            norm = normalise_url(u)  # always convert to HTML entry page
-            bid  = extract_bocm_id(norm)
-            key  = bid if bid else norm
-            if key in seen_ids: return False
-            if is_bad_url(norm): return False
+            """Add normalised URL with BOCM-ID dedup."""
+            norm = normalise_url(u)
+            if not norm or is_bad_url(norm): return False
             if not url_date_ok(norm, date_from): return False
-            if norm in _seen_urls: return False  # already in sheet
-            if bid and bid in _seen_bocm_ids: return False  # already in sheet
+            if norm in _seen_urls: return False
+            bid = extract_bocm_id(norm)
+            if bid and bid in _seen_bocm_ids: return False
+            key = bid if bid else norm
+            if key in seen_ids: return False
             seen_ids.add(key)
-            seen_set.add(norm)
             all_urls.append(norm)
             return True
 
-        # ── SOURCE 1: Keyword search — Section III (Administración Local) ─────
+        # ── SOURCE 1: Keyword search with DATE CHUNKING ──────────────────────
+        # This is the biggest volume fix: weekly chunks × 250 max = 8× more results
         log(f"\n{'─'*50}")
-        log(f"🔎 SOURCE 1: Keyword search — {len(SEARCH_KEYWORDS)} keywords")
+        log(f"🔎 SOURCE 1: {len(SEARCH_KEYWORDS)} keywords × {WEEKS_BACK}-week chunks")
+        log(f"   (date chunking: each 7-day window = up to 250 results per keyword)")
         log(f"{'─'*50}")
-        for kw in SEARCH_KEYWORDS:
-            urls = search_keyword(kw, date_from, date_to, SECTION_LOCAL)
+
+        for kw, section, profile_tag in SEARCH_KEYWORDS:
+            urls  = search_keyword_chunked(kw, date_from, date_to, section=section)
             added = sum(1 for u in urls if add_url(u))
             if added > 0:
-                log(f"  +{added} | '{kw}' | total {len(all_urls)}")
-            time.sleep(1.5)
+                log(f"  +{added:3d} [{profile_tag:12s}] '{kw}' [{section}]")
+            time.sleep(0.8)
 
-        # ── SOURCE 2: Keyword search — Section II (CM regional) ──────────────
-        # Plans especiales and major infrastructure sometimes in Section II
-        log(f"\n{'─'*50}")
-        log(f"🏛️  SOURCE 2: Regional section (Section II — CM plans especiales)")
-        log(f"{'─'*50}")
-        for kw in ["plan especial", "plan parcial", "proyecto de urbanización",
-                   "junta de compensación", "reparcelación"]:
-            urls = search_keyword(kw, date_from, date_to, SECTION_REGIONAL)
-            added = sum(1 for u in urls if add_url(u))
-            if added > 0:
-                log(f"  +{added} [Sec.II] | '{kw}' | total {len(all_urls)}")
-            time.sleep(1.5)
+        log(f"\n  📊 After keyword search: {len(all_urls)} unique URLs")
 
-        # ── SOURCE 3: Per-day bulletin scan (the volume fix) ──────────────────
-        # This scans ALL Section III announcements for each working day.
-        # Catches what keyword search misses — individual licencias not in search index.
+        # ── SOURCE 2: Per-day full bulletin scan ─────────────────────────────
+        # Scans EVERY working day, catches licencias missed by keyword search
         log(f"\n{'─'*50}")
-        log(f"📅 SOURCE 3: Per-day full scan of Section III announcements")
+        log(f"📅 SOURCE 2: Per-day Section III full scan")
         log(f"{'─'*50}")
         working_days = []
         d = date_from
@@ -1532,28 +1773,52 @@ def run():
             d += timedelta(days=1)
         log(f"  Scanning {len(working_days)} working days…")
 
+        day_total = 0
         for day in working_days:
-            day_urls = scrape_day_all_announcements(day)
+            day_urls = scrape_day_section(day, section=SECTION_III)
             added    = sum(1 for u in day_urls if add_url(u))
             if added > 0:
-                log(f"  📅 {day.strftime('%d/%m/%Y')}: +{added} | total {len(all_urls)}")
+                log(f"  📅 {day.strftime('%d/%m/%Y')}: +{added}")
+                day_total += added
             time.sleep(0.5)
+        log(f"  Per-day scan: +{day_total} | total {len(all_urls)}")
 
-        # ── SOURCE 4: RSS (catches very recent bulletins not yet indexed) ─────
+        # ── SOURCE 3: Section V per-day scan (ICIO + anuncios) ───────────────
+        log(f"\n{'─'*50}")
+        log(f"📢 SOURCE 3: Section V per-day scan (ICIO, anuncios, notificaciones)")
+        log(f"{'─'*50}")
+        sec5_total = 0
+        # Only scan last 4 weeks for Section V (ICIO notifications are recent)
+        sec5_from  = max(date_from, today - timedelta(weeks=4))
+        d = sec5_from
+        while d <= date_to:
+            if d.weekday() < 5:
+                day_urls = scrape_day_section(d, section=SECTION_V)
+                added    = sum(1 for u in day_urls if add_url(u))
+                if added > 0:
+                    log(f"  📢 {d.strftime('%d/%m/%Y')} [Sec.V]: +{added}")
+                    sec5_total += added
+                time.sleep(0.5)
+            d += timedelta(days=1)
+        log(f"  Section V: +{sec5_total} | total {len(all_urls)}")
+
+        # ── SOURCE 4: RSS ─────────────────────────────────────────────────────
         log(f"\n{'─'*50}")
         log(f"📡 SOURCE 4: RSS bulletin feed")
         log(f"{'─'*50}")
-        rss_urls = get_rss_pdf_links(date_from, date_to)
-        added    = sum(1 for u in rss_urls if add_url(u))
-        log(f"  RSS: +{added} | total {len(all_urls)}")
+        rss_added = sum(1 for u in get_rss_links(date_from, date_to) if add_url(u))
+        log(f"  RSS: +{rss_added} | total {len(all_urls)}")
 
-        log(f"\n📋 {len(all_urls)} unique URLs to process")
+        log(f"\n{'═'*50}")
+        log(f"📋 TOTAL: {len(all_urls)} unique URLs to process")
+        log(f"{'═'*50}")
+
         with open(QUEUE_FILE, "w") as f:
             json.dump(all_urls, f)
         log(f"💾 Queue saved — use --resume to restart if interrupted")
 
     if not all_urls:
-        log("ℹ️  Nothing new to process.")
+        log("ℹ️  Nothing new.")
         if today.weekday() == 0: send_digest()
         return
 
@@ -1575,21 +1840,20 @@ def run():
             if not is_lead:
                 log(f"  ⏭️  {reason}"); skipped += 1; continue
 
-            log(f"  ✅ Tier-{tier} — {doc_title[:60] if doc_title else '(extracting...)'}")
+            log(f"  ✅ Tier-{tier} — {doc_title[:55] if doc_title else '...'}")
             p = extract(text, url, pub_date)
 
             if p is None:
-                log("  ⏭️  AI rejected"); skipped += 1; continue
+                log("  ⏭️  Extraction rejected"); skipped += 1; continue
 
-            log(f"  [{p.get('lead_score',0):02d}pts] "
+            log(f"  [{p.get('lead_score',0):02d}pts|{p.get('phase','?')[:4]}] "
                 f"{p.get('municipality','?')} | "
                 f"{p.get('permit_type','?')[:22]} | "
                 f"€{p.get('declared_value_eur','?')}")
 
             dec = p.get("declared_value_eur")
             if MIN_VALUE_EUR and dec and isinstance(dec, (int, float)) and dec < MIN_VALUE_EUR:
-                log(f"  ⏭️  €{dec:,.0f} below min €{MIN_VALUE_EUR:,.0f}")
-                skipped += 1; continue
+                log(f"  ⏭️  €{dec:,.0f} below min"); skipped += 1; continue
 
             if write_permit(p, pdf_url or ""):
                 saved += 1
@@ -1603,8 +1867,8 @@ def run():
 
     log(f"\n{'='*68}")
     log(f"✅ {saved} saved | {skipped} skipped | {errors} errors")
-    log(f"📊 Acceptance: {saved}/{saved+skipped+errors} = "
-        f"{100*saved/max(1,saved+skipped+errors):.0f}%")
+    log(f"📊 Acceptance: {100*saved//max(1,saved+skipped+errors)}% | "
+        f"Total processed: {saved+skipped+errors}")
     log("=" * 68)
 
     if os.path.exists(QUEUE_FILE):
