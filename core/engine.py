@@ -1472,8 +1472,11 @@ _sheet_lock     = threading.Lock()
 def get_sheet():
     global _ws
     if _ws: return _ws
-    sa = os.environ.get("GCP_SERVICE_ACCOUNT_JSON","").strip()
-    if not sa: log("❌ GCP_SERVICE_ACCOUNT_JSON not set"); return None
+    # Reboot-proof: checks both CREDS_JSON and GCP_SERVICE_ACCOUNT_JSON
+    sa = os.environ.get("CREDS_JSON") or os.environ.get("GCP_SERVICE_ACCOUNT_JSON", "").strip()
+    if not sa:
+        log("❌ ERROR: No credentials found (Checked CREDS_JSON and GCP_SERVICE_ACCOUNT_JSON)")
+        return None
     try:
         info  = json.loads(sa)
         creds = SACredentials.from_service_account_info(info, scopes=[
@@ -1481,15 +1484,19 @@ def get_sheet():
             "https://www.googleapis.com/auth/drive"])
         gc = gspread.authorize(creds)
         sh = gc.open_by_key(SHEET_ID)
-        try:    ws = sh.worksheet("Permits")
+        try:
+            # We use "Leads" for the dashboard, ensure engine uses the same or matches your structure
+            ws = sh.worksheet("Leads") 
         except gspread.WorksheetNotFound:
-            ws = sh.add_worksheet("Permits", 2000, 20)
-        if ws.row_values(1) != HDRS:
+            ws = sh.add_worksheet("Leads", 2000, 20)
+            
+        if not ws.row_values(1):
             ws.update(values=[HDRS], range_name="A1"); log("✅ Headers written")
-        else: log("✅ Sheet connected")
+        else:
+            log("✅ Sheet connected")
         _ws = ws; return _ws
     except Exception as e:
-        log(f"❌ Sheet: {e}"); return None
+        log(f"❌ Sheet connection failed: {e}"); return None
 
 def load_seen():
     global _seen_urls, _seen_bocm_ids
