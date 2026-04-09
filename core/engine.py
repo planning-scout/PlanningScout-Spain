@@ -606,38 +606,88 @@ def extract_jsonld(soup):
 
 def extract_pdf_text_enhanced(url):
     """
-    Enhanced PDF extraction:
-    1. Standard text extraction
-    2. Table extraction for PEM/ETAPA financial rows
-    All pages extracted (not capped).
+    METICULOUS full-read PDF extraction.
+    Extracts ALL pages without cap, and pulls every type of structured data:
+      - Financial tables (PEM, ETAPA, presupuesto, ICIO, base imponible)
+      - Parcel tables (FINCA, superficie, referencia catastral, coeficiente)
+      - Owner/promotor data (empresa, CIF, domicilio, representante)
+      - Surface/area figures (m², ha, unidades, viviendas)
+      - Phase/timeline data (plazo, meses, etapas)
+      - Cadastral references (referencia catastral)
+      - Land use classification (uso, clasificación)
+    All extracted data is clearly tagged so the AI/keyword extractor can use it.
     """
     try:
         r = (get_thread_session() if threading.current_thread().name != "MainThread"
              else get_session()).get(
-            url, timeout=50, verify=False, allow_redirects=True,
+            url, timeout=60, verify=False, allow_redirects=True,
             headers={**make_headers(referer=BOCM_BASE), "Accept":"application/pdf,*/*"})
         if r.status_code != 200 or len(r.content) < 400: return ""
         if r.content[:4] != b"%PDF": return ""
 
-        text_parts  = []
-        table_parts = []
+        text_parts       = []
+        financial_rows   = []
+        parcel_rows      = []
+        surface_rows     = []
+        owner_rows       = []
+        timeline_rows    = []
+
+        FINANCIAL_KWS  = ["ETAPA","PEM","IMPORTE","PRESUPUESTO","ICIO",
+                          "BASE IMPONIBLE","TOTAL","LICITACIÓN","VALOR","EUROS","€"]
+        PARCEL_KWS     = ["FINCA","PARCELA","REFERENCIA CATASTRAL","SUPERFICIE",
+                          "COEFICIENTE","M2","CUOTA","APROVECHAMIENTO","DESIGNACIÓN"]
+        OWNER_KWS      = ["CIF","NIF","DNI","REPRESENTAD","DOMICILIO","PROPIETARIO",
+                          "PROMOTOR","S.L.","S.A.","SLU","JUNTA","ADJUDICATARIO"]
+        TIMELINE_KWS   = ["PLAZO","MESES","ETAPA","FASE","EJECUCIÓN","INICIO","FIN",
+                          "CALENDARIO","AÑO","TRIMESTRE"]
+        SURFACE_KWS    = ["M²","M2","HA","HECTÁREAS","METROS","VIVIENDAS","UNIDADES",
+                          "PLANTAS","ALTURA","EDIFICABILIDAD","TECHO"]
+
         with pdfplumber.open(io.BytesIO(r.content)) as pdf:
-            for pg in pdf.pages:
+            for pg_num, pg in enumerate(pdf.pages, 1):
+                # --- Full text of every page ---
                 t = pg.extract_text()
-                if t: text_parts.append(t)
-                for table in pg.extract_tables():
+                if t:
+                    text_parts.append(f"[PÁG.{pg_num}]\n{t}")
+
+                # --- All tables: categorize each row by content type ---
+                for table in (pg.extract_tables() or []):
                     if not table: continue
                     for row in table:
                         if not row: continue
-                        rt = " | ".join(str(c or "") for c in row)
-                        if any(kw in rt.upper() for kw in
-                               ["ETAPA","PEM","IMPORTE","PRESUPUESTO","ICIO",
-                                "BASE IMPONIBLE","TOTAL","LICITACIÓN"]):
-                            table_parts.append(rt)
-        full = "\n".join(text_parts)
-        if table_parts:
-            full += "\n\nTABLA_DATOS:\n" + "\n".join(table_parts)
-        return full[:20000]
+                        rt = " | ".join(str(c or "").strip() for c in row if c is not None)
+                        if not rt.strip(): continue
+                        ru = rt.upper()
+                        if any(kw in ru for kw in FINANCIAL_KWS):
+                            financial_rows.append(rt)
+                        if any(kw in ru for kw in PARCEL_KWS):
+                            parcel_rows.append(rt)
+                        if any(kw in ru for kw in OWNER_KWS):
+                            owner_rows.append(rt)
+                        if any(kw in ru for kw in TIMELINE_KWS):
+                            timeline_rows.append(rt)
+                        if any(kw in ru for kw in SURFACE_KWS):
+                            surface_rows.append(rt)
+
+        # --- Assemble with clear section tags ---
+        full = "\n\n".join(text_parts)
+
+        if financial_rows:
+            full += "\n\n[TABLA_DATOS_FINANCIEROS]\n" + "\n".join(financial_rows[:60])
+        if parcel_rows:
+            full += "\n\n[TABLA_PARCELAS]\n" + "\n".join(parcel_rows[:80])
+        if surface_rows:
+            full += "\n\n[DATOS_SUPERFICIES]\n" + "\n".join(surface_rows[:40])
+        if owner_rows:
+            full += "\n\n[DATOS_PROMOTORES_PROPIETARIOS]\n" + "\n".join(owner_rows[:40])
+        if timeline_rows:
+            full += "\n\n[DATOS_PLAZOS_FASES]\n" + "\n".join(timeline_rows[:20])
+
+        # Also keep legacy tag for backward-compat with extract_pem_value()
+        if financial_rows:
+            full += "\n\nTABLA_DATOS:\n" + "\n".join(financial_rows[:60])
+
+        return full[:35000]
     except Exception as e:
         log(f"    PDF error: {e}"); return ""
 
@@ -682,6 +732,110 @@ def _fetch_pem_only_from_pdf(pdf_url):
         return ""
     except Exception as e:
         return ""
+
+def _estimate_pem_from_pdf(text):
+    """
+    Estimates PEM from structural data in the PDF text when no explicit PEM is declared.
+    Uses m², parcel count, land use, viviendas, and urbanization type as proxies.
+
+    Unit cost references (Madrid Community, 2024-2025):
+      - Urbanización (vías, redes, servicios): ~120-200 €/m² suelo neto
+      - Edificación plurifamiliar nueva:       ~1,400-1,800 €/m² construido
+      - Nave industrial / logística:           ~450-650 €/m² construido
+      - Rehabilitación integral:               ~900-1,200 €/m² construido
+      - Obra civil / infraestructura:          ~200-400 €/m² actuación
+
+    Returns a dict with: estimated_pem (float or None), method (str), basis (str)
+    """
+    result = {"estimated_pem": None, "method": None, "basis": None}
+    t = text
+    tu = t.upper()
+
+    # ── 1. Sum of parcel surfaces from TABLA_PARCELAS ──────────────────────────
+    # e.g. "1.224,41" m² or "2.482,79" from parcela table
+    if "[TABLA_PARCELAS]" in t or "SUPERFICIE" in tu:
+        totals = []
+        # Look for TOTAL line in parcel table
+        for line in t.split("\n"):
+            lu = line.upper()
+            if "TOTAL" in lu and any(c.isdigit() for c in line):
+                for amt in re.findall(r'([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?)', line):
+                    v = _parse_euro(amt)
+                    if v and 500 < v < 5_000_000:
+                        totals.append(v)
+        if totals:
+            total_m2 = max(totals)  # largest plausible surface total
+            # Determine type for unit cost
+            if any(k in tu for k in ["URBANIZ","VIAL","RED DE","COLECTOR","SANEAMIENTO"]):
+                unit = 160   # urbanización
+                method = "urbanización sobre superficie total"
+            elif any(k in tu for k in ["INDUSTRIAL","NAVE","LOGÍST","ALMACÉN"]):
+                unit = 550   # industrial
+                method = "industrial sobre superficie total"
+            else:
+                unit = 160   # default urbanización
+                method = "estimación sobre superficie parcelas"
+            est = round(total_m2 * unit)
+            if 50_000 <= est <= 500_000_000:
+                result["estimated_pem"] = est
+                result["method"]        = method
+                result["basis"]         = f"{total_m2:,.0f} m² × {unit} €/m²"
+                return result
+
+    # ── 2. Total surface from text (m² / ha figures) ──────────────────────────
+    # "superficie total de 74 hectáreas" or "21.177,67 m²"
+    ha_m = re.search(r'(\d{1,4}(?:[.,]\d+)?)\s*(?:ha|hect[aá]reas?)', t, re.I)
+    if ha_m:
+        ha = _parse_euro(ha_m.group(1))
+        if ha and 0.1 <= ha <= 2000:
+            m2 = ha * 10_000
+            unit = 160
+            est  = round(m2 * unit)
+            if 50_000 <= est <= 500_000_000:
+                result["estimated_pem"] = est
+                result["method"]        = "urbanización estimada sobre superficie ha"
+                result["basis"]         = f"{ha} ha = {m2:,.0f} m² × {unit} €/m²"
+                return result
+
+    # Look for large m² figure (total net area)
+    m2_candidates = []
+    for m in re.finditer(r'(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?)\s*m[²2]', t, re.I):
+        v = _parse_euro(m.group(1))
+        if v and 500 < v < 2_000_000:
+            m2_candidates.append(v)
+    if m2_candidates:
+        total_m2 = max(m2_candidates)
+        if any(k in tu for k in ["URBANIZ","VIAL","COLECTOR","SANEAMIENTO"]):
+            unit, method = 160, "urbanización sobre área m²"
+        elif any(k in tu for k in ["INDUSTRIAL","NAVE","LOGÍST"]):
+            unit, method = 550, "industrial sobre área m²"
+        elif any(k in tu for k in ["VIVIENDA","PLURIFAMILIAR","RESIDENCIAL"]):
+            unit, method = 1_600, "edificación residencial sobre área construida"
+        else:
+            unit, method = 160, "estimación general sobre área m²"
+        est = round(total_m2 * unit)
+        if 50_000 <= est <= 500_000_000:
+            result["estimated_pem"] = est
+            result["method"]        = method
+            result["basis"]         = f"{total_m2:,.0f} m² × {unit} €/m²"
+            return result
+
+    # ── 3. Number of viviendas ─────────────────────────────────────────────────
+    viv_m = re.search(r'(\d{1,4})\s+viviendas?', t, re.I)
+    if viv_m:
+        viv = int(viv_m.group(1))
+        if 2 <= viv <= 2000:
+            avg_m2  = 90   # avg per dwelling (Madrid)
+            unit    = 1_600
+            est     = round(viv * avg_m2 * unit)
+            if 100_000 <= est <= 300_000_000:
+                result["estimated_pem"] = est
+                result["method"]        = "edificación residencial sobre nº viviendas"
+                result["basis"]         = f"{viv} viviendas × {avg_m2}m² × {unit} €/m²"
+                return result
+
+    return result
+
 
 def fetch_announcement(url):
     """Returns (text, pdf_url, pub_date, doc_title)."""
@@ -1375,14 +1529,26 @@ profile_fit RULES (add this field):
 - List which profiles benefit: e.g. ["fcc","constructora","mep","kiloutou"]
 - Based on project type: urbanización/licitación → fcc+constructora; obra mayor → mep+compras; industrial → industrial+kiloutou
 
-TABLA_DATOS extraction: If text contains "TABLA_DATOS:", extract PEM from those rows.
-declared_value_eur: SUM all "ETAPA X" values. For ICIO: use "BASE IMPONIBLE" value. """
+TABLA_DATOS extraction: If text contains "TABLA_DATOS:", "[TABLA_DATOS_FINANCIEROS]", or "[TABLA_PARCELAS]", extract PEM from those rows.
+declared_value_eur: SUM all "ETAPA X" values. For ICIO: use "BASE IMPONIBLE" value.
+
+PARCEL DATA ([TABLA_PARCELAS]): Use total surface area from parcel table to estimate PEM if not explicitly stated.
+  - Urbanización: total_m2 × 160 €/m²
+  - Industrial: total_m2 × 550 €/m²
+  - Residencial: total_m2 × 1600 €/m² (construido)
+
+OWNER DATA ([DATOS_PROMOTORES_PROPIETARIOS]): Extract company names, CIF codes for the "applicant" field.
+  Do NOT include individual DNI numbers or personal addresses in any output field.
+
+SURFACE DATA ([DATOS_SUPERFICIES]): Use m² or ha figures to estimate declared_value_eur if not found.
+
+If you estimate PEM rather than find it explicitly, set confidence to "medium" and note it in description. """
 
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role":"system","content":sys_prompt},
-                      {"role":"user","content":f"URL: {url}\n\nTexto BOCM:\n{text[:5500]}"}],
-            temperature=0, max_tokens=750,
+                      {"role":"user","content":f"URL: {url}\n\nTexto BOCM:\n{text[:8000]}"}],
+            temperature=0, max_tokens=900,
             response_format={"type":"json_object"})
 
         d = json.loads(resp.choices[0].message.content.strip())
@@ -1463,6 +1629,7 @@ HDRS = [
     "Permit Type","Declared Value PEM (€)","Est. Build Value (€)",
     "Maps Link","Description","Source URL","PDF URL",
     "Mode","Confidence","Date Found","Lead Score","Expediente","Phase",
+    "Estimated PEM","AI Evaluation","Supplies Needed",
 ]
 _ws             = None
 _seen_urls      = set()
@@ -1547,6 +1714,9 @@ def write_permit(p, pdf_url=""):
             p.get("lead_score",0),
             p.get("expediente",""),
             p.get("phase",""),
+            p.get("estimated_pem",""),
+            (p.get("ai_evaluation") or "")[:500],
+            (p.get("supplies_needed") or "")[:300],
         ]
         try:
             if ws:
@@ -1597,6 +1767,76 @@ def process_one(url, idx, total):
         dec = p.get("declared_value_eur")
         if MIN_VALUE_EUR and dec and isinstance(dec,(int,float)) and dec < MIN_VALUE_EUR:
             return 0, 1, 0  # below minimum
+
+        # ── Estimated PEM from PDF structural data (always attempt) ──────────────
+        # If explicit PEM was found, label it as such.
+        # If not, try to estimate from m², parcels, viviendas in the full PDF text.
+        if not p.get("estimated_pem"):
+            if dec and isinstance(dec, (int, float)) and dec > 0:
+                # We have a declared value — label column as confirmed
+                p["estimated_pem"] = f"PEM declarado: €{dec:,.0f}"
+            else:
+                # No declared PEM — try to estimate from structural data
+                # Re-fetch full PDF text if we only got JSON-LD text earlier
+                pdf_text = text
+                if pdf_url and "[TABLA_PARCELAS]" not in text and "[PÁG." not in text:
+                    pdf_text_full = extract_pdf_text_enhanced(pdf_url)
+                    if pdf_text_full and len(pdf_text_full) > len(text):
+                        pdf_text = pdf_text_full
+                est_result = _estimate_pem_from_pdf(pdf_text)
+                if est_result.get("estimated_pem"):
+                    ep  = est_result["estimated_pem"]
+                    mth = est_result.get("method","estimación")
+                    bas = est_result.get("basis","")
+                    p["estimated_pem"] = f"Estimación PEM: €{ep:,.0f} ({mth}; base: {bas})"
+                    # Also feed into declared_value_eur if not set (for scoring/filtering)
+                    if not dec:
+                        p["declared_value_eur"] = ep
+                        p["lead_score"] = score_lead(p)  # rescore with new value
+                else:
+                    p["estimated_pem"] = "PEM no disponible en BOCM"
+
+        # ── Ensure AI Evaluation and Supplies Needed are always populated ────────
+        if not p.get("ai_evaluation") or len(str(p.get("ai_evaluation","")).strip()) < 20:
+            pt   = (p.get("permit_type") or "").lower()
+            muni = p.get("municipality","Madrid")
+            pem  = p.get("declared_value_eur")
+            pem_s = (f"€{pem/1_000_000:.1f}M" if pem and pem >= 1_000_000
+                     else (f"€{int(pem/1000):.0f}K" if pem else "PEM no declarado"))
+            if "urbanización" in pt or "reparcelación" in pt:
+                p["ai_evaluation"] = (
+                    f"Proyecto de urbanización definitivo en {muni} — {pem_s}. "
+                    f"Gran Constructora y FCC-style deben pre-calificarse para futura licitación civil (estimado 12-24 meses). "
+                    f"Instaladores MEP y suministradores de materiales: contactar a la Junta de Compensación ahora.")
+            elif "licitación" in pt:
+                p["ai_evaluation"] = (
+                    f"Licitación activa en {muni} — {pem_s}. "
+                    f"Plazo de oferta activo. Constructoras deben presentar oferta técnica y económica urgente. "
+                    f"Suministradores: acordar precios con futuro adjudicatario.")
+            elif "plan especial" in pt or "plan parcial" in pt:
+                p["ai_evaluation"] = (
+                    f"Aprobación de planeamiento en {muni}. "
+                    f"Este paso habilita la futura urbanización y obra nueva — oportunidad de inteligencia anticipada. "
+                    f"Promotores RE y Gran Constructora: monitorizar para entrada en JC o propuesta técnica.")
+            elif "industrial" in pt or "nave" in pt:
+                p["ai_evaluation"] = (
+                    f"Proyecto industrial en {muni} — {pem_s}. "
+                    f"Oportunidad directa para instaladores eléctricos MT, PCI y suministradores de estructura metálica. "
+                    f"Kiloutou y empresas de alquiler: contactar al promotor antes del inicio de obra.")
+            elif "nueva construcción" in pt or "rehabilitación" in pt:
+                p["ai_evaluation"] = (
+                    f"Obra mayor en {muni} — {pem_s}. "
+                    f"Instaladores MEP deben contactar al promotor antes de que el constructor cierre contratos. "
+                    f"Ascensores, HVAC y PCI se adjudican típicamente en fase de estructura.")
+            else:
+                p["ai_evaluation"] = (
+                    f"Proyecto de construcción en {muni} — {pem_s}. "
+                    f"Revisar el PDF original para detalles técnicos y cronograma. "
+                    f"Contactar al promotor o Ayuntamiento para confirmar fase de ejecución.")
+
+        if not p.get("supplies_needed") or len(str(p.get("supplies_needed","")).strip()) < 10:
+            p["supplies_needed"] = generate_supplies_estimate(
+                p.get("permit_type",""), p.get("declared_value_eur"), p.get("description",""))
 
         if write_permit(p, pdf_url or ""):
             return 1, 0, 0  # saved
