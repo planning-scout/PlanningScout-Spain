@@ -42,7 +42,7 @@ def time_ok(need_s=60):
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--client",  required=True)
-parser.add_argument("--weeks",   type=int, default=8,
+parser.add_argument("--weeks",   type=int, default=2,
     help="1=daily(1-2 days), 2-3=weekly, 4+=full backfill")
 parser.add_argument("--digest",  action="store_true")
 parser.add_argument("--resume",  action="store_true",
@@ -291,6 +291,23 @@ KW_EXTRA_FULL = [
     ("sector de suelo",          SECTION_III,  6, "PRO+CON"),
     ("suelo urbanizable",        SECTION_III,  6, "PRO+CON"),
     ("modificación del plan",    SECTION_II,   6, "PRO+CON"),
+
+    # ── FCC / Gran Infraestructura ─────────────────────────────────────────────
+    # These target the large-scale urbanismo FCC specialises in
+    ("plan de sectorización",    SECTION_III,  8, "FCC+CON"),   # sector designation
+    ("obra civil",               SECTION_III,  8, "FCC+CON"),   # civil engineering
+    ("obras de infraestructura", SECTION_III,  8, "FCC+CON"),   # infrastructure works
+    ("concesión de obra",        SECTION_III,  8, "FCC+CON"),   # concession contracts
+    ("aprobación definitiva",    SECTION_II,   10, "FCC+CON"),  # CM-level final approvals
+    ("contrato de obras",        SECTION_II,   8, "FCC+CON"),   # CM public tenders
+    ("licitación de obras",      SECTION_II,   10, "FCC+CON"),  # CM tenders (big ones)
+
+    # ── Kiloutou / Alquiler Maquinaria ─────────────────────────────────────────
+    # Any large construction project = potential equipment rental client
+    ("nueva construcción",       SECTION_II,   8, "KILOUTOU+CON"),  # CM new builds
+    ("obras de reforma",         SECTION_III,  8, "KILOUTOU+MAT"),  # reform works
+    ("obras de adecuación",      SECTION_III,  6, "KILOUTOU"),      # adaptation works
+    ("obras de ampliación",      SECTION_III,  6, "KILOUTOU+MEP"),  # expansion works
 ]
 
 # Logistics corridor municipalities for targeted bonus search in full mode
@@ -788,20 +805,6 @@ def classify_permit(text):
     """Returns (is_lead, reason, tier 1-5)."""
     t = text.lower()
 
-    # ── ICIO FAST-PATH — confirmed construction, PEM = base imponible ─────────
-    # ICIO documents don't use grant language ("se concede" etc.) so they'd fail
-    # Stage 4 without this. But they ARE confirmed obras with legal PEM value.
-    is_icio = (
-        ("impuesto sobre construcciones" in t and
-         any(s in t for s in ["notif", "liquid", "cuota", "base imponible", "tribut"]))
-        or "liquidación del icio" in t
-        or ("base imponible" in t and
-            any(s in t for s in ["construccion", "instalac", "obra"]) and
-            "icio" in t)
-    )
-    if is_icio:
-        return True, "ICIO: confirmed construction (PEM = base imponible)", 4
-
     for kw in HARD_REJECT:
         if kw in t: return False, f"Admin noise: '{kw}'", 0
 
@@ -1183,78 +1186,9 @@ def keyword_extract(text, url, pub_date):
             idx = t.find(gp)
             if idx >= 0: desc = c[idx:idx+300].strip(); break
 
-    res["description"]    = (desc or c[:250]).strip()[:350]
-    res["lead_score"]     = score_lead(res)
-    res["ai_evaluation"]  = ""   # populated by AI only
-    res["supplies_needed"] = generate_supplies_estimate(
-        res.get("permit_type",""), res.get("declared_value_eur"), res.get("description",""))
+    res["description"] = (desc or c[:250]).strip()[:350]
+    res["lead_score"]  = score_lead(res)
     return res
-
-
-def generate_supplies_estimate(permit_type, pem, description):
-    """
-    Generate a profile-tagged materials/services estimate based on permit type and PEM.
-    Used as fallback when AI is disabled. Short enough for a dashboard card.
-    """
-    pt  = (permit_type or "").lower()
-    pem = pem or 0
-    d   = (description or "").lower()
-
-    # Estimate number of elevators for residential: 1 per 4 floors, min 2 for >4 floors
-    floors = 0
-    m = re.search(r'(\d+)\s*(?:plant|piso|altura)', d)
-    if m: floors = int(m.group(1))
-    viv = 0
-    m2 = re.search(r'(\d+)\s*vivien', d)
-    if m2: viv = int(m2.group(1))
-    elevators = max(1, viv // 20) if viv >= 8 else (1 if floors >= 4 else 0)
-
-    # Rough steel/concrete from PEM (residential: ~€1,800/m², industrial: ~€600/m²)
-    m2_est = 0
-    if pem > 0:
-        m2_est = int(pem / 1800) if "residen" in d or "vivien" in d else int(pem / 600)
-    steel_t = int(m2_est * 0.05) if m2_est else 0   # ~50kg/m² residential
-    conc_m3 = int(m2_est * 0.25) if m2_est else 0   # ~0.25m³/m²
-
-    if "urbanización" in pt or "urbaniz" in d:
-        return (f"🔧 Redes eléctrica/saneamiento, alumbrado público | "
-                f"🛒 Hormigón HA-25, tuberías PVC DN200-500, áridos | "
-                f"🏗️ Movimiento tierras, pavimentación")
-
-    if pt in ("obra mayor nueva construcción","demolición y nueva planta"):
-        parts = []
-        if elevators:
-            parts.append(f"🔧 Ascensores ×{elevators}, HVAC, PCI, fontanería")
-        else:
-            parts.append("🔧 HVAC, PCI, instalaciones eléctricas")
-        if steel_t and conc_m3:
-            parts.append(f"🛒 Acero ~{steel_t}t, Hormigón ~{conc_m3}m³, carpintería")
-        else:
-            parts.append("🛒 Estructura, cerramiento, acabados")
-        return " | ".join(parts)
-
-    if "industrial" in pt or "nave" in d or "almacén" in d:
-        m2_ind = int(pem / 400) if pem else 0
-        return (f"🔧 Instalación eléctrica MT, climatización industrial, PCI | "
-                f"🛒 Perfil metálico {int(m2_ind*0.04)}t, panel sándwich {m2_ind}m², solera")
-
-    if "rehabilitación" in pt or "rehab" in d or "reforma" in d:
-        return ("🔧 Sustitución completa instalaciones (eléctrica, fontanería, HVAC) | "
-                "🛒 Aislamiento, carpintería, revestimientos, impermeabilización cubierta")
-
-    if "licitación" in pt:
-        pem_s = f"€{int(pem):,}" if pem else "N/D"
-        return (f"🏗️ Concurso público — presentar oferta técnica+económica ({pem_s}) | "
-                f"🛒 Coordinar con adjudicataria para suministros")
-
-    if "primera ocupación" in pt:
-        return ("🔧 Revisiones finales, legalización contadores, certificados OCA | "
-                "🛒 Acabados finales: pavimento, pintura, carpintería interior")
-
-    # Generic fallback
-    pem_s = f"€{int(pem):,}" if pem else "N/D"
-    return (f"🏗️ Proyecto de construcción ({pem_s} PEM) — consultar promotor | "
-            "🛒 Materiales según especificaciones técnicas del proyecto")
 
 def ai_extract(text, url, pub_date):
     if not USE_AI: return keyword_extract(text, url, pub_date)
@@ -1262,66 +1196,55 @@ def ai_extract(text, url, pub_date):
         from openai import OpenAI
         client = OpenAI(api_key=OPENAI_API_KEY)
 
-        sys_prompt = """You are an elite construction intelligence analyst for Spain, serving 6 client profiles:
-🔧 MEP (ascensores/HVAC/PCI) | 🏪 Retail Expansión | 📐 Promotores/RE
-🏢 Gran Constructora | 🏭 Industrial/Logística | 🛒 Compras/Materiales
+        sys_prompt = """You are an elite construction intelligence analyst for Spain.
+You read BOCM (Boletín Oficial de la Comunidad de Madrid) documents to extract actionable leads.
 
-Return ONLY valid JSON — no markdown, no text outside the JSON object.
-If NOT a specific construction project: {"permit_type":"none","confidence":"low"}
+Clients: MEP Installers (elevators/HVAC/fire) | Retail Expansion | Promotores/RE
+         Gran Constructora | Industrial/Logistics | Materials Suppliers
 
-REQUIRED FIELDS:
-applicant       — The PROMOTOR/company building. Urbanización → "Junta de Compensación [NAME]". Licitación → "Ayuntamiento de [MUNI]". Never blank — use "No especificado".
-address         — Full street address or área/sector name. null if not found.
-municipality    — Specific Madrid-region town (e.g. "Paracuellos de Jarama"). NOT "Comunidad de Madrid".
-permit_type     — EXACT string from: "urbanización" | "plan especial" | "plan especial / parcial" | "obra mayor nueva construcción" | "obra mayor industrial" | "obra mayor rehabilitación" | "cambio de uso" | "declaración responsable obra mayor" | "licencia primera ocupación" | "licencia de actividad" | "licitación de obras" | "none"
-declared_value_eur — PEM / ICIO base imponible / licitación budget. Multi-stage: SUM Etapas. Cap 3_000_000_000. NUMBER or null. ICIO base imponible = PEM exactly (Art. 102 TRLRHL).
-date_granted    — ISO date YYYY-MM-DD of approval/grant. null if unclear.
-confidence      — "high" (grant confirmed + all fields) | "medium" | "low"
-lead_score      — Integer 0–100. urbanización/licitación grande definitivo = 70-85. Sin PEM + inicial = 20-35.
-expediente      — Expediente number (e.g. "511/2024/30810"). null if not found.
-phase           — "definitivo" | "inicial" | "licitacion" | "primera_ocupacion" | "en_tramite"
+CRITICAL RULES:
+1. Return ONLY valid JSON — no markdown, no text outside JSON.
+2. If NOT a specific construction project → {"permit_type":"none","confidence":"low"}
+3. Required fields: applicant, address, municipality, permit_type, description,
+   declared_value_eur, date_granted, confidence, lead_score, expediente, phase.
+4. permit_type (exact strings only):
+   "urbanización" | "plan especial" | "plan especial / parcial" |
+   "obra mayor nueva construcción" | "obra mayor industrial" | "obra mayor rehabilitación" |
+   "cambio de uso" | "declaración responsable obra mayor" | "licencia primera ocupación" |
+   "licencia de actividad" | "licitación de obras" | "none"
+5. declared_value_eur: Extract PEM / ICIO base imponible / licitación budget.
+   For multi-stage projects: SUM all Etapa PEMs. Hard cap 3,000,000,000. NUMBER or null.
+   ICIO base imponible = PEM exactly (Spanish tax law Art. 102 TRLRHL).
+6. applicant: The PROMOTOR / company building. For urbanización = "Junta de Compensación [NAME]".
+   For licitación = "Ayuntamiento de [MUNI]". Never blank.
+7. municipality: Specific Madrid town (e.g. "Getafe","Las Rozas"). NOT "Comunidad de Madrid".
+8. description: ONE sentence, commercially focused. Include: what is built, m² if available,
+   location specifics, budget, timeline, commercial opportunity.
+   Examples:
+   "Urbanización Las Tablas Oeste (74ha), Fuencarral-El Pardo — PEM €74M, 2 etapas 24+36 meses"
+   "Nave industrial 12.000m² Polígono Valdemoro — logística, promotor DHL Supply Chain"
+   "Rehab. integral edificio 48 viviendas + garaje, C/López de Hoyos 220, Madrid — PEM €3.2M"
+   "Licitación obras pabellón deportivo Alcalá de Henares — presupuesto €1.8M, 18 meses"
+9. lead_score: 0–100 integer. Large PEM + definitivo approval = 70-85. No PEM + inicial = 25-40.
+10. phase: "definitivo"|"inicial"|"licitacion"|"primera_ocupacion"|"en_tramite"
+11. confidence: "high" (all fields confirmed) | "medium" | "low"
 
-description     — ONE commercial sentence in Spanish. Include: what is being built, m² if known,
-                  location, budget, timeline, commercial opportunity for suppliers/builders.
-                  EXAMPLES:
-                  "Urbanización Las Tablas Oeste 74ha, Fuencarral-El Pardo — PEM €74M, 2 etapas 24+36 meses, inicio obras 2026"
-                  "Nave industrial 12.000m² Polígono Norte Valdemoro — uso logístico, promotor DHL Supply Chain SL"
-                  "Rehab. integral edificio 48 viviendas + 2 locales + garaje, C/López de Hoyos 220, Madrid — PEM €3.2M"
-                  "Licitación obras pabellón deportivo municipal Alcalá de Henares — presupuesto €1.8M, 18 meses ejecución"
-
-ai_evaluation   — 2-3 sentences (Spanish) with commercial intelligence. Include:
-                  1) What this project means commercially (who benefits, urgency, scale)
-                  2) Recommended action and timing ("Contactar al promotor ANTES de que cierre contratos")
-                  3) Any risk/caveat (fase inicial = esperar definitivo, etc.)
-                  EXAMPLES:
-                  "Proyecto de urbanización de gran escala que generará demanda sostenida de ascensores, HVAC y PCI durante 24-36 meses. La Junta de Compensación está en fase definitiva — los contratos de instalación se adjudicarán en 6-12 meses. Prioridad ALTA: contactar ahora para pre-cualificación."
-                  "Licitación pública con plazo de oferta inminente. Gran Constructoras deben presentar oferta técnica y económica antes del plazo límite. Proveedores de materiales deben acordar precios con la futura adjudicataria."
-
-supplies_needed — Profile-tagged estimate of materials/services. Keep under 220 chars total.
-                  Use this format (include only relevant profiles):
-                  "🔧 [MEP items with quantities] | 🛒 [Materials with quantities] | 🏗️ [Constructor notes]"
-                  Base quantities on PEM, m², number of dwellings/floors.
-                  EXAMPLES by type:
-                  urbanización €20M: "🔧 Centros transformación 2ud, alumbrado 300pts, red BT 2km | 🛒 Hormigón HA-25 800m³, tuberías PVC DN400 1.5km, áridos 500t"
-                  edificio 32 viv 8 plantas: "🔧 Ascensores 2ud, HVAC 450kW, PCI 80 detect. | 🛒 Acero 120t, hormigón 400m³, carpintería 180ud"
-                  nave 5.000m²: "🔧 Instal. eléctrica 630kVA, clima industrial, PCI | 🛒 Perfil metálico 80t, panel sándwich 6.000m², solera HA-25 750m²"
-                  licitación obras: "🏗️ Presentar oferta antes de plazo — presupuesto base €X | 🛒 Acordar precios con adjudicataria"
-
-CLASSIFICATION RULES:
-- "se ha SOLICITADO" + "plazo de veinte días" → APPLICATION, NOT grant → permit_type:"none"
+DOCUMENT CLASSIFICATION RULES:
+- "se ha SOLICITADO" + "plazo de veinte días" → APPLICATION not grant → permit_type:"none"
 - "aprobar DEFINITIVAMENTE" → FINAL APPROVAL → phase:"definitivo", confidence:"high"
-- "aprobación INICIAL" → first step, public comment period → phase:"inicial", confidence:"medium"
+- "aprobación INICIAL" → first step, public comment follows → phase:"inicial", confidence:"medium"
 - "licitación de obras" → public tender → permit_type:"licitación de obras", phase:"licitacion"
-- "base imponible del ICIO" → CONFIRMED obra, declared_value_eur = base imponible value
+- "base imponible del ICIO" → CONFIRMED construction, PEM = base imponible exactly
 - "disolución de la junta de compensación" → PROJECT FINISHED → permit_type:"none"
-- "Dejar sin efecto el Acuerdo anterior" → CORRECTION of old error → keep as valid lead
-- "declaración responsable de obra mayor" → valid permit (Ley 1/2020) = licencia equivalent"""
+- "Dejar sin efecto" → CORRECTION of old error, current doc IS valid → keep as lead
+- "declaración responsable de obra mayor" → valid permit since Ley 1/2020 = licencia equivalent
+- Reparcelación/convenio urbanístico/estudio de detalle → early-stage urbanismo → phase:"inicial" """
 
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role":"system","content":sys_prompt},
                       {"role":"user","content":f"URL: {url}\n\nTexto BOCM:\n{text[:5500]}"}],
-            temperature=0, max_tokens=1100,  # increased for ai_evaluation+supplies fields
+            temperature=0, max_tokens=750,
             response_format={"type":"json_object"})
 
         d = json.loads(resp.choices[0].message.content.strip())
@@ -1344,13 +1267,10 @@ CLASSIFICATION RULES:
         elif isinstance(val, (int, float)):
             if val <= 0 or val > 3_000_000_000: d["declared_value_eur"] = None
 
-        if not d.get("lead_score"):      d["lead_score"]      = score_lead(d)
-        if not d.get("municipality"):    d["municipality"]    = extract_municipality(text)
-        if not d.get("expediente"):      d["expediente"]      = extract_expediente(text)
-        if not d.get("phase"):           d["phase"]           = detect_phase(text)
-        if not d.get("ai_evaluation"):   d["ai_evaluation"]   = ""
-        if not d.get("supplies_needed"): d["supplies_needed"] = generate_supplies_estimate(
-            d.get("permit_type",""), d.get("declared_value_eur"), d.get("description",""))
+        if not d.get("lead_score"):   d["lead_score"]   = score_lead(d)
+        if not d.get("municipality"): d["municipality"] = extract_municipality(text)
+        if not d.get("expediente"):   d["expediente"]   = extract_expediente(text)
+        if not d.get("phase"):        d["phase"]        = detect_phase(text)
         return d
 
     except Exception as e:
@@ -1368,14 +1288,11 @@ HDRS = [
     "Permit Type","Declared Value PEM (€)","Est. Build Value (€)",
     "Maps Link","Description","Source URL","PDF URL",
     "Mode","Confidence","Date Found","Lead Score","Expediente","Phase",
-    "AI Evaluation","Supplies Needed",
 ]
 _ws             = None
 _seen_urls      = set()
 _seen_bocm_ids  = set()
 _sheet_lock     = threading.Lock()
-_write_queue    = []          # buffer for batch sheet writes
-_BATCH_SIZE     = 8           # flush every N rows to the sheet
 
 def get_sheet():
     global _ws
@@ -1415,25 +1332,6 @@ def load_seen():
     except Exception as e:
         log(f"⚠️  load_seen: {e}")
 
-
-def flush_write_queue(force=False):
-    """Flush buffered rows to sheet in one batch_update call."""
-    global _write_queue, _ws
-    ws = get_sheet()
-    if not ws or not _write_queue: return
-    if not force and len(_write_queue) < _BATCH_SIZE: return
-    try:
-        rows_to_write = list(_write_queue)
-        _write_queue.clear()
-        ws.append_rows(rows_to_write, value_input_option="USER_ENTERED")
-        log(f"  📦 Batch write: {len(rows_to_write)} rows flushed")
-    except Exception as e:
-        log(f"  ⚠️  Batch write error: {e}")
-        # On error, fall back to individual writes
-        for row in rows_to_write:
-            try: ws.append_row(row, value_input_option="USER_ENTERED")
-            except: pass
-
 def write_permit(p, pdf_url=""):
     ws  = get_sheet()
     url = p.get("source_url","")
@@ -1467,20 +1365,28 @@ def write_permit(p, pdf_url=""):
             p.get("lead_score",0),
             p.get("expediente",""),
             p.get("phase",""),
-            (p.get("ai_evaluation","") or "")[:400],
-            (p.get("supplies_needed","") or "")[:250],
         ]
         try:
-            # Buffer row for batch write (much faster than individual append_row)
-            _write_queue.append(row)
-            _seen_urls.add(url)
-            if bocm_id: _seen_bocm_ids.add(bocm_id)
-            # Flush to sheet if queue is full
-            flush_write_queue(force=False)
+            if ws:
+                ws.append_row(row, value_input_option="USER_ENTERED")
+                _seen_urls.add(url)
+                if bocm_id: _seen_bocm_ids.add(bocm_id)
+                try:
+                    rn  = len(ws.get_all_values())
+                    sc  = p.get("lead_score",0)
+                    if sc >= 65:   rb,gb,bb = 0.80,0.93,0.80
+                    elif sc >= 40: rb,gb,bb = 1.00,0.96,0.76
+                    elif sc >= 20: rb,gb,bb = 1.00,1.00,0.85
+                    else:          rb,gb,bb = 0.98,0.93,0.93
+                    ws.spreadsheet.batch_update({"requests":[{"repeatCell":{
+                        "range":{"sheetId":ws.id,"startRowIndex":rn-1,"endRowIndex":rn},
+                        "cell":{"userEnteredFormat":{"backgroundColor":{"red":rb,"green":gb,"blue":bb}}},
+                        "fields":"userEnteredFormat.backgroundColor"}}]})
+                except: pass
             phase_s = p.get("phase","?")
             dec_s   = f"€{dec:,.0f}" if dec else "N/A"
             log(f"  💾 [{p.get('lead_score',0):02d}pts|{phase_s}] "
-                f"{muni} | {addr[:28]} | {p.get('permit_type','?')[:20]} | {dec_s}")
+                f"{muni} | {addr[:30]} | {p.get('permit_type','?')[:22]} | {dec_s}")
             return True
         except Exception as e:
             log(f"  ❌ Write: {e}"); return False
@@ -1831,9 +1737,6 @@ def run():
             if completed % 25 == 0:
                 log(f"  ⚙️  {completed}/{len(all_urls)} | "
                     f"✅{saved} 💾 ⏭️{skipped} ❌{errors} | {elapsed_str()}")
-
-    # Flush any remaining buffered writes
-    flush_write_queue(force=True)
 
     log(f"\n{'='*70}")
     log(f"✅ {saved} saved | {skipped} skipped | {errors} errors | {elapsed_str()}")
