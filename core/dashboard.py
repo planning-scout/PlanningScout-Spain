@@ -334,7 +334,11 @@ def build_card(row):
     All data values are html.escape()'d to prevent broken HTML.
     """
     sc    = parse_sc(row.get("score_raw", 0))
-    pem   = parse_val(row.get("pem_raw", ""))
+    pem   = parse_val(row.get("pem_raw", ""))      # declared (col F)
+    pem_e = parse_val(row.get("pem_est_raw", ""))  # estimated (col R)
+    pem_c = pem if pem > 0 else pem_e              # combined for display
+    pem_is_declared  = pem > 0
+    pem_is_estimated = not pem_is_declared and pem_e > 0
     muni  = esc(row.get("municipio", "")) or "Madrid"
     addr  = esc(row.get("direccion", ""))
     prom  = esc(row.get("promotor", ""))
@@ -348,7 +352,7 @@ def build_card(row):
     expd  = esc(row.get("expediente", ""))
     conf  = str(row.get("confianza", "") or "").strip()
 
-    pem_s = fmt(pem)
+    pem_s = fmt(pem_c)
 
     # BOCM reference + date
     ref_parts = []
@@ -397,15 +401,45 @@ def build_card(row):
     title_html = f'<div style="{STI}">{title}</div>'
     addr_html  = f'<div style="{SAD}"><span>📍</span><span>{addr}</span></div>' if addr and addr != title else ""
 
-    # ─ TABLE (inline styles on every element) ─
-    table_rows = []
+    # ── Description: always visible inline (≤2 lines), "leer más" for the rest ──
+    # UX principle: description is the first thing a user wants to know.
+    # Show a 2-line preview inline so they can scan without clicking.
+    # Only add the dropdown when there is more text to reveal.
+    _SDESC = (
+        "font-family:'Plus Jakarta Sans',system-ui,sans-serif;"
+        "font-size:13px;color:#475569;line-height:1.55;margin:6px 0 12px 0;"
+    )
+    desc_preview_html = ""
+    if desc and len(desc) > 5:
+        # CSS line-clamp: browsers clip at 2 lines regardless of char count
+        clamp_style = _SDESC + "display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"
+        desc_preview_html = f'<div style="{clamp_style}">{desc}</div>'
 
-    # How many rows? Determine last one for no-border styling
+    # ── TABLE ─────────────────────────────────────────────────────────────────
+    table_rows = []
     all_row_data = []
     if tipo:
         all_row_data.append(("Tipo", f'<span style="{SVA}">{tipo}</span>'))
-    if pem > 0:
-        all_row_data.append(("PEM Total", f'<span style="{SVP}">{pem_s}</span>'))
+
+    # PEM row: declared (navy, confirmed badge) OR estimated (amber, IA badge)
+    if pem_is_declared:
+        pem_row_val = (
+            f'<div style="display:flex;align-items:center;gap:8px;">'
+            f'<span style="{SVP}">{pem_s}</span>'
+            f'<span style="{_FM};font-size:9px;font-weight:600;background:#dbeafe;'
+            f'color:#1e40af;border-radius:4px;padding:2px 6px;letter-spacing:.04em;">✓ BOCM</span>'
+            f'</div>'
+        )
+        all_row_data.append(("PEM Declarado", pem_row_val))
+    elif pem_is_estimated:
+        pem_row_val = (
+            f'<div style="display:flex;align-items:center;gap:8px;">'
+            f'<span style="{_FH};font-size:17px;font-weight:700;color:#b45309;font-style:italic;">~{pem_s}</span>'
+            f'<span style="{_FM};font-size:9px;font-weight:600;background:#fffbeb;color:#b45309;'
+            f'border-radius:4px;border:1px solid #fde68a;padding:2px 6px;letter-spacing:.04em;">⚡ Est. IA</span>'
+            f'</div>'
+        )
+        all_row_data.append(("Estimación PEM", pem_row_val))
 
     # Etapas from description
     etapa_m = re.findall(r'[Ee]tapa\s*(\d+)[^€\d]*?(\d[\d.,]+\s*(?:[MmKk€])?)', desc)
@@ -466,17 +500,15 @@ def build_card(row):
     _DIV = "padding:4px 20px 16px 20px;"
     extras_html = ""
 
-    # Description (column I from sheet)
+    # Description: full text only shown in dropdown when too long for 2-line clamp.
+    # (The inline 2-line preview is already rendered above the table.)
     desc_full = esc(row.get("descripcion", "") or row.get("Description", ""))
-    if desc_full and len(desc_full) > 10:
-        pv = desc_full[:100] + ("…" if len(desc_full) > 100 else "")
+    if desc_full and len(desc_full) > 160:
         extras_html += (
             "<details><summary style='" + _SUM + "'>"
-            "<span style='font-size:14px'>📋</span>"
-            "<span>Descripción</span>"
-            "<span style='flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"
-            "font-size:12px;color:#94a3b8;font-weight:400;margin-left:6px;'>" + pv + "</span>"
-            "<span style='font-size:10px;color:#94a3b8;margin-left:8px;flex-shrink:0;'>▼</span>"
+            "<span style='font-size:12px'>📋</span>"
+            "<span style='color:#64748b;font-weight:500;'>Descripción completa</span>"
+            "<span style='margin-left:auto;font-size:10px;color:#94a3b8;'>▼</span>"
             "</summary><div style='" + _DIV + "'>"
             "<div style='font-size:13px;color:#374151;line-height:1.65;background:#f8fafc;"
             "border-radius:10px;padding:14px 16px;'>" + desc_full + "</div>"
@@ -524,6 +556,7 @@ def build_card(row):
         f'{ref_html}'
         f'{title_html}'
         f'{addr_html}'
+        f'{desc_preview_html}'
         f'{table_html}'
         f'</div>'
         f'{extras_html}'
@@ -544,6 +577,7 @@ COL_MAP = {
     "Date Found": "fecha_encontrado", "Lead Score": "score_raw",
     "Expediente": "expediente", "Phase": "fase",
     "AI Evaluation": "ai_evaluation", "Supplies Needed": "supplies_needed",
+    "Estimated PEM": "pem_est_raw",
 }
 
 @st.cache_data(ttl=300)
@@ -581,8 +615,12 @@ if df_raw.empty:
     st.stop()
 
 df = df_raw.rename(columns={k: v for k, v in COL_MAP.items() if k in df_raw.columns})
-df["pem"]      = df["pem_raw"].apply(parse_val)  if "pem_raw"          in df.columns else pd.Series(0.0, index=df.index)
-df["score"]    = df["score_raw"].apply(parse_sc) if "score_raw"        in df.columns else pd.Series(0,   index=df.index)
+df["pem"]          = df["pem_raw"].apply(parse_val)     if "pem_raw"     in df.columns else pd.Series(0.0, index=df.index)
+df["pem_est"]      = df["pem_est_raw"].apply(parse_val) if "pem_est_raw" in df.columns else pd.Series(0.0, index=df.index)
+# pem_combined = declared PEM (col F) when present, else estimated (col R).
+# This single field drives the sidebar filter, sort, and metrics.
+df["pem_combined"] = df.apply(lambda r: r["pem"] if r["pem"] > 0 else r["pem_est"], axis=1)
+df["score"]        = df["score_raw"].apply(parse_sc) if "score_raw" in df.columns else pd.Series(0, index=df.index)
 def _best_date(row):
     """Use the most recent of Date Found and Date Granted.
     Many leads have fecha_encontrado = fecha_granted (wrong value),
@@ -717,8 +755,9 @@ if min_score > 0:
 # ── PEM filter: show if PEM meets threshold OR PEM is 0 (not declared in text)
 # Most urbanización/plan especial BOCM texts do NOT include the PEM value —
 # it is only in the PDF annex. Excluding pem=0 removes ~80% of valid leads.
+# PEM filter uses pem_combined — declared (col F) OR estimated (col R) treated equally
 if min_pem > 0:
-    df_f = df_f[(df_f["pem"] >= min_pem) | (df_f["pem"] == 0)] if min_pem > 0 else df_f
+    df_f = df_f[df_f["pem_combined"] >= min_pem]
 
 if prof["types"] and "tipo" in df_f.columns:
     pat  = "|".join(re.escape(t) for t in prof["types"])
@@ -727,10 +766,10 @@ if prof["types"] and "tipo" in df_f.columns:
 if muni_sel and "municipio" in df_f.columns:
     df_f = df_f[df_f["municipio"].isin(muni_sel)]
 
-df_f = df_f.sort_values(["score", "pem"], ascending=[False, False]).reset_index(drop=True)
+df_f = df_f.sort_values(["score", "pem_combined"], ascending=[False, False]).reset_index(drop=True)
 
 # ── Metrics ──
-total_pem  = df_f["pem"].sum()
+total_pem  = df_f["pem_combined"].sum()
 count      = len(df_f)
 high_leads = len(df_f[df_f["score"] >= 65])
 avg_score  = int(df_f["score"].mean()) if count > 0 else 0
