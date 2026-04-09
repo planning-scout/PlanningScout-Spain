@@ -658,9 +658,9 @@ with st.sidebar:
 
     days_back = st.selectbox(
         "Período",
-        [7, 14, 30, 60, 90, 180, 365],
-        index=[7, 14, 30, 60, 90, 180, 365].index(prof["days"]) if prof["days"] in [7, 14, 30, 60, 90, 180, 365] else 1,
-        format_func=lambda x: "Todo el historial" if x == 365 else f"Últimos {x} días",
+        [7, 14, 30, 60, 90, 365],
+        index=([7, 14, 30, 60, 90, 365].index(prof["days"]) if prof["days"] in [7, 14, 30, 60, 90, 365] else 0),
+        format_func=lambda x: "Todo el historial" if x >= 365 else f"Últimos {x} días",
     )
     min_pem   = st.number_input("PEM mínimo (€)", value=prof["min_value"], min_value=0, step=50_000, format="%d")
     min_score = st.slider("Puntuación mínima", 0, 100, value=prof["min_score"], step=5)
@@ -718,7 +718,7 @@ if min_score > 0:
 # Most urbanización/plan especial BOCM texts do NOT include the PEM value —
 # it is only in the PDF annex. Excluding pem=0 removes ~80% of valid leads.
 if min_pem > 0:
-    df_f = df_f[(df_f["pem"] >= min_pem) | (df_f["pem"] == 0)]
+    df_f = df_f[(df_f["pem"] >= min_pem) | (df_f["pem"] == 0)] if min_pem > 0 else df_f
 
 if prof["types"] and "tipo" in df_f.columns:
     pat  = "|".join(re.escape(t) for t in prof["types"])
