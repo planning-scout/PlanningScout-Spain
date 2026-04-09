@@ -513,21 +513,29 @@ def build_card(row):
     )
 
 
-    # ── AI Evaluation — shown inline below the table (replaces old Descripción dropdown) ──
-    # Change 1+2: No dropdowns for description/AI/supplies.
-    # AI Evaluation (col S) shown as a clean inline block.
-    # Phase (col Q) shown as a tag below that.
+    # ── AI Evaluation — dropdown, same style as old Descripción dropdown ──
+    # Phase (col Q) shown as a tag row below.
+    _SUM = (
+        "cursor:pointer;padding:10px 20px;font-size:12.5px;font-weight:600;"
+        "color:#334155;display:flex;align-items:center;gap:8px;"
+        "outline:none;user-select:none;-webkit-user-select:none;"
+        "list-style:none;border-top:1px solid #f1f5f9;background:#fff;"
+    )
+    _DIV = "padding:4px 20px 16px 20px;"
     extras_html = ""
 
     ai_val = str(row.get("ai_evaluation", "") or row.get("AI Evaluation", "") or "").strip()
     if ai_val and ai_val.lower() not in ("nan", "none", ""):
         ai_e = _html_esc.escape(ai_val[:600])
         extras_html += (
-            "<div style='border-top:1px solid #f1f5f9;padding:14px 20px 4px 20px;'>"
-            "<div style='font-size:11px;font-weight:700;color:#1e3a5f;letter-spacing:.05em;"
-            "text-transform:uppercase;margin-bottom:7px;'>Análisis del proyecto</div>"
-            "<div style='font-size:13px;color:#334155;line-height:1.65;'>" + ai_e + "</div>"
-            "</div>"
+            "<details><summary style='" + _SUM + "'>"
+            "<span style='font-size:12px'>📋</span>"
+            "<span style='color:#64748b;font-weight:500;'>Análisis del proyecto</span>"
+            "<span style='margin-left:auto;font-size:10px;color:#94a3b8;'>▼</span>"
+            "</summary><div style='" + _DIV + "'>"
+            "<div style='font-size:13px;color:#374151;line-height:1.65;background:#f8fafc;"
+            "border-radius:10px;padding:14px 16px;'>" + ai_e + "</div>"
+            "</div></details>"
         )
 
     # Phase (col Q) — shown as a tag row
