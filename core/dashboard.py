@@ -598,7 +598,7 @@ def load_data():
             "https://www.googleapis.com/auth/drive",
         ])
         gc = gspread.authorize(creds)
-        ws = gc.open_by_key(st.secrets.get("SHEET_ID", SHEET_ID)).worksheet("Permits")
+        ws = gc.open_by_key(st.secrets.get("SHEET_ID", SHEET_ID)).worksheet("Leads")
         data = ws.get_all_records()
         return pd.DataFrame(data) if data else pd.DataFrame()
     except Exception as ex:
