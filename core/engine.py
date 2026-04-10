@@ -1058,6 +1058,14 @@ GRANT_SIGNALS = [
     "resolución de adjudicación",
     "acta de comprobación del replanteo",  # = obra started on-site
     "acta de recepción de las obras",      # = obra complete
+    "sometido a información pública",  # Planning phase
+    "exposición pública",
+    "tramitación del expediente",
+    "inicio del expediente",
+    "proyecto básico",
+    "proyecto de ejecución",
+    "memoria del proyecto",
+    "pliego de condiciones",
 ]
 
 CONSTRUCTION_SIGNALS = [
@@ -1117,19 +1125,27 @@ def classify_permit(text):
     """Returns (is_lead, reason, tier 1-5)."""
     t = text.lower()
 
+    # Hard reject unchanged
     for kw in HARD_REJECT:
         if kw in t: return False, f"Admin noise: '{kw}'", 0
 
     app_count = sum(1 for kw in APPLICATION_SIGNALS if kw in t)
-    if app_count >= 2: return False, "Application phase (not granted)", 0
+    if app_count >= 3: return False, "Application phase (not granted)", 0
 
     for kw in DENIAL_SIGNALS:
         if kw in t: return False, f"Denial: '{kw}'", 0
 
     has_grant        = any(p in t for p in GRANT_SIGNALS)
     has_construction = any(p in t for p in CONSTRUCTION_SIGNALS)
-    if not has_grant:        return False, "No grant language", 0
-    if not has_construction: return False, "Grant but no construction content", 0
+    
+    if not has_grant:
+        # Accept planning documents even without grant language
+        if any(p in t for p in ["plan parcial", "plan especial", "modificación puntual",
+                                 "reparcelación", "junta de compensación",
+                                 "proyecto de urbanización", "estudio de detalle"]):
+            return True, "Tier-2: Planning document (initial phase)", 2
+        return False, "No grant language", 0
+    if not has_construction: return False, "No construction content", 0
 
     has_major = any(p in t for p in [
         "obra mayor","nueva construcción","nueva planta","nave industrial",
