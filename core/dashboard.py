@@ -70,7 +70,7 @@ forced_profile_key = None
 if url_token and url_token in client_tokens:
     forced_profile_key = client_tokens[url_token]
 elif url_profile:
-    forced_profile_key = url_profile.lower().replace(" ", "_")
+    forced_profile_key = url_profile
 
 if require_token and not forced_profile_key:
     st.markdown("""
