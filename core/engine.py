@@ -275,9 +275,35 @@ KW_WEEKLY = [
     ("primera ocupación",         SECTION_III, 10, "MEP"),
 
     # ── Acta de recepción / liquidación — project complete (subcontract signal)
-    ("acta de recepción",         SECTION_III,  8, "CON+MAT"),
-    ("liquidación de obras",      SECTION_III,  8, "CON+MAT"),
-    ("resolución de adjudicación",SECTION_III,  8, "CON+MAT"),
+    ("acta de recepción",              SECTION_III,  8, "CON+MAT"),
+    ("liquidación de obras",           SECTION_III,  8, "CON+MAT"),
+    ("resolución de adjudicación",     SECTION_III,  8, "CON+MAT"),
+
+    # ── MEP — EU Next Generation rehabilitation (massive current opportunity) ──
+    ("rehabilitación energética",      SECTION_III,  8, "MEP+MAT"),
+    ("rehabilitación energética",      SECTION_II,   6, "MEP+MAT"),
+    ("eficiencia energética edificio", SECTION_III,  6, "MEP+MAT"),
+    ("programa de rehabilitación",     SECTION_III,  6, "MEP+MAT"),
+
+    # ── Promotores/RE — DIRs and major planning instruments ──────────────────
+    ("declaración de interés regional",SECTION_II,   8, "PRO+FCC"),
+    ("actuación de dotación",          SECTION_III,  6, "PRO"),
+    ("proyecto de actuación especial", SECTION_III,  6, "PRO+CON"),  # Ley 7/2024
+
+    # ── Retail — activity licensing and openings ──────────────────────────────
+    ("apertura de establecimiento",    SECTION_III,  8, "RET"),
+    ("licencia ambiental",             SECTION_III,  8, "RET+IND"),
+    ("actividad de restauración",      SECTION_III,  5, "RET"),
+
+    # ── Industrial — classified activities and expansions ────────────────────
+    ("actividad clasificada",          SECTION_III,  8, "IND+MEP"),
+    ("modificación sustancial",        SECTION_III,  6, "IND+MEP"),
+    ("instalación de maquinaria",      SECTION_III,  6, "IND+MEP"),
+
+    # ── Gran Infraestructura — BOE-level infrastructure ──────────────────────
+    ("obra civil",                     SECTION_II,   8, "FCC+CON"),
+    ("infraestructura hidráulica",     SECTION_II,   6, "FCC"),
+    ("saneamiento colector",           SECTION_III,  6, "FCC+CON+MAT"),
 ]
 
 KW_EXTRA_FULL = [
@@ -346,12 +372,40 @@ KW_EXTRA_FULL = [
     ("implantación de actividad",SECTION_III,  6, "RET+MEP"),
 
     # ── Industrial / Logistics — confirmed large builds ──────────────────
-    ("centro de datos",          SECTION_III,  6, "IND+MEP+MAT"),
-    ("data center",              SECTION_III,  5, "IND+MEP"),
-    ("depósito",                 SECTION_III,  5, "IND+MAT"),
-    ("cámara frigorífica",       SECTION_III,  5, "IND+MEP"),
-    ("instalación fotovoltaica", SECTION_III,  6, "IND+MEP"),
-    ("zona industrial",          SECTION_III,  6, "IND+MAT"),
+    ("centro de datos",             SECTION_III,  6, "IND+MEP+MAT"),
+    ("data center",                 SECTION_III,  5, "IND+MEP"),
+    ("depósito",                    SECTION_III,  5, "IND+MAT"),
+    ("cámara frigorífica",          SECTION_III,  5, "IND+MEP"),
+    ("instalación fotovoltaica",    SECTION_III,  6, "IND+MEP"),
+    ("zona industrial",             SECTION_III,  6, "IND+MAT"),
+    ("hub logístico",               SECTION_III,  5, "IND+MAT"),
+    ("planta de tratamiento",       SECTION_III,  5, "IND+MEP+MAT"),
+
+    # ── Promotores/RE — land instruments and early signals ───────────────
+    ("segregación de finca",        SECTION_III,  6, "PRO"),
+    ("segregación de parcela",      SECTION_III,  6, "PRO"),
+    ("normalización de fincas",     SECTION_III,  6, "PRO"),
+    ("agrupación de fincas",        SECTION_III,  6, "PRO"),
+    ("suelo no urbanizable",        SECTION_III,  5, "PRO"),        # DIR signals often here
+
+    # ── MEP — retrofits and EU-funded building upgrades ──────────────────
+    ("aislamiento térmico",         SECTION_III,  6, "MEP+MAT"),
+    ("instalación placas solares",  SECTION_III,  6, "MEP+IND"),
+    ("aerotermia",                  SECTION_III,  5, "MEP"),
+    ("bomba de calor",              SECTION_III,  5, "MEP"),
+    ("ventilación mecánica",        SECTION_III,  5, "MEP"),
+
+    # ── BOE — state-level infrastructure (Gran Infraestructura) ──────────
+    # These catch ADIF, Metro, Ministerio, hospital contracts in BOE
+    ("obra de infraestructura",     SECTION_II,  10, "FCC+CON"),
+    ("concesión administrativa",    SECTION_II,   6, "FCC+PRO"),
+    ("contrato de concesión",       SECTION_II,   6, "FCC"),
+
+    # ── Alquiler Maquinaria — earthworks and demolition signals ─────────
+    ("movimiento de tierras",       SECTION_III,  6, "KILOUTOU+CON"),
+    ("vaciado de solar",            SECTION_III,  5, "KILOUTOU+CON"),
+    ("desescombro",                 SECTION_III,  5, "KILOUTOU"),
+    ("explanación",                 SECTION_III,  5, "KILOUTOU+CON"),
 ]
 
 # Logistics corridor municipalities for targeted bonus search in full mode
@@ -370,8 +424,11 @@ DAY_SCAN_KWS   = [
     "licencia", "urbanización", "licitación",
     "reparcelación", "aprobación definitiva", "plan especial", "plan parcial",
     "contribuciones especiales",  # confirmed obra documents with budget + addresses
+    "declaración responsable",    # Ley 1/2020 fast-track licences — replaces obra mayor for many projects
+    "adjudicación",               # confirmed contracts (adjudicación de obras, adjudicado a)
+    "declaración de interés regional",  # DIRs = major land development signals for Promotores/RE
 ]
-DAY_SCAN_KWS_V = ["base imponible", "icio", "notificación"]
+DAY_SCAN_KWS_V = ["base imponible", "icio", "notificación", "liquidación provisional"]
 
 # ── Profile trigger words (used in scoring and PDF analysis) ────────────────
 # Presence of these in the document text boosts score for the matching profile.
@@ -406,7 +463,24 @@ PROFILE_TRIGGERS = {
     "kiloutou": [
         "obra mayor", "nueva construcción", "rehabilitación", "demolición",
         "licitación de obras", "nave industrial", "urbanización",
-        "movimiento de tierras", "pavimentación",
+        "movimiento de tierras", "pavimentación", "vaciado", "explanación",
+        "derribo", "desescombro", "cimentación",
+    ],
+    # ── Promotores/RE — land development and planning signals ─────────────────
+    "promotores": [
+        "reparcelación", "junta de compensación", "suelo urbanizable",
+        "plan parcial", "plan de sectorización", "declaración de interés regional",
+        "agente urbanizador", "segregación de finca", "normalización de fincas",
+        "actuación de dotación", "convenio urbanístico", "agrupación de fincas",
+        "aprovechamiento urbanístico", "coeficiente de edificabilidad",
+        "proyecto de actuación especial",
+    ],
+    # ── Compras/Materiales — any confirmed project needs materials ─────────────
+    "compras": [
+        "proyecto de urbanización", "nueva construcción", "rehabilitación integral",
+        "nave industrial", "licitación de obras", "hormigón", "tubería",
+        "acero", "áridos", "pavimentación", "cerramiento", "cubierta",
+        "carpintería", "aislamiento", "estructura metálica", "panel sándwich",
     ],
 }
 
@@ -1067,8 +1141,20 @@ GRANT_SIGNALS = [
     "proyecto de ejecución",
     "memoria del proyecto",
     "pliego de condiciones",
+    # Additional grant signals missing from original
+    "se adjudica",                    # contract awarded
+    "adjudicación definitiva",
+    "adjudicación provisional",
+    "declarada de interés regional",  # DIR approved = huge development signal
+    "se autoriza la implantación",    # industrial/commercial activity authorised
+    "licencia de apertura",           # activity licence granted
+    "actividad autorizada",
+    "acta de inicio de obras",        # construction literally started
+    "certificado de eficiencia energética",  # rehab project confirmed done
+    "se aprueba el proyecto de reparcelación",
+    "aprobación del proyecto de actuación",
+    "inscripción en el registro de entidades",
 ]
-
 CONSTRUCTION_SIGNALS = [
     "obra mayor", "obras mayores", "licencia de obras",
     "licencia urbanística", "licencia de edificación",
@@ -1108,6 +1194,20 @@ CONSTRUCTION_SIGNALS = [
     "resolución de adjudicación", "contrato de obras adjudicado",
     "centro de datos", "data center", "instalación fotovoltaica",
     "vivienda protegida", "viviendas de protección oficial",
+    # MEP / retrofits
+    "rehabilitación energética", "eficiencia energética",
+    "aislamiento térmico", "instalación de placas solares",
+    "aerotermia", "bomba de calor", "ventilación mecánica",
+    # Retail / industrial activity
+    "apertura de establecimiento", "actividad clasificada",
+    "modificación sustancial de instalaciones",
+    "licencia de apertura", "instalación de maquinaria",
+    # Gran infraestructura
+    "declaración de interés regional", "obra de infraestructura",
+    "infraestructura hidráulica", "colector general",
+    # Promotores
+    "segregación de finca", "normalización de fincas",
+    "proyecto de actuación especial",
 ]
 
 SMALL_ACTIVITY = [
@@ -1179,6 +1279,23 @@ def classify_permit(text):
                              "ampliación de edificio","declaración responsable"]):
         return True, "Tier-4: Obra mayor / cambio de uso", 4
 
+    # Tier-4b: EU-funded retrofits — confirmed budget, MEP opportunity
+    if any(p in t for p in ["rehabilitación energética","eficiencia energética edificio",
+                             "programa de rehabilitación","fondos next generation",
+                             "plan de recuperación"]):
+        return True, "Tier-4: Rehabilitación energética (EU fondos)", 4
+
+    # Tier-4c: Retail / industrial activity openings with size data
+    if any(p in t for p in ["apertura de establecimiento","actividad clasificada",
+                             "licencia ambiental","modificación sustancial de instalaciones"]):
+        if any(p in t for p in ["m²","metros cuadrados","superficie"]):
+            return True, "Tier-4: Actividad con superficie declarada", 4
+
+    # Tier-4d: Land development instruments for Promotores/RE
+    if any(p in t for p in ["declaración de interés regional","segregación de finca",
+                             "normalización de fincas","proyecto de actuación especial"]):
+        return True, "Tier-4: Instrumento urbanístico (Promotores/RE)", 4
+
     return True, "Tier-5: Licencia / actividad grande", 5
 
 # ════════════════════════════════════════════════════════════
@@ -1240,12 +1357,31 @@ def score_lead(p):
         elif val >= 100_000:    score += 12
         elif val >= 50_000:     score += 6
 
-    # Logistics corridor bonus
+    # Logistics corridor bonus — industrial in prime Madrid logistics belt
     logistics_munis = {"valdemoro","getafe","coslada","alcalá de henares","torrejón de ardoz",
                        "arganda del rey","fuenlabrada","alcobendas","san sebastián de los reyes",
                        "rivas-vaciamadrid","mejorada del campo","pinto","parla"}
     if any(m in muni for m in logistics_munis) and "industrial" in pt:
         score += 5
+
+    # EU Next Gen rehabilitation bonus — confirmed budget, MEP priority
+    if any(k in desc for k in ["rehabilitación energética","eficiencia energética",
+                                "fondos next generation","plan de recuperación"]):
+        score += 10  # High commercial value: confirmed funding = confirmed project
+
+    # DIRs and major land development bonus for Promotores/RE
+    if any(k in desc for k in ["declaración de interés regional","dir ","actuación de dotación",
+                                "proyecto de actuación especial"]):
+        score += 15  # DIRs are the biggest signals for land investment
+
+    # Retail bonus when m² declared (size-confirmed opportunity)
+    if "licencia de actividad" in pt or "apertura" in desc:
+        if any(k in desc for k in ["m²","metros cuadrados","superficie útil"]):
+            score += 8
+
+    # Demolition + new construction = double signal for machinery + materials
+    if any(k in desc for k in ["demolición","derribo"]) and any(k in desc for k in ["nueva construcción","nueva planta"]):
+        score += 6
 
     # Data completeness
     if p.get("address"):    score += 8
@@ -1535,6 +1671,16 @@ def keyword_extract(text, url, pub_date):
     elif any(p in t for p in ["contribuciones especiales","cuota tributaria de reparto",
                                "ordenanza fiscal de contribuciones"]):
         res["permit_type"] = "contribuciones especiales"
+    elif any(p in t for p in ["rehabilitación energética","eficiencia energética edificio",
+                               "programa de rehabilitación energética"]):
+        res["permit_type"] = "obra mayor rehabilitación"  # maps to MEP profile correctly
+    elif any(p in t for p in ["declaración de interés regional","dir "]):
+        res["permit_type"] = "plan especial"  # highest-tier planning = Promotores/RE
+    elif any(p in t for p in ["apertura de establecimiento","actividad clasificada",
+                               "licencia ambiental"]):
+        res["permit_type"] = "licencia de actividad"
+    elif any(p in t for p in ["segregación de finca","normalización de fincas","agrupación de fincas"]):
+        res["permit_type"] = "plan especial"  # land instrument = Promotores/RE
 
     # Description
     desc = None
@@ -1764,8 +1910,10 @@ Return an array of matching profiles based on project type:
 - "mep" — Instaladores: edificios con ascensores/HVAC, rehab integral, primera ocupación
 - "industrial" — Naves, almacenes, polígonos industriales, plataformas logísticas
 - "retail" — Locales comerciales, centros comerciales, cambios de uso a terciario
-- "kiloutou" — Alquiler maquinaria: cualquier obra mayor, urbanización, demolición
-- "materiales" — Suministro materiales: urbanización, nueva construcción, rehab
+- "kiloutou" — Alquiler maquinaria: cualquier obra mayor, urbanización, demolición, movimiento tierras
+- "materiales" — Suministro materiales: urbanización, nueva construcción, rehab, industrial
+- "promotores" — Promotores/RE: reparcelación, DIR, segregación finca, plan parcial, convenio urbanístico
+- "retail" — Expansión retail: apertura establecimiento, cambio uso, licencia ambiental con m²
 
 Example: Urbanización €50M → ["fcc", "constructora", "kiloutou", "materiales"]
 Example: Nave 5.000m² → ["industrial", "kiloutou", "materiales"]
@@ -1791,8 +1939,8 @@ If you estimate PEM rather than find it explicitly, set confidence to "medium" a
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role":"system","content":sys_prompt},
-                      {"role":"user","content":f"URL: {url}\n\nTexto BOCM:\n{text[:8000]}"}],
-            temperature=0, max_tokens=900,
+                      {"role":"user","content":f"URL: {url}\n\nTexto BOCM:\n{text[:12000]}"}],
+            temperature=0, max_tokens=1100,
             response_format={"type":"json_object"})
 
         d = json.loads(resp.choices[0].message.content.strip())
