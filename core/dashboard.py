@@ -689,14 +689,17 @@ df["pem"]          = df["pem_raw"].apply(parse_val)                  if "pem_raw
 df["pem_est"]      = df["pem_est_raw"].apply(parse_est_pem_numeric)  if "pem_est_raw" in df.columns else pd.Series(0.0, index=df.index)
 # pem_combined = declared PEM (col F) when present, else estimated (col O)
     # This single field drives the sidebar filter, sort, and metrics.
-    df["pem_combined"] = df.apply(lambda r: r["pem"] if r["pem"] > 0 else r["pem_estimado"], axis=1)
-    
-    def parse_sc(val):
-        if pd.isna(val) or str(val).strip() == "": return 0
-        try: return int(float(str(val).replace(",", ".")))
-        except ValueError: return 0
+# pem_combined = declared PEM (col F) when present, else estimated (col O)
+# This single field drives the sidebar filter, sort, and metrics.
+df["pem_combined"] = df.apply(lambda r: r["pem"] if r["pem"] > 0 else r["pem_estimado"], axis=1)
 
-    df["score"]        = df["score_raw"].apply(parse_sc) if "score_raw" in df.columns else pd.Series(0, index=df.index)
+def parse_sc(val):
+    if pd.isna(val) or str(val).strip() == "": return 0
+    try: return int(float(str(val).replace(",", ".")))
+    except ValueError: return 0
+
+df["score"] = df["score_raw"].apply(parse_sc) if "score_raw" in df.columns else pd.Series(0, index=df.index)
+
 def _best_date(row):
     """Use the most recent of Date Found and Date Granted.
     Many leads have fecha_encontrado = fecha_granted (wrong value),
