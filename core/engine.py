@@ -44,7 +44,7 @@ def time_ok(need_s=60):
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--client",  required=True)
-parser.add_argument("--weeks",   type=int, default=8,
+parser.add_argument("--weeks",   type=int, default=2,
     help="1=daily(1-2 days), 2-3=weekly, 4+=full backfill")
 parser.add_argument("--digest",  action="store_true")
 parser.add_argument("--resume",  action="store_true",
