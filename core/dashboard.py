@@ -96,6 +96,32 @@ def update_password_in_sheet(email, new_password):
     except Exception:
         return False
 
+def log_activity(email, action="login"):
+    """Append a login event to the 'Activity' worksheet (timestamp | email | action).
+    Creates the sheet with headers if it doesn't exist yet.
+    Never raises — login must not be blocked by a logging failure."""
+    try:
+        sa = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(sa, scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ])
+        gc     = gspread.authorize(creds)
+        wb     = gc.open_by_key(st.secrets.get("SHEET_ID", ""))
+        # Get or create the Activity worksheet
+        try:
+            ws = wb.worksheet("Activity")
+        except Exception:
+            ws = wb.add_worksheet(title="Activity", rows=1000, cols=3)
+            ws.append_row(["timestamp", "email", "action"])
+        ws.append_row([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            email,
+            action,
+        ])
+    except Exception:
+        pass  # never block login due to logging failure
+
 # ════════════════════════════════════════════════════════════
 # AUTH
 # Two access paths:
@@ -145,33 +171,45 @@ if not st.session_state["authenticated"]:
         pass
     _users = {**_secret_u, **_sheet_u}   # sheet overrides secrets for same email
 
-    # Login-page CSS: light background, hide sidebar and header, centre card
+    # Login-page CSS: block-container IS the card — one unified white box, no second container
     st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-.stApp { background: #f4f6f9 !important; }
-[data-testid="stSidebar"]          { display: none !important; }
-header[data-testid="stHeader"]     { display: none !important; }
+.stApp { background: #f0f2f5 !important; }
+[data-testid="stSidebar"]      { display: none !important; }
+header[data-testid="stHeader"] { display: none !important; }
+
+/* THE CARD — entire block-container is the white card */
 .block-container {
-    padding-top: 8vh !important;
-    padding-bottom: 0 !important;
-    padding-left: 16px !important;
-    padding-right: 16px !important;
-    max-width: 420px !important;
-    margin: 0 auto !important;
-}
-/* Input fields */
-.stTextInput > div > div > input {
     background: #fff !important;
+    border-radius: 20px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 4px 32px rgba(0,0,0,.09), 0 1px 4px rgba(0,0,0,.05) !important;
+    padding: 40px 36px 36px !important;
+    max-width: 420px !important;
+    margin: 7vh auto 0 !important;
+}
+
+/* Strip Streamlit's own form border so form blends into the card */
+[data-testid="stForm"] {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+}
+
+/* Inputs — slightly tinted so they read on the white card */
+.stTextInput > div > div > input {
+    background: #f8fafc !important;
     border: 1.5px solid #e2e8f0 !important;
     border-radius: 8px !important;
     color: #0d1a2b !important;
     font-size: 14px !important;
-    padding: 10px 14px !important;
+    padding: 11px 14px !important;
 }
 .stTextInput > div > div > input:focus {
+    background: #fff !important;
     border-color: #1e3a5f !important;
-    box-shadow: 0 0 0 3px rgba(30,58,95,.12) !important;
+    box-shadow: 0 0 0 3px rgba(30,58,95,.1) !important;
     outline: none !important;
 }
 .stTextInput label p,
@@ -181,6 +219,7 @@ header[data-testid="stHeader"]     { display: none !important; }
     font-weight: 600 !important;
     font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
 }
+
 /* Submit button */
 [data-testid="stFormSubmitButton"] > button {
     background: #1e3a5f !important;
@@ -190,7 +229,7 @@ header[data-testid="stHeader"]     { display: none !important; }
     font-size: 15px !important;
     font-weight: 600 !important;
     width: 100% !important;
-    padding: 12px 0 !important;
+    padding: 13px 0 !important;
     margin-top: 4px !important;
     transition: background .15s;
 }
@@ -199,27 +238,26 @@ header[data-testid="stHeader"]     { display: none !important; }
 }
 </style>""", unsafe_allow_html=True)
 
-    # Card header HTML (above the Streamlit form)
+    # Header HTML — sits directly in block-container, no wrapper div
     st.markdown(f"""
-<div style="background:#fff;border-radius:20px;padding:36px 32px 28px;
-     box-shadow:0 4px 24px rgba(0,0,0,.08);border:1px solid #e8ecf1;">
-  <div style="text-align:center;margin-bottom:28px;">
-    {LOGO_HTML}
-    <div style="display:inline-flex;align-items:center;margin-top:14px;
-         background:rgba(200,134,10,.08);border:1px solid rgba(200,134,10,.28);
-         border-radius:100px;padding:5px 16px;">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:10px;
-            font-weight:600;color:#c8860a;letter-spacing:.07em;">
-        &#10022; ACCESO ANTICIPADO &middot; SELECTIVO
-      </span>
-    </div>
-    <h2 style="font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:700;
-         color:#0d1a2b;margin:16px 0 6px;">Tu radar de proyectos</h2>
-    <p style="font-size:13px;color:#64748b;margin:0;
-         font-family:'Plus Jakarta Sans',system-ui,sans-serif;line-height:1.5;">
-      Introduce tus credenciales de acceso.
-    </p>
+<div style="text-align:center;margin-bottom:24px;">
+  <div style="margin-bottom:4px;">{LOGO_HTML}</div>
+  <div style="display:inline-flex;align-items:center;margin-top:12px;
+       background:rgba(200,134,10,.07);border:1px solid rgba(200,134,10,.25);
+       border-radius:100px;padding:4px 14px;">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;
+          font-weight:600;color:#c8860a;letter-spacing:.07em;">
+      &#10022; ACCESO ANTICIPADO &middot; SELECTIVO
+    </span>
   </div>
+  <h2 style="font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:700;
+       color:#0d1a2b;margin:14px 0 5px;">Tu radar de proyectos</h2>
+  <p style="font-size:13px;color:#94a3b8;margin:0;
+       font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
+    Introduce tus credenciales de acceso.
+  </p>
+</div>
+<div style="height:1px;background:#f1f5f9;margin:0 0 22px;"></div>
 """, unsafe_allow_html=True)
 
     with st.form("login_form"):
@@ -234,6 +272,7 @@ header[data-testid="stHeader"]     { display: none !important; }
             st.session_state["authenticated"] = True
             st.session_state["user_email"]    = _e
             st.session_state["login_error"]   = ""
+            log_activity(_e, "login")
             st.rerun()
         else:
             st.session_state["login_error"] = "Credenciales incorrectas. Verifica tu email y contraseña."
@@ -247,19 +286,17 @@ header[data-testid="stHeader"]     { display: none !important; }
             unsafe_allow_html=True,
         )
 
-    # Card footer HTML (below the Streamlit form)
+    # Footer — no closing </div> needed (block-container is the card)
     st.markdown("""
-  <div style="text-align:center;margin-top:20px;padding-top:18px;
-       border-top:1px solid #f1f5f9;">
-    <p style="font-size:12px;color:#94a3b8;margin:0 0 6px;
-         font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
-      ¿Aún no tienes acceso?
-    </p>
-    <a href="https://planningscout.com"
-       style="font-size:12px;color:#1e3a5f;font-weight:600;text-decoration:none;">
-      Solicitar acceso en planningscout.com &rarr;
-    </a>
-  </div>
+<div style="text-align:center;margin-top:20px;padding-top:16px;border-top:1px solid #f1f5f9;">
+  <p style="font-size:12px;color:#94a3b8;margin:0 0 5px;
+       font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
+    ¿A&uacute;n no tienes acceso?
+  </p>
+  <a href="https://planningscout.com"
+     style="font-size:12px;color:#1e3a5f;font-weight:600;text-decoration:none;">
+    Solicitar acceso en planningscout.com &rarr;
+  </a>
 </div>""", unsafe_allow_html=True)
 
     st.stop()
