@@ -286,7 +286,7 @@ KW_WEEKLY = [
     ("programa de rehabilitación",     SECTION_III,  6, "MEP+MAT"),
 
     # ── Promotores/RE — DIRs and major planning instruments ──────────────────
-    ("declaración de interés regional",SECTION_II,   8, "PRO+FCC"),
+    ("declaración de interés regional",SECTION_II,   8, "PRO+INFRA"),
     ("actuación de dotación",          SECTION_III,  6, "PRO"),
     ("proyecto de actuación especial", SECTION_III,  6, "PRO+CON"),  # Ley 7/2024
 
@@ -301,9 +301,9 @@ KW_WEEKLY = [
     ("instalación de maquinaria",      SECTION_III,  6, "IND+MEP"),
 
     # ── Gran Infraestructura — BOE-level infrastructure ──────────────────────
-    ("obra civil",                     SECTION_II,   8, "FCC+CON"),
-    ("infraestructura hidráulica",     SECTION_II,   6, "FCC"),
-    ("saneamiento colector",           SECTION_III,  6, "FCC+CON+MAT"),
+    ("obra civil",                     SECTION_II,   8, "INFRA+CON"),
+    ("infraestructura hidráulica",     SECTION_II,   6, "INFRA"),
+    ("saneamiento colector",           SECTION_III,  6, "INFRA+CON+MAT"),
 ]
 
 KW_EXTRA_FULL = [
@@ -343,18 +343,18 @@ KW_EXTRA_FULL = [
     ("suelo urbanizable",        SECTION_III,  6, "PRO+CON"),
     ("modificación del plan",    SECTION_II,   6, "PRO+CON"),
     # ── FCC / Gran Infraestructura ────────────────────────────────────────────
-    ("plan de sectorización",    SECTION_III,  8, "FCC+CON"),
-    ("obra civil",               SECTION_III,  8, "FCC+CON"),
-    ("obras de infraestructura", SECTION_III,  8, "FCC+CON"),
-    ("concesión de obra",        SECTION_III,  8, "FCC+CON"),
-    ("aprobación definitiva",    SECTION_II,  10, "FCC+CON"),
-    ("contrato de obras",        SECTION_II,   8, "FCC+CON"),
-    ("licitación de obras",      SECTION_II,  10, "FCC+CON"),
+    ("plan de sectorización",    SECTION_III,  8, "INFRA+CON"),
+    ("obra civil",               SECTION_III,  8, "INFRA+CON"),
+    ("obras de infraestructura", SECTION_III,  8, "INFRA+CON"),
+    ("concesión de obra",        SECTION_III,  8, "INFRA+CON"),
+    ("aprobación definitiva",    SECTION_II,  10, "INFRA+CON"),
+    ("contrato de obras",        SECTION_II,   8, "INFRA+CON"),
+    ("licitación de obras",      SECTION_II,  10, "INFRA+CON"),
     # ── Kiloutou / Alquiler Maquinaria ────────────────────────────────────────
-    ("obras de reforma",         SECTION_III,  8, "KILOUTOU+MAT"),
-    ("obras de adecuación",      SECTION_III,  6, "KILOUTOU"),
-    ("obras de ampliación",      SECTION_III,  6, "KILOUTOU+MEP"),
-    ("nueva construcción",       SECTION_II,   8, "KILOUTOU+CON"),
+    ("obras de reforma",         SECTION_III,  8, "ALQUILER+MAT"),
+    ("obras de adecuación",      SECTION_III,  6, "ALQUILER"),
+    ("obras de ampliación",      SECTION_III,  6, "ALQUILER+MEP"),
+    ("nueva construcción",       SECTION_II,   8, "ALQUILER+CON"),
 
     # ── MEP-specific (confirmed buildings with systems to install) ─────────
     ("instalación eléctrica",    SECTION_III,  6, "MEP"),
@@ -380,7 +380,7 @@ KW_EXTRA_FULL = [
     ("zona industrial",          SECTION_III,  6, "IND+MAT"),
     # ── Missing high-value terms for the 8 profiles ──────────────────────────
     # Kiloutou + MEP: obra de accesibilidad = ramps, lifts in existing buildings
-    ("obras de accesibilidad",   SECTION_III,  6, "KILOUTOU+MEP"),
+    ("obras de accesibilidad",   SECTION_III,  6, "ALQUILER+MEP"),
     # MEP: VPO buildings are mandatory elevator + full MEP systems
     ("vivienda de protección oficial", SECTION_III, 8, "MEP+CON"),
     ("vivienda pública en alquiler",   SECTION_III, 8, "MEP+CON"),
@@ -411,15 +411,15 @@ KW_EXTRA_FULL = [
 
     # ── BOE — state-level infrastructure (Gran Infraestructura) ──────────
     # These catch ADIF, Metro, Ministerio, hospital contracts in BOE
-    ("obra de infraestructura",     SECTION_II,  10, "FCC+CON"),
-    ("concesión administrativa",    SECTION_II,   6, "FCC+PRO"),
-    ("contrato de concesión",       SECTION_II,   6, "FCC"),
+    ("obra de infraestructura",     SECTION_II,  10, "INFRA+CON"),
+    ("concesión administrativa",    SECTION_II,   6, "INFRA+PRO"),
+    ("contrato de concesión",       SECTION_II,   6, "INFRA"),
 
     # ── Alquiler Maquinaria — earthworks and demolition signals ─────────
-    ("movimiento de tierras",       SECTION_III,  6, "KILOUTOU+CON"),
-    ("vaciado de solar",            SECTION_III,  5, "KILOUTOU+CON"),
-    ("desescombro",                 SECTION_III,  5, "KILOUTOU"),
-    ("explanación",                 SECTION_III,  5, "KILOUTOU+CON"),
+    ("movimiento de tierras",       SECTION_III,  6, "ALQUILER+CON"),
+    ("vaciado de solar",            SECTION_III,  5, "ALQUILER+CON"),
+    ("desescombro",                 SECTION_III,  5, "ALQUILER"),
+    ("explanación",                 SECTION_III,  5, "ALQUILER+CON"),
 ]
 
 # Logistics corridor municipalities for targeted bonus search in full mode
@@ -447,7 +447,7 @@ DAY_SCAN_KWS_V = ["base imponible", "icio", "notificación", "liquidación provi
 # ── Profile trigger words (used in scoring and PDF analysis) ────────────────
 # Presence of these in the document text boosts score for the matching profile.
 PROFILE_TRIGGERS = {
-    "fcc": [
+    "infrastructura": [
         "proyecto de urbanización", "obras de urbanización", "junta de compensación",
         "aprobación definitiva", "plan parcial", "reparcelación",
         "licitación de obras", "contrato de obras", "obra civil",
@@ -474,7 +474,7 @@ PROFILE_TRIGGERS = {
         "local comercial", "gran superficie", "centro comercial", "cambio de uso",
         "uso terciario", "superficie comercial", "actividad comercial",
     ],
-    "kiloutou": [
+    "alquiler": [
         "obra mayor", "nueva construcción", "rehabilitación", "demolición",
         "licitación de obras", "nave industrial", "urbanización",
         "movimiento de tierras", "pavimentación", "vaciado", "explanación",
@@ -2139,23 +2139,23 @@ Example BAD output (NEVER do this):
 
 PROFILE_FIT — Which client profiles benefit from this project:
 Return an array of matching profiles based on project type:
-- "fcc" — Gran infraestructura: urbanización >€10M, obra civil, licitaciones estado
+- "infrastructura" — Gran infraestructura: urbanización >€10M, obra civil, licitaciones estado
 - "constructora" — Promotores grandes: edificios plurifamiliares, licitaciones municipales
 - "mep" — Instaladores: edificios con ascensores/HVAC, rehab integral, primera ocupación
 - "industrial" — Naves, almacenes, polígonos industriales, plataformas logísticas
 - "retail" — Locales comerciales, centros comerciales, cambios de uso a terciario
-- "kiloutou" — Alquiler maquinaria: cualquier obra mayor, urbanización, demolición, movimiento tierras
+- "alquiler" — Alquiler maquinaria: cualquier obra mayor, urbanización, demolición, movimiento tierras
 - "materiales" — Suministro materiales: urbanización, nueva construcción, rehab, industrial
 - "promotores" — Promotores/RE: reparcelación, DIR, segregación finca, plan parcial, convenio urbanístico
 - "retail" — Expansión retail: apertura establecimiento, cambio uso, licencia ambiental con m²
 
-Example: Urbanización €50M → ["fcc", "constructora", "kiloutou", "materiales"]
-Example: Nave 5.000m² → ["industrial", "kiloutou", "materiales"]
+Example: Urbanización €50M → ["infrastructura", "constructora", "alquiler", "materiales"]
+Example: Nave 5.000m² → ["industrial", "alquiler", "materiales"]
 Example: Edificio 40 viviendas → ["constructora", "mep", "materiales"]
 
 DOCUMENT CLASSIFICATION RULES:
 - "contribuciones especiales por la ejecución de obras" → permit_type:"contribuciones especiales", 
-  phase:"en_obra", profile_fit includes "materiales" and "kiloutou" (obra confirmed active)
+  phase:"en_obra", profile_fit includes "materiales" and "alquiler" (obra confirmed active)
 - "resolución de adjudicación" → phase:"adjudicacion" (contract awarded — most actionable)
 - "anuncio de licitación" → phase:"licitacion", profile_fit includes "constructora"
 - "acta de recepción" → project complete (lower priority, mention in ai_evaluation)
@@ -2532,7 +2532,8 @@ def send_digest():
         for r in recent:
             raw_v = str(r[5]).strip() if len(r) > 5 and r[5] else ""
             try:
-                dec = f"€{int(float(re.sub(r'[^\d.]','',raw_v.replace('.','').replace(',','.')))):,}" if raw_v else "—"
+                _cleaned = re.sub(r'[^\d.]', '', raw_v.replace('.', '').replace(',', '.'))
+                dec = f"€{int(float(_cleaned)):,}" if raw_v and _cleaned else "—"
             except: dec = "—"
             sc    = get_score(r)
             sc_c  = "#1b5e20" if sc >= 65 else "#e65100" if sc >= 40 else "#b71c1c"
@@ -3261,7 +3262,6 @@ def search_boe_construction(date_from, date_to, global_seen):
         return any(d in dl for d in _TARGET_DEPTS)
 
     for day in scan_days:
-        for day in scan_days:
         if not time_ok(need_s=30): break
         sumario_id = f"BOE-S-{day.strftime('%Y%m%d')}"
         xml_url    = f"{BOE_BASE}/diario_boe/xml.php?id={sumario_id}"
