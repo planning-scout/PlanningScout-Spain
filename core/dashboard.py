@@ -55,7 +55,12 @@ LOGO_HTML = (
 # ════════════════════════════════════════════════════════════
 @st.cache_data(ttl=60)
 def load_users_from_sheet():
-    """Load {email: password} from the 'Users' worksheet. Returns {} on any error."""
+    """Load users from the 'Users' worksheet.
+    Returns ({email: password}, {email: perfil}).
+    Sheet columns: email | password | active | perfil
+    The 'perfil' column is optional — missing/empty = '' (fallback to login-form dropdown).
+    Returns ({}, {}) on any error.
+    """
     try:
         sa = dict(st.secrets["gcp_service_account"])
         creds = Credentials.from_service_account_info(sa, scopes=[
@@ -65,16 +70,20 @@ def load_users_from_sheet():
         gc = gspread.authorize(creds)
         ws = gc.open_by_key(st.secrets.get("SHEET_ID", "")).worksheet("Users")
         rows = ws.get_all_records()
-        users = {}
+        passwords = {}
+        profiles  = {}
         for row in rows:
             email    = str(row.get("email", "") or "").strip().lower()
             password = str(row.get("password", "") or "").strip()
             active   = str(row.get("active", "TRUE") or "TRUE").strip().upper()
+            perfil   = str(row.get("perfil", "") or "").strip().lower()
             if email and password and active != "FALSE":
-                users[email] = password
-        return users
+                passwords[email] = password
+                if perfil:
+                    profiles[email] = perfil
+        return passwords, profiles
     except Exception:
-        return {}
+        return {}, {}
 
 def update_password_in_sheet(email, new_password):
     """Update password for a user in the 'Users' worksheet. Returns True on success."""
@@ -148,7 +157,7 @@ except Exception:
     pass
 
 # ── Initialise session state ──
-for _k, _v in [("authenticated", False), ("user_email", ""), ("login_error", "")]:
+for _k, _v in [("authenticated", False), ("user_email", ""), ("login_error", ""), ("user_perfil", "")]:
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
@@ -162,7 +171,7 @@ if url_token and url_token in client_tokens:
 # ── Login gate: show branded form if not yet authenticated ──
 if not st.session_state["authenticated"]:
     # Load users: Google Sheets "Users" tab first, st.secrets["users"] as fallback
-    _sheet_u  = load_users_from_sheet()
+    _sheet_u, _sheet_perfs = load_users_from_sheet()
     _secret_u = {}
     try:
         _su = st.secrets.get("users", {})
@@ -255,10 +264,28 @@ header[data-testid="stHeader"] { display: none !important; }
 <div style="height:1px;background:#edf0f4;margin:0 0 24px;"></div>
 """, unsafe_allow_html=True)
 
+    # Sector options for fallback (used when no perfil is stored in the Users sheet)
+    _SECTOR_OPTS = {
+        "":             "— Seleccionar sector (si no lo tenemos guardado) —",
+        "instaladores": "🔧 Instaladores MEP",
+        "expansion":    "🏪 Expansión Retail",
+        "promotores":   "📐 Promotores / RE",
+        "constructora": "🏢 Gran Constructora",
+        "fcc":          "🏗️ Gran Infraestructura",
+        "industrial":   "🏭 Industrial / Logística",
+        "kiloutou":     "🚧 Alquiler Maquinaria",
+        "compras":      "🛒 Compras / Materiales",
+    }
     with st.form("login_form"):
-        _email_in = st.text_input("Email profesional", placeholder="tu@empresa.com")
-        _pass_in  = st.text_input("Contraseña", type="password", placeholder="••••••••")
-        _submit   = st.form_submit_button("Acceder al radar →", use_container_width=True)
+        _email_in   = st.text_input("Email profesional", placeholder="tu@empresa.com")
+        _pass_in    = st.text_input("Contraseña", type="password", placeholder="••••••••")
+        _sector_sel = st.selectbox(
+            "Sector (solo si es tu primer acceso y no te hemos asignado uno automáticamente)",
+            options=list(_SECTOR_OPTS.keys()),
+            format_func=lambda k: _SECTOR_OPTS[k],
+            key="login_sector_sel",
+        )
+        _submit = st.form_submit_button("Acceder al radar →", use_container_width=True)
 
     if _submit:
         _e = _email_in.strip().lower()
@@ -267,6 +294,10 @@ header[data-testid="stHeader"] { display: none !important; }
             st.session_state["authenticated"] = True
             st.session_state["user_email"]    = _e
             st.session_state["login_error"]   = ""
+            # Server-side profile (sheet col D) takes priority over login dropdown.
+            # This is device/browser-independent — works anywhere.
+            _resolved_perf = _sheet_perfs.get(_e, "") or _sector_sel or ""
+            st.session_state["user_perfil"] = _resolved_perf
             log_activity(_e, "login")
             st.rerun()
         else:
@@ -300,9 +331,15 @@ header[data-testid="stHeader"] { display: none !important; }
 # Token URL locks the profile; email login leaves it free.
 forced_profile_key = None
 if _token_profile:
+    # Token URL (personalised link) always wins
     forced_profile_key = _token_profile
 elif url_profile:
+    # Explicit ?perfil= URL param (e.g. from a custom link) takes next priority
     forced_profile_key = url_profile
+elif st.session_state.get("user_perfil", ""):
+    # Server-side stored profile: loaded from Google Sheets 'perfil' column at login.
+    # Device-independent — same profile on phone, laptop, any browser, any device.
+    forced_profile_key = st.session_state["user_perfil"]
 
 SHEET_ID = st.secrets.get("SHEET_ID", "")
 
@@ -313,8 +350,8 @@ try:
     _store_secret = dict(_ss) if _ss else {}
 except Exception:
     pass
-_store_sheet = load_users_from_sheet()
-_all_users   = {**_store_secret, **_store_sheet}
+_store_sheet, _ = load_users_from_sheet()   # only need passwords dict here
+_all_users      = {**_store_secret, **_store_sheet}
 
 # ════════════════════════════════════════════════════════════
 # GLOBAL CSS — only for Streamlit chrome, not card content
@@ -1059,10 +1096,11 @@ with st.sidebar:
   <p style="font-size:12px;font-weight:600;color:#1e3a5f;margin:0;
      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{_udisplay}</p>
 </div>""", unsafe_allow_html=True)
-        if st.button("\u21a9 Cerrar sesi\u00f3n", key="logout_btn"):
+        if st.button("↩ Cerrar sesi\u00f3n", key="logout_btn"):
             st.session_state["authenticated"] = False
             st.session_state["user_email"]    = ""
             st.session_state["login_error"]   = ""
+            st.session_state["user_perfil"]   = ""   # clear stored profile on logout
             st.rerun()
         st.markdown('<div style="height:1px;background:#e2e8f0;margin:10px 0 14px;"></div>', unsafe_allow_html=True)
 
