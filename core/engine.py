@@ -376,8 +376,22 @@ KW_EXTRA_FULL = [
     ("data center",                 SECTION_III,  5, "IND+MEP"),
     ("depósito",                    SECTION_III,  5, "IND+MAT"),
     ("cámara frigorífica",          SECTION_III,  5, "IND+MEP"),
-    ("instalación fotovoltaica",    SECTION_III,  6, "IND+MEP"),
-    ("zona industrial",             SECTION_III,  6, "IND+MAT"),
+    ("instalación fotovoltaica", SECTION_III,  6, "IND+MEP"),
+    ("zona industrial",          SECTION_III,  6, "IND+MAT"),
+    # ── Missing high-value terms for the 8 profiles ──────────────────────────
+    # Kiloutou + MEP: obra de accesibilidad = ramps, lifts in existing buildings
+    ("obras de accesibilidad",   SECTION_III,  6, "KILOUTOU+MEP"),
+    # MEP: VPO buildings are mandatory elevator + full MEP systems
+    ("vivienda de protección oficial", SECTION_III, 8, "MEP+CON"),
+    ("vivienda pública en alquiler",   SECTION_III, 8, "MEP+CON"),
+    # Gran Constructora / FCC: actas = contracts ALREADY awarded → call NOW
+    ("acta de recepción",        SECTION_III,  8, "CON+MAT"),
+    # Industrial / Retail: data centres = huge MEP and structure projects
+    ("centro de procesamiento de datos", SECTION_III, 5, "IND+MEP+MAT"),
+    # Retail: shopping centre new openings
+    ("centro comercial",         SECTION_III,  8, "RET+CON"),
+    # All profiles: contribuciones especiales = obra de calle confirmed active
+    ("contribuciones especiales obras", SECTION_V, 6, "ALL"),
     ("hub logístico",               SECTION_III,  5, "IND+MAT"),
     ("planta de tratamiento",       SECTION_III,  5, "IND+MEP+MAT"),
 
@@ -1431,7 +1445,19 @@ def classify_permit(text):
         if kw in t: return False, f"Admin noise: '{kw}'", 0
 
     app_count = sum(1 for kw in APPLICATION_SIGNALS if kw in t)
-    if app_count >= 3: return False, "Application phase (not granted)", 0
+    if app_count >= 3:
+        # IMPORTANT: "aprobación definitiva" and explicit grant phrases override
+        # the application signal check. A valid approval document can legitimately
+        # reference the past public comment period ("durante el plazo de veinte días")
+        # as historical background. Only reject if there's NO definitive approval language.
+        has_definitive = any(p in t for p in [
+            "aprobación definitiva", "aprobar definitivamente",
+            "se concede", "se otorga", "licencia concedida",
+            "se expide licencia", "acuerdo de aprobación definitiva",
+        ])
+        if not has_definitive:
+            return False, "Application phase (not granted)", 0
+        # else: fall through — it's an approval that mentions past public period
 
     for kw in DENIAL_SIGNALS:
         if kw in t: return False, f"Denial: '{kw}'", 0
@@ -2378,6 +2404,9 @@ def process_one(url, idx, total):
 
         is_lead, reason, tier = classify_permit(text)
         if not is_lead:
+            # Only log non-duplicate, non-admin rejections (reduce noise)
+            if not any(n in reason.lower() for n in ["subvención","nombramiento","eurotaxi","festej"]):
+                log(f"  ⏭️  {reason}")
             return 0, 1, 0  # skip
 
         p = extract(text, url, pub_date)
@@ -2807,8 +2836,10 @@ def run():
             time.sleep(0.4)
 
         # Section II (CM-level plans) — scan 2× per week
-        if MODE != "daily":
-            for day in scan_days[::3]:  # every 3rd day (approx 2× per week)
+        # Section II (CM-level plans) — scan every day in daily mode, every 3rd in weekly/full
+        step = 1 if MODE == "daily" else 3
+        for day in scan_days[::step]:
+            
                 if not time_ok(need_s=60): break
                 day_urls = scrape_day_section(day, sec=SECTION_II, global_seen=global_seen)
                 added    = sum(1 for u in day_urls if add_url(u))
@@ -2954,8 +2985,11 @@ def run():
     log(f"\n{'='*70}")
     log(f"✅ {saved} saved | {skipped} skipped | {errors} errors | {elapsed_str()}")
     log(f"📊 Acceptance rate: {100*saved//max(1,saved+skipped+errors)}%")
+    log(f"ℹ️  'Skipped' breakdown (normal): duplicates already in sheet + admin noise "
+        f"+ application-phase solicitudes + small activity licences.")
+    log(f"   To see per-doc reasons, set log level to DEBUG or review individual ⏭️ lines above.")
     log("=" * 70)
-
+    
     if os.path.exists(QUEUE_FILE): os.remove(QUEUE_FILE)
     if today.weekday() == 0: log("\n📧 Monday → digest"); send_digest()
 
@@ -3227,16 +3261,30 @@ def search_boe_construction(date_from, date_to, global_seen):
         return any(d in dl for d in _TARGET_DEPTS)
 
     for day in scan_days:
+        for day in scan_days:
         if not time_ok(need_s=30): break
         sumario_id = f"BOE-S-{day.strftime('%Y%m%d')}"
         xml_url    = f"{BOE_BASE}/diario_boe/xml.php?id={sumario_id}"
         try:
-            r = safe_get(xml_url, timeout=20)
+            # BOE requires explicit XML Accept header — without it the server
+            # may return an HTML error page which silently fails ET.fromstring()
+            sess = get_session()
+            r = sess.get(xml_url, timeout=30, verify=False,
+                         headers={"Accept": "application/xml, text/xml, */*",
+                                  "User-Agent": USER_AGENTS[0],
+                                  "Referer": "https://www.boe.es/"})
             if not r or r.status_code != 200:
+                log(f"    ⚠️ BOE {sumario_id}: HTTP {r.status_code if r else 'no response'}")
+                continue
+            # Verify we got XML not HTML
+            ct = r.headers.get("Content-Type","")
+            if "html" in ct and "xml" not in ct:
+                log(f"    ⚠️ BOE {sumario_id}: got HTML instead of XML (server redirect?)")
                 continue
             try:
                 root = ET.fromstring(r.content)
-            except ET.ParseError:
+            except ET.ParseError as pe:
+                log(f"    ⚠️ BOE {sumario_id}: XML parse error — {pe}")
                 continue
 
             # BOE sumario XML structure:
@@ -3258,13 +3306,12 @@ def search_boe_construction(date_from, date_to, global_seen):
                 title = titulo_el.text.strip() if titulo_el is not None and titulo_el.text else ""
 
                 # Walk up to find the departamento/emisor
+                # Walk up to find the departamento — nombre is an XML ATTRIBUTE not element
                 department = ""
                 for dept_el in root.iter("departamento"):
-                    # Check if this item belongs to this department
                     if dept_el.find(f".//item[@id='{boe_id}']") is not None:
-                        dept_name_el = dept_el.find("nombre")
-                        if dept_name_el is not None and dept_name_el.text:
-                            department = dept_name_el.text.strip()
+                        # FIXED: use .get() for XML attributes, not .find() for child elements
+                        department = (dept_el.get("nombre") or "").strip()
                         break
 
                 # Apply filters
@@ -3274,8 +3321,13 @@ def search_boe_construction(date_from, date_to, global_seen):
                 seen_local.add(boe_id)
                 boe_items.append((boe_id, title, department))
 
+        # Count items found this day for diagnostic logging
+            day_count = sum(1 for (bid,_,_) in boe_items if bid.endswith(f"-{day.strftime('%Y%m%d')[:6]}"))
         except Exception as e:
-            log(f"  ⚠️ BOE sumario [{day.strftime('%d/%m')}]: {e}")
+            log(f"  ⚠️ BOE sumario [{day.strftime('%d/%m')}]: {type(e).__name__}: {e}")
+        else:
+            if boe_items:
+                log(f"    📰 {day.strftime('%d/%m')}: cumulative {len(boe_items)} items found")
         time.sleep(0.5)
 
     log(f"  📰 BOE Sumario XML: {len(boe_items)} relevant items found")
