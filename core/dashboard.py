@@ -280,7 +280,7 @@ header[data-testid="stHeader"] { display: none !important; }
         _email_in   = st.text_input("Email profesional", placeholder="tu@empresa.com")
         _pass_in    = st.text_input("Contraseña", type="password", placeholder="••••••••")
         _sector_sel = st.selectbox(
-            "Sector (solo si es tu primer acceso y no te hemos asignado uno automáticamente)",
+            "(Opcional)",
             options=list(_SECTOR_OPTS.keys()),
             format_func=lambda k: _SECTOR_OPTS[k],
             key="login_sector_sel",
