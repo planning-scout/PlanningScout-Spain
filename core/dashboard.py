@@ -48,12 +48,62 @@ LOGO_HTML = (
 )
 
 # ════════════════════════════════════════════════════════════
+# USER STORE — Google Sheets "Users" tab
+# Sheet columns (row 1 = headers):  email | password | active
+# Inga adds rows here to grant access. No Streamlit redeploy needed.
+# Fallback: st.secrets["users"] still works for backward compat.
+# ════════════════════════════════════════════════════════════
+@st.cache_data(ttl=60)
+def load_users_from_sheet():
+    """Load {email: password} from the 'Users' worksheet. Returns {} on any error."""
+    try:
+        sa = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(sa, scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ])
+        gc = gspread.authorize(creds)
+        ws = gc.open_by_key(st.secrets.get("SHEET_ID", "")).worksheet("Users")
+        rows = ws.get_all_records()
+        users = {}
+        for row in rows:
+            email    = str(row.get("email", "") or "").strip().lower()
+            password = str(row.get("password", "") or "").strip()
+            active   = str(row.get("active", "TRUE") or "TRUE").strip().upper()
+            if email and password and active != "FALSE":
+                users[email] = password
+        return users
+    except Exception:
+        return {}
+
+def update_password_in_sheet(email, new_password):
+    """Update password for a user in the 'Users' worksheet. Returns True on success."""
+    try:
+        sa = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(sa, scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ])
+        gc = gspread.authorize(creds)
+        ws = gc.open_by_key(st.secrets.get("SHEET_ID", "")).worksheet("Users")
+        # Column A = email; Column B = password
+        email_cells = ws.findall(email, in_column=1)
+        for cell in email_cells:
+            if cell.row > 1:  # skip header row
+                ws.update_cell(cell.row, 2, new_password)
+                return True
+        return False
+    except Exception:
+        return False
+
+# ════════════════════════════════════════════════════════════
 # AUTH
 # Two access paths:
 #   1. Token URL  ?token=carlos_vimad  → maps to profile, bypasses login (existing clients)
-#   2. Email + password login          → credentials stored in st.secrets["users"]
+#   2. Email + password login          → checks Google Sheets "Users" tab, then st.secrets["users"]
 #
-# Add approved users in Streamlit Cloud secrets (Settings → Secrets):
+# Add approved users in Google Sheets "Users" tab (email | password | active)
+# OR in Streamlit Cloud secrets as fallback:
 #   [users]
 #   "leandro@kinepolis.com" = "welcome1"
 #   "carlos@empresa.es"     = "OtraClave24"
@@ -85,18 +135,21 @@ if url_token and url_token in client_tokens:
 
 # ── Login gate: show branded form if not yet authenticated ──
 if not st.session_state["authenticated"]:
-    _users = {}
+    # Load users: Google Sheets "Users" tab first, st.secrets["users"] as fallback
+    _sheet_u  = load_users_from_sheet()
+    _secret_u = {}
     try:
-        _u = st.secrets.get("users", {})
-        _users = dict(_u) if _u else {}
+        _su = st.secrets.get("users", {})
+        _secret_u = dict(_su) if _su else {}
     except Exception:
         pass
+    _users = {**_secret_u, **_sheet_u}   # sheet overrides secrets for same email
 
-    # Login-page CSS: dark background, hide sidebar and header, centre card
+    # Login-page CSS: light background, hide sidebar and header, centre card
     st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-.stApp { background: #0d1a2b !important; }
+.stApp { background: #f4f6f9 !important; }
 [data-testid="stSidebar"]          { display: none !important; }
 header[data-testid="stHeader"]     { display: none !important; }
 .block-container {
@@ -149,15 +202,15 @@ header[data-testid="stHeader"]     { display: none !important; }
     # Card header HTML (above the Streamlit form)
     st.markdown(f"""
 <div style="background:#fff;border-radius:20px;padding:36px 32px 28px;
-     box-shadow:0 24px 64px rgba(0,0,0,.5);">
+     box-shadow:0 4px 24px rgba(0,0,0,.08);border:1px solid #e8ecf1;">
   <div style="text-align:center;margin-bottom:28px;">
     {LOGO_HTML}
     <div style="display:inline-flex;align-items:center;margin-top:14px;
-         background:rgba(200,134,10,.1);border:1px solid rgba(200,134,10,.3);
+         background:rgba(200,134,10,.08);border:1px solid rgba(200,134,10,.28);
          border-radius:100px;padding:5px 16px;">
       <span style="font-family:'JetBrains Mono',monospace;font-size:10px;
             font-weight:600;color:#c8860a;letter-spacing:.07em;">
-        ✦ ACCESO ANTICIPADO · SELECTIVO
+        &#10022; ACCESO ANTICIPADO &middot; SELECTIVO
       </span>
     </div>
     <h2 style="font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:700;
@@ -220,6 +273,16 @@ elif url_profile:
     forced_profile_key = url_profile
 
 SHEET_ID = st.secrets.get("SHEET_ID", "")
+
+# User store accessible to sidebar (for password change)
+_store_secret = {}
+try:
+    _ss = st.secrets.get("users", {})
+    _store_secret = dict(_ss) if _ss else {}
+except Exception:
+    pass
+_store_sheet = load_users_from_sheet()
+_all_users   = {**_store_secret, **_store_sheet}
 
 # ════════════════════════════════════════════════════════════
 # GLOBAL CSS — only for Streamlit chrome, not card content
@@ -1023,6 +1086,29 @@ with st.sidebar:
             pk = prof["key"]
             st.code(f"planningscout.streamlit.app?perfil={pk}", language=None)
             st.caption("El cliente abre este enlace en su navegador — sin cuenta, sin login.")
+
+    # ── Password change (email-login users only) ──
+    _cp_email = st.session_state.get("user_email", "")
+    if _cp_email and not _cp_email.startswith("token:"):
+        with st.expander("🔑 Cambiar contraseña"):
+            _cp_cur = st.text_input("Contraseña actual",    type="password", key="cp_cur", placeholder="••••••••")
+            _cp_new = st.text_input("Nueva contraseña",     type="password", key="cp_new", placeholder="••••••••")
+            _cp_cnf = st.text_input("Confirmar contraseña", type="password", key="cp_cnf", placeholder="••••••••")
+            if st.button("Guardar nueva contraseña", key="cp_save"):
+                _cur_ok = _all_users.get(_cp_email) == _cp_cur
+                if not _cp_cur or not _cur_ok:
+                    st.error("Contraseña actual incorrecta.")
+                elif len(_cp_new) < 6:
+                    st.error("La nueva contraseña debe tener al menos 6 caracteres.")
+                elif _cp_new != _cp_cnf:
+                    st.error("Las contraseñas nuevas no coinciden.")
+                else:
+                    if update_password_in_sheet(_cp_email, _cp_new):
+                        load_users_from_sheet.clear()
+                        st.success("\u2713 Contrase\u00f1a actualizada correctamente.")
+                    else:
+                        st.warning("No se encontr\u00f3 tu cuenta en la base de datos. Contacta con soporte.")
+            st.caption("La nueva contrase\u00f1a se activa de inmediato.")
 
     # Last update info
     last_dt  = df["fecha_dt"].max() if "fecha_dt" in df.columns else None
