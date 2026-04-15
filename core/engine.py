@@ -872,6 +872,96 @@ def _fetch_pem_only_from_pdf(pdf_url):
     except Exception as e:
         return ""
 
+def _parse_pem_from_estimated_string(s):
+    """Extract a numeric PEM from an estimated PEM string like 'Estimación IA: €1.2M–€2.1M'.
+    Returns the midpoint as a float, or None."""
+    if not s or "⚪" in s: return None
+    nums = []
+    for m in re.finditer(r'€\s*([\d]+(?:[.,]\d+)?)\s*([MmKk]?)', s):
+        try:
+            v = float(m.group(1).replace(',', '.'))
+            suf = m.group(2).upper()
+            if suf == 'M': v *= 1_000_000
+            elif suf == 'K': v *= 1_000
+            if 10_000 < v < 5_000_000_000: nums.append(v)
+        except Exception: pass
+    if not nums: return None
+    return sum(nums) / len(nums)   # midpoint of range
+
+def _ai_estimate_pem(text, permit_type="", municipality="Madrid", description=""):
+    """
+    Ask GPT-4o-mini to estimate PEM when the heuristic extractor finds nothing.
+    Uses project type, location, description and any text clues (m², floors, use type)
+    to give a calibrated range based on 2024-2025 Madrid construction reference rates.
+    Returns a formatted string for the Estimated PEM column.
+    Never raises — falls back to ⚪ string on any error.
+    """
+    if not USE_AI: return "⚪ Sin datos PEM en BOCM"
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=OPENAI_API_KEY)
+
+        prompt = f"""Eres un aparejador senior en Madrid especializado en presupuesto de ejecución material (PEM).
+Tu tarea: estimar el PEM de este proyecto basándote en todos los datos disponibles.
+
+TIPO DE PROYECTO: {permit_type}
+MUNICIPIO: {municipality}
+DESCRIPCIÓN: {description[:800]}
+
+TEXTO DEL BOCM / PDF (puede contener m², plantas, viviendas, uso, etc.):
+{text[:3000]}
+
+INSTRUCCIONES:
+1. Extrae TODOS los datos cuantitativos del texto: m² construidos, m² de suelo, número de viviendas, plantas sobre rasante, plazas de garaje, uso (residencial/industrial/terciario), etc.
+2. Aplica los módulos orientativos del COAM 2024 para Madrid:
+   - Vivienda libre nueva: €1.100–€1.600/m² construido
+   - VPO / vivienda protegida: €900–€1.100/m²
+   - Rehabilitación integral: €700–€1.100/m²
+   - Nave industrial nueva: €350–€600/m²
+   - Urbanización (viales, redes): €80–€200/m² de sector
+   - Local comercial / terciario: €800–€1.200/m²
+   - Garaje sótano: €400–€600/m²
+   - Oficinas: €900–€1.300/m²
+3. Considera la ley de rendimientos: proyectos en municipios prime de Madrid (Pozuelo, Las Rozas, Majadahonda) +15–20%; proyectos en municipios periféricos −10–15%.
+4. Si hay datos insuficientes para una estimación razonable, dilo explícitamente.
+
+RESPONDE SOLO con un JSON con estos campos exactos (sin texto extra):
+{{
+  "estimated_range": "€X.XM–€Y.YM",
+  "midpoint_eur": <número entero en euros>,
+  "method": "breve descripción del método (ej: '85 viv × 90m² × 1.250€/m²')",
+  "confidence": "high|medium|low",
+  "notes": "máx 60 chars con supuestos clave"
+}}
+
+Si no hay suficientes datos para estimar, usa midpoint_eur: 0 y explica en notes.
+"""
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=300,
+            response_format={"type": "json_object"},
+        )
+        raw = resp.choices[0].message.content.strip()
+        d   = json.loads(raw)
+        mid = d.get("midpoint_eur", 0)
+        if mid and isinstance(mid, (int, float)) and mid > 10_000:
+            rng = d.get("estimated_range", "")
+            mth = d.get("method", "Estimación IA")
+            conf = d.get("confidence", "low")
+            notes = d.get("notes", "")
+            conf_emoji = "🟢" if conf == "high" else "🟡" if conf == "medium" else "🔴"
+            label = f"Estimación IA: {rng} · {mth}"
+            if notes: label += f" ({notes})"
+            label += f" {conf_emoji}"
+            return label
+        else:
+            return "⚪ Sin datos PEM en BOCM"
+    except Exception as ex:
+        log(f"    AI PEM estimate error: {ex}")
+        return "⚪ Sin datos PEM en BOCM"
+
 def _estimate_pem_from_pdf(text):
     """
     Estimate PEM range from PDF/BOCM text using extracted m², floors, units, use type,
@@ -2417,16 +2507,12 @@ def process_one(url, idx, total):
         if MIN_VALUE_EUR and dec and isinstance(dec,(int,float)) and dec < MIN_VALUE_EUR:
             return 0, 1, 0  # below minimum
 
-        # ── Estimated PEM from PDF structural data (always attempt) ──────────────
-        # If explicit PEM was found, label it as such.
-        # If not, try to estimate from m², parcels, viviendas in the full PDF text.
+        # ── Estimated PEM from structural data + AI fallback ────────────────────
         if not p.get("estimated_pem"):
             if dec and isinstance(dec, (int, float)) and dec > 0:
-                # We have a declared value — label column as confirmed
                 p["estimated_pem"] = f"✅ PEM confirmado: €{dec:,.0f}"
             else:
-                # No declared PEM — try to estimate from structural data
-                # Re-fetch full PDF text if we only got JSON-LD text earlier
+                # Step 1: heuristic estimator from m²/units/floors
                 pdf_text = text
                 if pdf_url and "[TABLA_PARCELAS]" not in text and "[PÁG." not in text:
                     pdf_text_full = extract_pdf_text_enhanced(pdf_url)
@@ -2435,13 +2521,26 @@ def process_one(url, idx, total):
                 est_result = _estimate_pem_from_pdf(pdf_text)
                 if est_result.get("estimated_pem"):
                     ep  = est_result["estimated_pem"]
-                    mth = est_result.get("method","estimación")
-                    bas = est_result.get("basis","")
+                    mth = est_result.get("method", "estimación")
+                    bas = est_result.get("basis", "")
                     p["estimated_pem"] = f"Estimación PEM: €{ep:,.0f} ({mth}; base: {bas})"
-                    # Also feed into declared_value_eur if not set (for scoring/filtering)
                     if not dec:
                         p["declared_value_eur"] = ep
-                        p["lead_score"] = score_lead(p)  # rescore with new value
+                        p["lead_score"] = score_lead(p)
+
+                elif USE_AI:
+                    # Step 2: AI-powered PEM estimation when heuristics find nothing
+                    p["estimated_pem"] = _ai_estimate_pem(
+                        pdf_text,
+                        permit_type=p.get("permit_type", ""),
+                        municipality=p.get("municipality", "Madrid"),
+                        description=p.get("description", ""),
+                    )
+                    # If AI found a numeric estimate, feed it into scoring
+                    _ai_num = _parse_pem_from_estimated_string(p["estimated_pem"])
+                    if _ai_num and not dec:
+                        p["declared_value_eur"] = _ai_num
+                        p["lead_score"] = score_lead(p)
                 else:
                     p["estimated_pem"] = "⚪ Sin datos PEM en BOCM"
 
@@ -3404,23 +3503,32 @@ def process_boe_item(boe_id, title, department, idx, total):
             if dec and isinstance(dec, (int, float)) and dec > 0:
                 p["estimated_pem"] = f"✅ PEM confirmado (BOE): €{dec:,.0f}"
             else:
-                # Try to estimate from text
                 est_result = _estimate_pem_from_pdf(text)
                 if est_result.get("estimated_pem"):
-                    ep = est_result["estimated_pem"]
-                    mth = est_result.get("method", "estimación")
-                    bas = est_result.get("basis", "")
-                    ep_lo = est_result.get("estimated_pem_low")
-                    ep_hi = est_result.get("estimated_pem_high")
+                    ep     = est_result["estimated_pem"]
+                    mth    = est_result.get("method", "estimación")
+                    bas    = est_result.get("basis", "")
+                    ep_lo  = est_result.get("estimated_pem_low")
+                    ep_hi  = est_result.get("estimated_pem_high")
                     def _fpb(v):
                         if v >= 1_000_000: return f"€{v/1_000_000:.1f}M"
-                        if v >= 1_000: return f"€{int(v/1000)}K"
+                        if v >= 1_000:     return f"€{int(v/1000)}K"
                         return f"€{int(v):,}"
-                    pem_rng_b = (f"{_fpb(ep_lo)}–{_fpb(ep_hi)}" if ep_lo and ep_hi
-                                 else f"€{ep:,.0f}")
+                    pem_rng_b = (f"{_fpb(ep_lo)}–{_fpb(ep_hi)}" if ep_lo and ep_hi else f"€{ep:,.0f}")
                     p["estimated_pem"] = f"Estimación PEM (BOE): {pem_rng_b} ({mth}; {bas})"
                     if not dec:
                         p["declared_value_eur"] = ep
+                        p["lead_score"] = score_lead(p)
+                elif USE_AI:
+                    p["estimated_pem"] = _ai_estimate_pem(
+                        text,
+                        permit_type=p.get("permit_type", ""),
+                        municipality=p.get("municipality", "Madrid"),
+                        description=p.get("description", ""),
+                    )
+                    _ai_num = _parse_pem_from_estimated_string(p["estimated_pem"])
+                    if _ai_num and not dec:
+                        p["declared_value_eur"] = _ai_num
                         p["lead_score"] = score_lead(p)
                 else:
                     p["estimated_pem"] = "⚪ Sin PEM en BOE"
