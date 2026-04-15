@@ -132,18 +132,25 @@ def log_activity(email, action="login"):
         pass  # never block login due to logging failure
 
 # ════════════════════════════════════════════════════════════
-# AUTH
-# Two access paths:
-#   1. Token URL  ?token=carlos_vimad  → maps to profile, bypasses login (existing clients)
-#   2. Email + password login          → checks Google Sheets "Users" tab, then st.secrets["users"]
+# AUTH — Streamlit Secrets only (no Google Sheets for auth)
 #
-# Add approved users in Google Sheets "Users" tab (email | password | active)
-# OR in Streamlit Cloud secrets as fallback:
-#   [users]
-#   "leandro@kinepolis.com" = "welcome1"
-#   "carlos@empresa.es"     = "OtraClave24"
+# In Streamlit Cloud → Settings → Secrets, add:
 #
-# Clients NEVER need a Streamlit account. They open the URL, see the login form.
+#   [passwords]
+#   "lespinosa@kinepolis.com" = "welcome1"
+#   "daniel@muppy.com"        = "welcome1"
+#
+#   [profiles]
+#   "lespinosa@kinepolis.com" = "expansion"
+#   "daniel@muppy.com"        = "constructora"
+#
+#   [client_tokens]
+#   "inga_admin" = "general"          ← Inga's admin token (sees all profiles)
+#
+# Profile values must match p["key"] in PROFILES dict below.
+# Leave a user out of [profiles] → they get "general" (Vista General).
+# Google Sheets "Users" / "Activity" tabs are still used for activity logging
+# and password-change only — NOT for auth.
 # ════════════════════════════════════════════════════════════
 qp          = st.query_params
 url_token   = qp.get("token", "")
@@ -170,17 +177,31 @@ if url_token and url_token in client_tokens:
 
 # ── Login gate: show branded form if not yet authenticated ──
 if not st.session_state["authenticated"]:
-    # Load users: Google Sheets "Users" tab first, st.secrets["users"] as fallback
-    _sheet_u, _sheet_perfs = load_users_from_sheet()
-    _secret_u = {}
+    # ── Load credentials from Streamlit Secrets ──────────────────────────────
+    # Primary: [passwords] section  (new format)
+    # Fallback: [users] section     (old flat format, backward compat)
+    _passwords: dict = {}
     try:
-        _su = st.secrets.get("users", {})
-        _secret_u = dict(_su) if _su else {}
+        _pw = st.secrets.get("passwords", {})
+        _passwords = {k.strip().lower(): v for k, v in dict(_pw).items()} if _pw else {}
     except Exception:
         pass
-    _users = {**_secret_u, **_sheet_u}   # sheet overrides secrets for same email
+    if not _passwords:                          # fallback to old [users] format
+        try:
+            _u = st.secrets.get("users", {})
+            _passwords = {k.strip().lower(): v for k, v in dict(_u).items()} if _u else {}
+        except Exception:
+            pass
 
-    # Login-page CSS: block-container IS the card — one unified white box, no second container
+    # Profiles: [profiles] section maps email → profile key
+    _secret_profiles: dict = {}
+    try:
+        _pr = st.secrets.get("profiles", {})
+        _secret_profiles = {k.strip().lower(): str(v).strip() for k, v in dict(_pr).items()} if _pr else {}
+    except Exception:
+        pass
+
+    # ── Login-page CSS: block-container IS the card ───────────────────────────
     st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -275,27 +296,21 @@ header[data-testid="stHeader"] { display: none !important; }
         "compras":      "🛒 Compras / Materiales",
     }
     with st.form("login_form"):
-        _email_in   = st.text_input("Email profesional", placeholder="tu@empresa.com")
-        _pass_in    = st.text_input("Contraseña", type="password", placeholder="••••••••")
-        _sector_sel = st.selectbox(
-            "(Opcional)",
-            options=list(_SECTOR_OPTS.keys()),
-            format_func=lambda k: _SECTOR_OPTS[k],
-            key="login_sector_sel",
-        )
-        _submit = st.form_submit_button("Acceder al radar →", use_container_width=True)
+        _email_in = st.text_input("Email profesional", placeholder="tu@empresa.com")
+        _pass_in  = st.text_input("Contraseña", type="password", placeholder="••••••••")
+        _submit   = st.form_submit_button("Acceder al radar →", use_container_width=True)
 
     if _submit:
         _e = _email_in.strip().lower()
         _p = _pass_in.strip()
-        if _e in _users and _users[_e] == _p:
+        if _e in _passwords and _passwords[_e] == _p:
+            # Profile comes ONLY from [profiles] in secrets.
+            # Fallback → "general" if email not listed (Inga or new user).
+            _assigned_perfil = _secret_profiles.get(_e, "general")
             st.session_state["authenticated"] = True
             st.session_state["user_email"]    = _e
             st.session_state["login_error"]   = ""
-            # Server-side profile (sheet col D) takes priority over login dropdown.
-            # This is device/browser-independent — works anywhere.
-            _resolved_perf = _sheet_perfs.get(_e, "") or _sector_sel or ""
-            st.session_state["user_perfil"] = _resolved_perf
+            st.session_state["user_perfil"]   = _assigned_perfil
             log_activity(_e, "login")
             st.rerun()
         else:
@@ -325,31 +340,41 @@ header[data-testid="stHeader"] { display: none !important; }
 
     st.stop()
 
-# ── After successful auth: resolve profile ──
-# Token URL locks the profile; email login leaves it free.
-forced_profile_key = None
+# ── After successful auth: resolve profile ──────────────────────────────────
+# Priority rules:
+#   Token URL  → forced_profile_key from client_tokens, is_locked=False (Inga admin view)
+#   Email login → ALWAYS use session_state["user_perfil"] from [profiles] in secrets
+#                 ?perfil= URL params are IGNORED for email users (security: users
+#                 cannot bypass their assigned profile by manipulating the URL)
+forced_profile_key: str = ""
+_is_email_user = (
+    st.session_state.get("authenticated") and
+    not st.session_state.get("user_email", "").startswith("token:")
+)
+
 if _token_profile:
-    # Token URL (personalised link) always wins
+    # Token URL (e.g. Inga's admin link): profile from client_tokens, can switch freely
     forced_profile_key = _token_profile
-elif url_profile:
-    # Explicit ?perfil= URL param (e.g. from a custom link) takes next priority
-    forced_profile_key = url_profile
-elif st.session_state.get("user_perfil", ""):
-    # Server-side stored profile: loaded from Google Sheets 'perfil' column at login.
-    # Device-independent — same profile on phone, laptop, any browser, any device.
-    forced_profile_key = st.session_state["user_perfil"]
+elif _is_email_user:
+    # Email users: profile ONLY from secrets [profiles], URL params ignored
+    forced_profile_key = st.session_state.get("user_perfil", "general") or "general"
 
 SHEET_ID = st.secrets.get("SHEET_ID", "")
 
-# User store accessible to sidebar (for password change)
-_store_secret = {}
+# Password store for sidebar password-change widget.
+# Reads from [passwords] (new) or [users] (old) in secrets.
+_all_pw: dict = {}
 try:
-    _ss = st.secrets.get("users", {})
-    _store_secret = dict(_ss) if _ss else {}
+    _pw2 = st.secrets.get("passwords", {})
+    _all_pw = {k.strip().lower(): v for k, v in dict(_pw2).items()} if _pw2 else {}
 except Exception:
     pass
-_store_sheet, _ = load_users_from_sheet()   # only need passwords dict here
-_all_users      = {**_store_secret, **_store_sheet}
+if not _all_pw:
+    try:
+        _u2 = st.secrets.get("users", {})
+        _all_pw = {k.strip().lower(): v for k, v in dict(_u2).items()} if _u2 else {}
+    except Exception:
+        pass
 
 # ════════════════════════════════════════════════════════════
 # GLOBAL CSS — only for Streamlit chrome, not card content
@@ -1059,9 +1084,8 @@ is_locked     = False
 
 if forced_profile_key:
     # Match priority:
-    # 1. Exact match on p["key"]  (e.g. "compras", "instaladores") — used by index.html and share links
-    # 2. Exact match on profile name (e.g. "🛒 Compras / Materiales") — fallback for bookmarked URLs
-    # Never mangle the string — just compare directly after URL-decoding (done above).
+    # 1. Exact match on p["key"]  (e.g. "expansion", "constructora")
+    # 2. Exact match on full profile name (e.g. "🏪 Expansión Retail")
     matched = next(
         (n for n, p in PROFILES.items() if p["key"] == forced_profile_key),
         next(
@@ -1070,9 +1094,11 @@ if forced_profile_key:
         )
     )
     default_idx = profile_names.index(matched)
-    # Token URLs lock the profile — personalised client links always show their assigned sector.
-    # Email-login users arriving with ?perfil= get it PRE-SELECTED but can freely switch.
-    is_locked   = bool(_token_profile)
+
+# is_locked controls whether the profile radio is visible.
+# Email users are ALWAYS locked to their assigned profile — they cannot switch.
+# Token URL users (Inga's admin link) can switch freely to any profile.
+is_locked = _is_email_user
 # ════════════════════════════════════════════════════════════
 # SIDEBAR
 # ════════════════════════════════════════════════════════════
@@ -1164,7 +1190,7 @@ with st.sidebar:
             _cp_new = st.text_input("Nueva contraseña",     type="password", key="cp_new", placeholder="••••••••")
             _cp_cnf = st.text_input("Confirmar contraseña", type="password", key="cp_cnf", placeholder="••••••••")
             if st.button("Guardar nueva contraseña", key="cp_save"):
-                _cur_ok = _all_users.get(_cp_email) == _cp_cur
+                _cur_ok = _all_pw.get(_cp_email) == _cp_cur
                 if not _cp_cur or not _cur_ok:
                     st.error("Contraseña actual incorrecta.")
                 elif len(_cp_new) < 6:
