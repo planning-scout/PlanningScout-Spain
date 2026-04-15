@@ -266,7 +266,7 @@ header[data-testid="stHeader"] { display: none !important; }
 
     # Sector options for fallback (used when no perfil is stored in the Users sheet)
     _SECTOR_OPTS = {
-        "":             "— Seleccionar sector (si no lo tenemos guardado) —",
+        "":             "— Seleccionar sector —",
         "instaladores": "🔧 Instaladores MEP",
         "expansion":    "🏪 Expansión Retail",
         "promotores":   "📐 Promotores / RE",
