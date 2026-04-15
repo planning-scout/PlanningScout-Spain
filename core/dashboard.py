@@ -132,25 +132,18 @@ def log_activity(email, action="login"):
         pass  # never block login due to logging failure
 
 # ════════════════════════════════════════════════════════════
-# AUTH — Streamlit Secrets only (no Google Sheets for auth)
+# AUTH
+# Two access paths:
+#   1. Token URL  ?token=carlos_vimad  → maps to profile, bypasses login (existing clients)
+#   2. Email + password login          → checks Google Sheets "Users" tab, then st.secrets["users"]
 #
-# In Streamlit Cloud → Settings → Secrets, add:
+# Add approved users in Google Sheets "Users" tab (email | password | active)
+# OR in Streamlit Cloud secrets as fallback:
+#   [users]
+#   "leandro@kinepolis.com" = "welcome1"
+#   "carlos@empresa.es"     = "OtraClave24"
 #
-#   [passwords]
-#   "lespinosa@kinepolis.com" = "welcome1"
-#   "daniel@muppy.com"        = "welcome1"
-#
-#   [profiles]
-#   "lespinosa@kinepolis.com" = "expansion"
-#   "daniel@muppy.com"        = "constructora"
-#
-#   [client_tokens]
-#   "inga_admin" = "general"          ← Inga's admin token (sees all profiles)
-#
-# Profile values must match p["key"] in PROFILES dict below.
-# Leave a user out of [profiles] → they get "general" (Vista General).
-# Google Sheets "Users" / "Activity" tabs are still used for activity logging
-# and password-change only — NOT for auth.
+# Clients NEVER need a Streamlit account. They open the URL, see the login form.
 # ════════════════════════════════════════════════════════════
 qp          = st.query_params
 url_token   = qp.get("token", "")
@@ -177,31 +170,17 @@ if url_token and url_token in client_tokens:
 
 # ── Login gate: show branded form if not yet authenticated ──
 if not st.session_state["authenticated"]:
-    # ── Load credentials from Streamlit Secrets ──────────────────────────────
-    # Primary: [passwords] section  (new format)
-    # Fallback: [users] section     (old flat format, backward compat)
-    _passwords: dict = {}
+    # Load users: Google Sheets "Users" tab first, st.secrets["users"] as fallback
+    _sheet_u, _sheet_perfs = load_users_from_sheet()
+    _secret_u = {}
     try:
-        _pw = st.secrets.get("passwords", {})
-        _passwords = {k.strip().lower(): v for k, v in dict(_pw).items()} if _pw else {}
+        _su = st.secrets.get("users", {})
+        _secret_u = dict(_su) if _su else {}
     except Exception:
         pass
-    if not _passwords:                          # fallback to old [users] format
-        try:
-            _u = st.secrets.get("users", {})
-            _passwords = {k.strip().lower(): v for k, v in dict(_u).items()} if _u else {}
-        except Exception:
-            pass
+    _users = {**_secret_u, **_sheet_u}   # sheet overrides secrets for same email
 
-    # Profiles: [profiles] section maps email → profile key
-    _secret_profiles: dict = {}
-    try:
-        _pr = st.secrets.get("profiles", {})
-        _secret_profiles = {k.strip().lower(): str(v).strip() for k, v in dict(_pr).items()} if _pr else {}
-    except Exception:
-        pass
-
-    # ── Login-page CSS: block-container IS the card ───────────────────────────
+    # Login-page CSS: block-container IS the card — one unified white box, no second container
     st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -290,27 +269,33 @@ header[data-testid="stHeader"] { display: none !important; }
         "expansion":    "🏪 Expansión Retail",
         "promotores":   "📐 Promotores / RE",
         "constructora": "🏢 Gran Constructora",
-        "fcc":          "🏗️ Gran Infraestructura",
+        "infrastructura": "🏗️ Gran Infraestructura",
         "industrial":   "🏭 Industrial / Logística",
-        "kiloutou":     "🚧 Alquiler Maquinaria",
+        "alquiler":     "🚧 Alquiler Maquinaria",
         "compras":      "🛒 Compras / Materiales",
     }
     with st.form("login_form"):
-        _email_in = st.text_input("Email profesional", placeholder="tu@empresa.com")
-        _pass_in  = st.text_input("Contraseña", type="password", placeholder="••••••••")
-        _submit   = st.form_submit_button("Acceder al radar →", use_container_width=True)
+        _email_in   = st.text_input("Email profesional", placeholder="tu@empresa.com")
+        _pass_in    = st.text_input("Contraseña", type="password", placeholder="••••••••")
+        _sector_sel = st.selectbox(
+            "(Opcional)",
+            options=list(_SECTOR_OPTS.keys()),
+            format_func=lambda k: _SECTOR_OPTS[k],
+            key="login_sector_sel",
+        )
+        _submit = st.form_submit_button("Acceder al radar →", use_container_width=True)
 
     if _submit:
         _e = _email_in.strip().lower()
         _p = _pass_in.strip()
-        if _e in _passwords and _passwords[_e] == _p:
-            # Profile comes ONLY from [profiles] in secrets.
-            # Fallback → "general" if email not listed (Inga or new user).
-            _assigned_perfil = _secret_profiles.get(_e, "general")
+        if _e in _users and _users[_e] == _p:
             st.session_state["authenticated"] = True
             st.session_state["user_email"]    = _e
             st.session_state["login_error"]   = ""
-            st.session_state["user_perfil"]   = _assigned_perfil
+            # Server-side profile (sheet col D) takes priority over login dropdown.
+            # This is device/browser-independent — works anywhere.
+            _resolved_perf = _sheet_perfs.get(_e, "") or _sector_sel or ""
+            st.session_state["user_perfil"] = _resolved_perf
             log_activity(_e, "login")
             st.rerun()
         else:
@@ -340,41 +325,31 @@ header[data-testid="stHeader"] { display: none !important; }
 
     st.stop()
 
-# ── After successful auth: resolve profile ──────────────────────────────────
-# Priority rules:
-#   Token URL  → forced_profile_key from client_tokens, is_locked=False (Inga admin view)
-#   Email login → ALWAYS use session_state["user_perfil"] from [profiles] in secrets
-#                 ?perfil= URL params are IGNORED for email users (security: users
-#                 cannot bypass their assigned profile by manipulating the URL)
-forced_profile_key: str = ""
-_is_email_user = (
-    st.session_state.get("authenticated") and
-    not st.session_state.get("user_email", "").startswith("token:")
-)
-
+# ── After successful auth: resolve profile ──
+# Token URL locks the profile; email login leaves it free.
+forced_profile_key = None
 if _token_profile:
-    # Token URL (e.g. Inga's admin link): profile from client_tokens, can switch freely
+    # Token URL (personalised link) always wins
     forced_profile_key = _token_profile
-elif _is_email_user:
-    # Email users: profile ONLY from secrets [profiles], URL params ignored
-    forced_profile_key = st.session_state.get("user_perfil", "general") or "general"
+elif url_profile:
+    # Explicit ?perfil= URL param (e.g. from a custom link) takes next priority
+    forced_profile_key = url_profile
+elif st.session_state.get("user_perfil", ""):
+    # Server-side stored profile: loaded from Google Sheets 'perfil' column at login.
+    # Device-independent — same profile on phone, laptop, any browser, any device.
+    forced_profile_key = st.session_state["user_perfil"]
 
 SHEET_ID = st.secrets.get("SHEET_ID", "")
 
-# Password store for sidebar password-change widget.
-# Reads from [passwords] (new) or [users] (old) in secrets.
-_all_pw: dict = {}
+# User store accessible to sidebar (for password change)
+_store_secret = {}
 try:
-    _pw2 = st.secrets.get("passwords", {})
-    _all_pw = {k.strip().lower(): v for k, v in dict(_pw2).items()} if _pw2 else {}
+    _ss = st.secrets.get("users", {})
+    _store_secret = dict(_ss) if _ss else {}
 except Exception:
     pass
-if not _all_pw:
-    try:
-        _u2 = st.secrets.get("users", {})
-        _all_pw = {k.strip().lower(): v for k, v in dict(_u2).items()} if _u2 else {}
-    except Exception:
-        pass
+_store_sheet, _ = load_users_from_sheet()   # only need passwords dict here
+_all_pw         = {**_store_secret, **_store_sheet}
 
 # ════════════════════════════════════════════════════════════
 # GLOBAL CSS — only for Streamlit chrome, not card content
@@ -604,7 +579,7 @@ PROFILES = {
                   "obra mayor industrial", "obra mayor nueva construcción", "licitación de obras"],
     },
     "🏗️ Gran Infraestructura": {
-        "key": "fcc",
+        "key": "infrastructura",
         "tip": "💡 <strong>Las Tablas Oeste €106M, Los Cerros, Tres Cantos UE.5 €17M.</strong> Anticipación de 12-18 meses antes de licitación. Las Juntas de Compensación activas son tu señal.",
         "min_score": 40, "min_value": 0, "days": 365,
         "types": ["urbanización", "plan especial / parcial", "plan parcial", "licitación de obras"],
@@ -617,7 +592,7 @@ PROFILES = {
                   "cambio de uso", "licitación de obras"],
     },
     "🚧 Alquiler Maquinaria": {
-        "key": "kiloutou",
+        "key": "alquiler",
         "tip": "💡 <strong>Llega al constructor ANTES de que empiece la obra.</strong> Cualquier proyecto >€200K = excavadoras, plataformas elevadoras, robots de demolición.",
         "min_score": 0, "min_value": 200_000, "days": 60,
         "types": [],
@@ -1084,8 +1059,9 @@ is_locked     = False
 
 if forced_profile_key:
     # Match priority:
-    # 1. Exact match on p["key"]  (e.g. "expansion", "constructora")
-    # 2. Exact match on full profile name (e.g. "🏪 Expansión Retail")
+    # 1. Exact match on p["key"]  (e.g. "compras", "instaladores") — used by index.html and share links
+    # 2. Exact match on profile name (e.g. "🛒 Compras / Materiales") — fallback for bookmarked URLs
+    # Never mangle the string — just compare directly after URL-decoding (done above).
     matched = next(
         (n for n, p in PROFILES.items() if p["key"] == forced_profile_key),
         next(
@@ -1094,11 +1070,9 @@ if forced_profile_key:
         )
     )
     default_idx = profile_names.index(matched)
-
-# is_locked controls whether the profile radio is visible.
-# Email users are ALWAYS locked to their assigned profile — they cannot switch.
-# Token URL users (Inga's admin link) can switch freely to any profile.
-is_locked = _is_email_user
+    # Token URLs lock the profile — personalised client links always show their assigned sector.
+    # Email-login users arriving with ?perfil= get it PRE-SELECTED but can freely switch.
+    is_locked   = bool(_token_profile)
 # ════════════════════════════════════════════════════════════
 # SIDEBAR
 # ════════════════════════════════════════════════════════════
@@ -1107,26 +1081,6 @@ with st.sidebar:
     # Crisp logo — base64 embedded, no resizing blur
     st.markdown(LOGO_HTML, unsafe_allow_html=True)
     st.markdown('<div style="height:1px;background:#e2e8f0;margin:14px 0 16px;"></div>', unsafe_allow_html=True)
-
-    # ── Session info + logout (email login only; token users are anonymous) ──
-    _umail = st.session_state.get("user_email", "")
-    if _umail and not _umail.startswith("token:"):
-        _udisplay = _umail if len(_umail) <= 30 else _umail[:27] + "\u2026"
-        st.markdown(f"""
-<div style="background:#eff4fb;border:1px solid rgba(30,58,95,.15);border-radius:8px;
-     padding:8px 12px;margin-bottom:6px;">
-  <p style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#94a3b8;
-     text-transform:uppercase;letter-spacing:.07em;margin:0 0 2px;">Sesi\u00f3n activa</p>
-  <p style="font-size:12px;font-weight:600;color:#1e3a5f;margin:0;
-     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{_udisplay}</p>
-</div>""", unsafe_allow_html=True)
-        if st.button("↩ Cerrar sesi\u00f3n", key="logout_btn"):
-            st.session_state["authenticated"] = False
-            st.session_state["user_email"]    = ""
-            st.session_state["login_error"]   = ""
-            st.session_state["user_perfil"]   = ""   # clear stored profile on logout
-            st.rerun()
-        st.markdown('<div style="height:1px;background:#e2e8f0;margin:10px 0 14px;"></div>', unsafe_allow_html=True)
 
     # Profile selector
     st.markdown(
@@ -1182,29 +1136,6 @@ with st.sidebar:
             st.code(f"planningscout.streamlit.app?perfil={pk}", language=None)
             st.caption("El cliente abre este enlace en su navegador — sin cuenta, sin login.")
 
-    # ── Password change (email-login users only) ──
-    _cp_email = st.session_state.get("user_email", "")
-    if _cp_email and not _cp_email.startswith("token:"):
-        with st.expander("🔑 Cambiar contraseña"):
-            _cp_cur = st.text_input("Contraseña actual",    type="password", key="cp_cur", placeholder="••••••••")
-            _cp_new = st.text_input("Nueva contraseña",     type="password", key="cp_new", placeholder="••••••••")
-            _cp_cnf = st.text_input("Confirmar contraseña", type="password", key="cp_cnf", placeholder="••••••••")
-            if st.button("Guardar nueva contraseña", key="cp_save"):
-                _cur_ok = _all_pw.get(_cp_email) == _cp_cur
-                if not _cp_cur or not _cur_ok:
-                    st.error("Contraseña actual incorrecta.")
-                elif len(_cp_new) < 6:
-                    st.error("La nueva contraseña debe tener al menos 6 caracteres.")
-                elif _cp_new != _cp_cnf:
-                    st.error("Las contraseñas nuevas no coinciden.")
-                else:
-                    if update_password_in_sheet(_cp_email, _cp_new):
-                        load_users_from_sheet.clear()
-                        st.success("\u2713 Contrase\u00f1a actualizada correctamente.")
-                    else:
-                        st.warning("No se encontr\u00f3 tu cuenta en la base de datos. Contacta con soporte.")
-            st.caption("La nueva contrase\u00f1a se activa de inmediato.")
-
     # Last update info
     last_dt  = df["fecha_dt"].max() if "fecha_dt" in df.columns else None
     last_str = last_dt.strftime("%d %b %Y") if pd.notna(last_dt) else "—"
@@ -1216,6 +1147,47 @@ with st.sidebar:
       <p style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8;margin:4px 0 0;">
         BOCM · Comunidad de Madrid</p>
     </div>""", unsafe_allow_html=True)
+
+    # ── Session info + logout + password change (bottom of sidebar) ──────────
+    _umail = st.session_state.get("user_email", "")
+    if _umail and not _umail.startswith("token:"):
+        st.markdown('<div style="height:1px;background:#e2e8f0;margin:20px 0 14px;"></div>', unsafe_allow_html=True)
+        _udisplay = _umail if len(_umail) <= 30 else _umail[:27] + "\u2026"
+        st.markdown(f"""
+<div style="background:#eff4fb;border:1px solid rgba(30,58,95,.15);border-radius:8px;
+     padding:8px 12px;margin-bottom:6px;">
+  <p style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#94a3b8;
+     text-transform:uppercase;letter-spacing:.07em;margin:0 0 2px;">Sesi\u00f3n activa</p>
+  <p style="font-size:12px;font-weight:600;color:#1e3a5f;margin:0;
+     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{_udisplay}</p>
+</div>""", unsafe_allow_html=True)
+        if st.button("\u21a9 Cerrar sesi\u00f3n", key="logout_btn"):
+            st.session_state["authenticated"] = False
+            st.session_state["user_email"]    = ""
+            st.session_state["login_error"]   = ""
+            st.session_state["user_perfil"]   = ""
+            st.rerun()
+
+        # ── Password change ──
+        with st.expander("\U0001f511 Cambiar contrase\u00f1a"):
+            _cp_cur = st.text_input("Contraseña actual",    type="password", key="cp_cur", placeholder="••••••••")
+            _cp_new = st.text_input("Nueva contraseña",     type="password", key="cp_new", placeholder="••••••••")
+            _cp_cnf = st.text_input("Confirmar contraseña", type="password", key="cp_cnf", placeholder="••••••••")
+            if st.button("Guardar nueva contraseña", key="cp_save"):
+                _cur_ok = _all_pw.get(_umail) == _cp_cur
+                if not _cp_cur or not _cur_ok:
+                    st.error("Contraseña actual incorrecta.")
+                elif len(_cp_new) < 6:
+                    st.error("La nueva contraseña debe tener al menos 6 caracteres.")
+                elif _cp_new != _cp_cnf:
+                    st.error("Las contraseñas nuevas no coinciden.")
+                else:
+                    if update_password_in_sheet(_umail, _cp_new):
+                        load_users_from_sheet.clear()
+                        st.success("\u2713 Contrase\u00f1a actualizada correctamente.")
+                    else:
+                        st.warning("No se encontr\u00f3 tu cuenta. Contacta con soporte.")
+            st.caption("La nueva contrase\u00f1a se activa de inmediato.")
 
 # ════════════════════════════════════════════════════════════
 # MAIN CONTENT
