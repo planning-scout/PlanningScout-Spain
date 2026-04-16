@@ -280,13 +280,40 @@ header[data-testid="stHeader"] { display: none !important; }
         _e = _email_in.strip().lower()
         _p = _pass_in.strip()
         if _e in _users and _users[_e] == _p:
-            # Profile is ALWAYS read from [profiles] in secrets — not from the user
             _assigned = _secret_profiles.get(_e, "general")
             st.session_state["authenticated"] = True
             st.session_state["user_email"]    = _e
             st.session_state["login_error"]   = ""
             st.session_state["user_perfil"]   = _assigned
             log_activity(_e, "login")
+            # ── Transition screen ─────────────────────────────────────────────
+            # Hide the login card and show a loading spinner for this render
+            # cycle. Streamlit completes this render, THEN re-executes from the
+            # top where authenticated=True → dashboard renders. One clean transition,
+            # no flash of the login form.
+            st.markdown("""
+<style>
+/* Instantly hide the login card and form during this render cycle */
+.block-container {
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+}
+[data-testid="stForm"],
+[data-testid="stTextInput"],
+[data-testid="stFormSubmitButton"],
+div[data-testid="stMarkdownContainer"] { display: none !important; }
+@keyframes _spin { to { transform: rotate(360deg); } }
+</style>
+<div style="min-height:90vh;display:flex;align-items:center;justify-content:center;">
+  <div style="text-align:center;">
+    <div style="width:36px;height:36px;border:3px solid #e2e8f0;border-top-color:#1e3a5f;
+         border-radius:50%;animation:_spin .65s linear infinite;margin:0 auto 18px;"></div>
+    <p style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:15px;
+       color:#1e3a5f;font-weight:600;margin:0;">Cargando tu radar&hellip;</p>
+  </div>
+</div>""", unsafe_allow_html=True)
             st.rerun()
         else:
             st.session_state["login_error"] = "Credenciales incorrectas. Verifica tu email y contraseña."
@@ -352,7 +379,18 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 #MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
+footer { visibility: hidden !important; }
+
+/* Hide ALL Streamlit attribution — "Made with Streamlit", "Created by ingatech-hub", etc.
+   Streamlit Cloud shows the deploying GitHub org in several elements; hide them all. */
+[data-testid="stToolbar"]         { display: none !important; }
+#stDecoration                      { display: none !important; }
+.viewerBadge_container__1QSob,
+.viewerBadge_link__1S137,
+.viewerBadge_text__1JaDK           { display: none !important; }
+[data-testid="stStatusWidget"]     { display: none !important; }
+[data-testid="manage-app-button"]  { display: none !important; }
+
 .stApp { background: #f0f2f5 !important; }
 
 /* Main content padding — breathing room both sides */
