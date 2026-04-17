@@ -301,6 +301,22 @@ KW_WEEKLY = [
     ("eficiencia energética edificio", SECTION_III,  6, "MEP+MAT"),
     ("programa de rehabilitación",     SECTION_III,  6, "MEP+MAT"),
 
+    # ── Rehabilitación integral + cambio de uso — WEEKLY (Sharing Co / Hospitality) ──
+    # These were wrongly in KW_EXTRA_FULL (backfill only). Moving to WEEKLY
+    # because they are the primary signal for flexliving / hospitality operators
+    # looking to acquire or manage buildings being converted or rehabilitated.
+    ("rehabilitación integral",        SECTION_III,  10, "MEP+MAT+HOSPE"),
+    ("cambio de uso",                  SECTION_III,  12, "MEP+RET+HOSPE"),
+    ("cambio de destino",              SECTION_III,   8, "RET+HOSPE"),   # common legal phrasing
+    ("uso residencial",                SECTION_III,   8, "HOSPE+MEP"),   # office→residential conversions
+    ("uso terciario hospedaje",        SECTION_III,   6, "HOSPE"),
+    ("apartamentos turísticos",        SECTION_III,   6, "HOSPE"),
+    ("viviendas de uso turístico",     SECTION_III,   6, "HOSPE"),
+    ("residencia de estudiantes",      SECTION_III,   6, "HOSPE+MEP"),
+    ("edificio de viviendas",          SECTION_III,   8, "HOSPE+MEP+CON"),
+    ("edificio plurifamiliar",         SECTION_III,  10, "HOSPE+MEP+CON"),  # also was only in EXTRA_FULL
+    ("nueva construcción",             SECTION_III,   8, "MEP+CON+MAT+HOSPE"),  # residential new builds
+
     # ── Promotores/RE — DIRs and major planning instruments ──────────────────
     ("declaración de interés regional",SECTION_II,   8, "PRO+INFRA"),
     ("actuación de dotación",          SECTION_III,  6, "PRO"),
@@ -511,6 +527,22 @@ PROFILE_TRIGGERS = {
         "nave industrial", "licitación de obras", "hormigón", "tubería",
         "acero", "áridos", "pavimentación", "cerramiento", "cubierta",
         "carpintería", "aislamiento", "estructura metálica", "panel sándwich",
+    ],
+    # ── Hospitality / Flexliving / Residencial Investment (Sharing Co profile) ──
+    # Signals: cambio de uso to residential/hospedaje, rehab of whole buildings,
+    # new residential inventory, tourist apartments, student residences.
+    "hospe": [
+        "cambio de uso", "cambio de destino",
+        "uso residencial", "uso hospedaje", "uso hotelero", "uso turístico",
+        "rehabilitación integral", "rehabilitación de edificio",
+        "reforma integral", "rehabilitación de viviendas",
+        "edificio plurifamiliar", "edificio de viviendas", "nueva construcción",
+        "viviendas de uso turístico", "apartamentos turísticos",
+        "residencia de estudiantes", "residencia de mayores",
+        "licencia de obras mayor", "obra mayor", "primera ocupación",
+        "número de habitaciones", "número de viviendas",
+        "licencia de apertura", "actividad de hospedaje",
+        "uso terciario", "alojamiento temporal",
     ],
 }
 
@@ -1658,6 +1690,21 @@ GRANT_SIGNALS = [
     "se aprueba el proyecto de reparcelación",
     "aprobación del proyecto de actuación",
     "inscripción en el registro de entidades",
+    # ── Cambio de uso / rehabilitación grant language ─────────────────────────
+    # BOCM uses these phrases when authorising use-change or full rehab licences:
+    "se autoriza el cambio de uso",
+    "se autoriza el cambio de destino",
+    "autorización de cambio de uso",
+    "autorización del cambio de destino",
+    "cambio de uso autorizado",
+    "se concede la licencia de cambio",
+    "licencia de cambio de uso",
+    "obras de rehabilitación integral",
+    "rehabilitación y cambio de uso",
+    "actuación de rehabilitación",
+    "proyecto de rehabilitación",
+    "modificación de uso",
+    "autorización de obras de rehabilitación",
 ]
 CONSTRUCTION_SIGNALS = [
     "obra mayor", "obras mayores", "licencia de obras",
@@ -1813,6 +1860,14 @@ def classify_permit(text):
                              "rehabilitación integral","parque empresarial","base imponible"]):
         return True, "Tier-3: Obra mayor / industrial", 3
 
+    # Tier-3b: Cambio de uso / residential conversion — prime for hospe/flexliving
+    # Needs its own tier so it's not lost in the generic Tier-4 bucket
+    if any(p in t for p in ["cambio de uso","cambio de destino","uso residencial",
+                             "rehabilitación de edificio","rehabilitación de vivienda",
+                             "rehabilitación y cambio","modificación de uso",
+                             "edificio plurifamiliar","edificio de viviendas"]):
+        return True, "Tier-3: Cambio de uso / rehab residencial", 3
+
     if any(p in t for p in ["obra mayor","reforma integral","cambio de uso",
                              "ampliación de edificio","declaración responsable"]):
         return True, "Tier-4: Obra mayor / cambio de uso", 4
@@ -1857,7 +1912,26 @@ def score_lead(p):
     elif pt in ("plan especial",):
         score += 28
     elif pt in ("obra mayor rehabilitación","cambio de uso","declaración responsable obra mayor"):
-        score += 22
+        score += 25   # bumped from 22 — cambio de uso is high-value for hospe/retail
+
+    # Hospitality / Flexliving bonus — cambio de uso to residential/hospedaje
+    _hospe_signals = [
+        "cambio de uso", "cambio de destino", "uso residencial", "uso hospedaje",
+        "rehabilitación integral", "rehabilitación de edificio", "reforma integral",
+        "apartamentos turísticos", "viviendas de uso turístico", "uso hotelero",
+        "residencia de estudiantes", "edificio plurifamiliar", "edificio de viviendas",
+        "primera ocupación",
+    ]
+    if any(k in desc for k in _hospe_signals):
+        score += 10   # hospe/flexliving operators need to act early on these
+
+    # Prime Madrid barrios bonus for cambio de uso / rehab (Sharing Co operates here)
+    _prime_barrios = {"centro", "salamanca", "chamberí", "malasaña", "chueca",
+                      "lavapiés", "retiro", "almagro", "castellana", "legazpi",
+                      "arganzuela", "justicia", "embajadores", "sol", "ópera"}
+    if any(b in muni.lower() or b in desc for b in _prime_barrios):
+        if any(k in desc for k in ["cambio de uso", "rehabilitación", "obra mayor"]):
+            score += 6
     elif pt in ("obra mayor",):
         score += 18
     elif pt in ("licencia primera ocupación",):
@@ -2180,7 +2254,12 @@ def keyword_extract(text, url, pub_date):
         res["permit_type"] = "plan especial / parcial"
     elif "estudio de detalle" in t:
         res["permit_type"] = "plan especial"
-    elif any(p in t for p in ["plan especial de cambio de uso","cambio de uso de local a vivienda"]):
+    elif any(p in t for p in ["plan especial de cambio de uso","cambio de uso de local a vivienda",
+                               "cambio de destino", "cambio de uso a residencial",
+                               "cambio de uso a vivienda", "cambio de uso a hospedaje",
+                               "autorización de cambio", "modificación de uso"]):
+        res["permit_type"] = "cambio de uso"
+    elif "cambio de uso" in t:
         res["permit_type"] = "cambio de uso"
     elif any(p in t for p in ["plan especial para","plan especial de"]):
         res["permit_type"] = "plan especial"
@@ -2458,11 +2537,13 @@ Return an array of matching profiles based on project type:
 - "alquiler" — Alquiler maquinaria: cualquier obra mayor, urbanización, demolición, movimiento tierras
 - "materiales" — Suministro materiales: urbanización, nueva construcción, rehab, industrial
 - "promotores" — Promotores/RE: reparcelación, DIR, segregación finca, plan parcial, convenio urbanístico
-- "retail" — Expansión retail: apertura establecimiento, cambio uso, licencia ambiental con m²
+- "hospe" — Hospitality / Flexliving / Residencial Investment: cambio de uso (especialmente oficinas/local→residencial/hospedaje), rehabilitación integral de edificios, nuevos edificios plurifamiliares, primera ocupación residencial, apartamentos turísticos, residencias de estudiantes
 
 Example: Urbanización €50M → ["infrastructura", "constructora", "alquiler", "materiales"]
 Example: Nave 5.000m² → ["industrial", "alquiler", "materiales"]
-Example: Edificio 40 viviendas → ["constructora", "mep", "materiales"]
+Example: Edificio 40 viviendas → ["constructora", "mep", "materiales", "hospe"]
+Example: Cambio de uso oficinas→residencial → ["hospe", "mep", "retail"]
+Example: Rehabilitación integral edificio Madrid → ["hospe", "mep", "materiales"]
 
 DOCUMENT CLASSIFICATION RULES:
 - "contribuciones especiales por la ejecución de obras" → permit_type:"contribuciones especiales", 
@@ -2473,6 +2554,9 @@ DOCUMENT CLASSIFICATION RULES:
 - "aprobación definitiva" + "presupuesto" → phase:"definitivo", confidence:"high"
 - "aprobación inicial" → phase:"inicial", confidence:"medium"
 - "base imponible del ICIO" → PEM = base imponible exactly, confidence:"high"
+- "cambio de uso" OR "cambio de destino" → permit_type:"cambio de uso", profile_fit MUST include "hospe"
+- "rehabilitación integral" OR "rehabilitación de edificio" → permit_type:"obra mayor rehabilitación", profile_fit MUST include "hospe" and "mep"
+- "primera ocupación" + residential context → profile_fit MUST include "hospe"
 
 TABLA_DATOS extraction: Extract ALL financial data from [TABLA_DATOS_FINANCIEROS].
 PARCEL DATA: Use [TABLA_PARCELAS] total m² to estimate material quantities.
@@ -2838,10 +2922,31 @@ def process_one(url, idx, total):
                     f"Oportunidad directa para instaladores eléctricos MT, PCI y suministradores de estructura metálica. "
                     f"Empresas de alquiler de maquinaria: contactar al promotor antes del inicio de obra.")
             elif "nueva construcción" in pt or "rehabilitación" in pt:
+                # Check if this is a hospe lead (cambio de uso or residencial rehab)
+                _desc_l = (p.get("description","") or "").lower()
+                _is_hospe = any(k in _desc_l or k in pt for k in [
+                    "cambio de uso","cambio de destino","uso residencial","uso hospedaje",
+                    "residencia","apartamento","vivienda","plurifamiliar","hospedaje",
+                ])
+                if _is_hospe:
+                    p["ai_evaluation"] = (
+                        f"🏠 Obra mayor residencial / rehabilitación en {muni} — {pem_s}. "
+                        f"Oportunidad para operadores de flexliving y hospitality: "
+                        f"contactar al promotor o propietario ANTES de que el edificio salga al mercado. "
+                        f"Evaluar si encaja como inventario gestionado (mid-term / short-term). "
+                        f"Instaladores MEP: ascensores, HVAC y PCI se contratan en fase de estructura.")
+                else:
+                    p["ai_evaluation"] = (
+                        f"Obra mayor en {muni} — {pem_s}. "
+                        f"Instaladores MEP deben contactar al promotor antes de que el constructor cierre contratos. "
+                        f"Ascensores, HVAC y PCI se adjudican típicamente en fase de estructura.")
+            elif "cambio de uso" in pt:
                 p["ai_evaluation"] = (
-                    f"Obra mayor en {muni} — {pem_s}. "
-                    f"Instaladores MEP deben contactar al promotor antes de que el constructor cierre contratos. "
-                    f"Ascensores, HVAC y PCI se adjudican típicamente en fase de estructura.")
+                    f"🏠 Cambio de uso en {muni} — {pem_s}. "
+                    f"Señal prime para operadores de flexliving, hospitality y retail: "
+                    f"el local u oficina está siendo transformado. "
+                    f"Contactar al promotor/propietario ahora para posicionarse como operador o arrendatario "
+                    f"antes de que la reforma termine. Instaladores MEP: ventana de instalaciones activa.")
             else:
                 p["ai_evaluation"] = (
                     f"Proyecto de construcción en {muni} — {pem_s}. "
