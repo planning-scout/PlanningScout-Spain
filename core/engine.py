@@ -387,6 +387,29 @@ KW_WEEKLY = [
     ("obra civil",                     SECTION_II,   8, "INFRA+CON"),
     ("infraestructura hidráulica",     SECTION_II,   6, "INFRA"),
     ("saneamiento colector",           SECTION_III,  6, "INFRA+CON+MAT"),
+
+    # ── KINÉPOLIS / GRAN FORMATO RETAIL — cinema + large-format commercial ────
+    # Kinépolis needs 2,000–5,000m². These keywords catch the permits they need:
+    # new centros comerciales, parques de ocio, grandes superficies de cine/ocio.
+    ("gran superficie comercial",      SECTION_III,  5, "RET+CON"),     # large-format retail
+    ("equipamiento de ocio",           SECTION_III,  5, "RET+CON"),     # leisure equipment permit
+    ("uso recreativo",                 SECTION_III,  4, "RET"),         # recreational use change
+    ("sala de espectáculos",           SECTION_III,  4, "RET"),         # entertainment venue permit
+
+    # ── ACTIU / MOBILIARIO OFICINA — office + coworking + hospitality ─────────
+    # Every new edificio de oficinas, coworking, hotel, university = contract sale.
+    ("campus empresarial",             SECTION_III,  5, "ACTIU+RET"),   # corporate campus
+    ("zona terciaria",                 SECTION_III,  5, "ACTIU+RET"),   # tertiary zone development
+    ("edificio de oficinas",           SECTION_III,  5, "ACTIU+RET"),   # office building permit
+
+    # ── MOLECOR — PVC pipe-specific infrastructure signals ───────────────────
+    # Every urbanización = saneamiento + abastecimiento = PVC pipe sales.
+    # These complement the existing saneamiento keywords with pipe-specific terms:
+    ("red de pluviales",               SECTION_III,  5, "INFRA+CON+MAT"), # stormwater drainage
+    ("tubería de abastecimiento",      SECTION_III,  5, "INFRA+CON+MAT"), # water supply pipe
+    ("conducción de agua",             SECTION_III,  4, "INFRA+MAT"),    # water pipeline
+    ("depuradora de aguas",            SECTION_III,  4, "INFRA+CON+MAT"),# WWTP = major pipe project
+    ("estación de bombeo",             SECTION_III,  4, "INFRA+CON+MAT"),# pumping station
 ]
 
 KW_EXTRA_FULL = [
@@ -476,6 +499,21 @@ KW_EXTRA_FULL = [
     ("vaciado de solar",            SECTION_III,  4, "ALQUILER+CON"),
     ("desescombro",                 SECTION_III,  4, "ALQUILER"),
     ("explanación",                 SECTION_III,  4, "ALQUILER+CON"),
+    # ── Kinépolis / gran formato: full-mode extra terms ───────────────────────
+    ("parque de ocio",              SECTION_III,  4, "RET+CON"),
+    ("centro de ocio",              SECTION_III,  4, "RET+CON"),
+    ("equipamiento recreativo",     SECTION_III,  4, "RET+CON"),
+    ("uso dotacional recreativo",   SECTION_III,  4, "RET"),
+    # ── ACTIU / contract furniture: additional full-mode terms ───────────────
+    ("hotel de negocios",           SECTION_III,  4, "ACTIU+HOSPE"),
+    ("residencia corporativa",      SECTION_III,  4, "ACTIU+HOSPE"),
+    ("edificio multifuncional",     SECTION_III,  4, "ACTIU+RET"),
+    # ── Molecor: maximum hydraulic infrastructure coverage ───────────────────
+    ("colector principal",          SECTION_III,  4, "INFRA+MAT"),
+    ("red de saneamiento separativa",SECTION_III, 4, "INFRA+MAT"),
+    ("infraestructura de agua",     SECTION_III,  4, "INFRA+MAT"),
+    ("suministro de agua potable",  SECTION_III,  4, "INFRA+MAT"),
+    ("planta potabilizadora",       SECTION_III,  4, "INFRA+CON+MAT"),
 ]
 
 # Logistics corridor municipalities for targeted bonus search in full mode
@@ -2787,12 +2825,11 @@ Write 3-5 sentences covering:
 - WHO SHOULD ACT NOW and HOW: specific call to action for each relevant profile
   (e.g. "Instaladores MEP: contactar al promotor AHORA antes de que adjudique HVAC")
   (e.g. "Gran Constructora: pre-calificarse para licitación en 12-18 meses")
-  (e.g. "Sharing Co / Room00: edificio residencial nuevo en barrio X — contactar promotor")
+  (e.g. "Operadores de hospedaje/flexliving: edificio residencial nuevo en barrio X — contactar al promotor")
 - Any specific data points from the document (m², nº viviendas, plazo ejecución)
 
 GOOD ai_evaluation example:
-"Proyecto de urbanización definitivo APE 08.21 Las Tablas Oeste, Fuencarral-El Pardo, Madrid — PEM confirmado €106.7M. Uno de los 3 mayores proyectos de urbanización de Madrid capital en 5 años: >200.000m² de nuevo suelo con viario completo, redes BT/MT, saneamiento y telecomunicaciones. Etapa 1: 24 meses; Etapa 2: 36 meses desde aprobación definitiva. INFRA/FCC: pre-calificarse para licitación civil estimada en 6-18 meses; el pliego técnico saldrá antes de fin de año. MEP instaladores: contactar a la Junta de Compensación ahora para pipeline de instalaciones BT, alumbrado y telecomunicaciones (€8-15M en MEP). Materiales: hormigón HA-25 ~10.000m³, tubería PVC DN200-400 ~5km, zahorra Z-1 ~2.000t."
-
+"Proyecto de urbanización definitivo APE 08.21 Las Tablas Oeste, Fuencarral-El Pardo, Madrid — PEM confirmado €106.7M. Uno de los 3 mayores proyectos de urbanización de Madrid capital en 5 años: >200.000m² de nuevo suelo con viario completo, redes BT/MT, saneamiento y telecomunicaciones. Etapa 1: 24 meses; Etapa 2: 36 meses desde aprobación definitiva. Gran Constructora: pre-calificarse para licitación civil estimada en 6-18 meses — el pliego técnico saldrá antes de fin de año. Instaladores MEP: contactar a la Junta de Compensación ahora para pipeline de instalaciones BT, alumbrado y telecomunicaciones (€8-15M en MEP). Suministradores: hormigón HA-25 ~10.000m³, tubería PVC DN200-400 ~5km, zahorra Z-1 ~2.000t."
 BAD ai_evaluation (NEVER do this):
 "Proyecto de construcción en Getafe — PEM no declarado. Revisar el PDF original para detalles técnicos y cronograma. Contactar al promotor o Ayuntamiento para confirmar fase de ejecución."
 
@@ -2937,65 +2974,70 @@ If PEM estimated (not explicit), set confidence:"medium" and note method in ai_e
             _timeline = "6-12" if phase == "definitivo" else "12-24"
 
             if "urbanización" in pt or "reparcelación" in pt:
-                san_note = " Molecor/compras: proyecto con red de saneamiento — confirmar DN y longitudes para cotización PVC." if _has_san else ""
+                _san_note = (" Red de saneamiento incluida — confirmar DN y longitudes para material de tuberías." if _has_san else "")
                 d["ai_evaluation"] = (
                     f"Proyecto de urbanización en {muni} — {pem_s} ({phase_s}). "
-                    f"FCC/Gran Constructora: pre-calificarse para licitación civil (estimado {_timeline} meses). "
-                    f"Kiloutou/alquiler: excavadoras y compactadores necesarios en fase de movimiento de tierras. "
-                    f"MEP instaladores: contactar JC ahora para pipeline BT, alumbrado y telecomunicaciones. "
-                    f"Promotor/JC: {applicant}.{san_note}")
+                    f"Promovido por {applicant}. "
+                    f"Implica ejecución de red viaria, saneamiento, abastecimiento, electricidad BT/MT y telecomunicaciones. "
+                    f"Gran Constructora: pre-calificarse para la futura licitación civil, estimada en {_timeline} meses desde esta aprobación. "
+                    f"Instaladores MEP: contactar a la Junta de Compensación para pipeline de instalaciones (alumbrado, BT, telecomunicaciones). "
+                    f"Alquiler de maquinaria: excavadoras, compactadores y maquinaria de urbanización requeridos en fase de movimiento de tierras.{_san_note}")
             elif "licitación" in pt:
                 d["ai_evaluation"] = (
                     f"⚡ LICITACIÓN ACTIVA en {muni} — {pem_s}. "
-                    f"FCC/Gran Constructora: revisar pliego técnico y presentar oferta URGENTE. "
-                    f"Kiloutou/alquiler: contactar al adjudicatario inmediatamente tras resolución para maquinaria. "
-                    f"Molecor/materiales: acordar precios con el futuro adjudicatario antes de firma. "
-                    f"Convocante: {applicant}.")
+                    f"Convocada por {applicant}. Plazo de oferta en curso — revisar pliego técnico de inmediato. "
+                    f"Gran Constructora: presentar oferta técnica y económica urgente. "
+                    f"Suministradores de materiales: acordar precios con el futuro adjudicatario antes de la firma del contrato. "
+                    f"Alquiler de maquinaria: contactar al adjudicatario inmediatamente tras la resolución.")
             elif "plan especial" in pt or "plan parcial" in pt:
+                _fase_label = "Aprobación definitiva" if phase == "definitivo" else "Aprobación inicial"
                 d["ai_evaluation"] = (
-                    f"{'✅ Aprobación definitiva' if phase == 'definitivo' else '📋 Aprobación inicial'} "
-                    f"de plan urbanístico en {muni} — {pem_s}. "
-                    f"Promotores/RE (CBRE, Muppy): contactar JC o propietarios del suelo ahora. "
-                    f"Gran Constructora (FCC): monitorizar para propuesta de obra civil en {_timeline} meses. "
-                    f"Retail (Saona, Malvón): evaluar si el uso previsto incluye equipamiento comercial. "
-                    f"Promovido por: {applicant}.")
-            elif "industrial" in pt or "nave" in pt:
+                    f"{_fase_label} de instrumento urbanístico en {muni} — {pem_s}. "
+                    f"Promovido por {applicant}. "
+                    f"Este paso habilita la futura urbanización y edificación sobre el ámbito. "
+                    f"Promotores/RE: contactar a la JC o propietarios del suelo antes de que salga al mercado. "
+                    f"Gran Constructora: monitorizar para propuesta técnica de obra civil en {_timeline} meses. "
+                    f"Retail y expansión comercial: evaluar si el uso previsto incluye equipamiento comercial o terciario.")
+            elif "industrial" in pt or "nave" in t:
                 d["ai_evaluation"] = (
                     f"Proyecto industrial en {muni} — {pem_s} ({phase_s}). "
-                    f"MEP instaladores: eléctrica MT, PCI y climatización industrial. "
-                    f"ACTIU: evaluar si incluye oficinas de nave o coworking industrial. "
-                    f"Kiloutou/alquiler: maquinaria pesada, compactador, grúa. Promotor: {applicant}.")
+                    f"Promovido por {applicant}. "
+                    f"Uso previsto: {'nave logística' if any(k in desc_l for k in ['logística','distribución','almacén']) else 'nave industrial o de actividad productiva'}. "
+                    f"Instaladores MEP: instalación eléctrica MT, PCI rociadores y climatización industrial. "
+                    f"Suministradores: estructura metálica, panel sándwich cubierta y solera de hormigón. "
+                    f"Alquiler de maquinaria: grúa de montaje, compactadora y maquinaria de explanación.")
             elif "cambio de uso" in pt or any(k in desc_l for k in
                     ["cambio de destino","modificación de uso","reconversión","variación de uso"]):
+                _orig = "local comercial" if "local" in desc_l or "comercial" in desc_l else ("oficina" if "oficina" in desc_l else "uso existente")
+                _dest = "residencial" if any(k in desc_l for k in ["vivienda","residencial","apartamento"]) else ("hospedaje" if any(k in desc_l for k in ["hotel","hostal","turístico"]) else "nuevo uso")
                 d["ai_evaluation"] = (
-                    f"🏠 Cambio de uso en {muni} — {pem_s} ({phase_s}). "
-                    f"Sharing Co / Room00 / hospe: contactar al propietario AHORA — "
-                    f"posicionarse como operador antes de que el edificio salga al mercado. "
-                    f"MEP instaladores: HVAC, fontanería y eléctrica — ventana de instalaciones activa. "
-                    f"ACTIU: evaluar si el nuevo uso incluye zonas comunes o coworking. "
-                    f"Solicitante: {applicant}.")
+                    f"Cambio de uso en {muni} — de {_orig} a {_dest} — {pem_s} ({phase_s}). "
+                    f"Solicitado por {applicant}. "
+                    f"Ventana de instalaciones activa: HVAC, fontanería, electricidad y protección contra incendios en obras. "
+                    f"Operadores de hospedaje o flexliving: posicionarse con el propietario antes de que el edificio salga al mercado. "
+                    f"Mobiliario y equipamiento de zonas comunes: evaluar formato y superficie total del proyecto.")
             elif "nueva construcción" in pt or "rehabilitación" in pt:
                 _is_res = any(k in desc_l for k in ["vivienda","plurifamiliar","residencial","apartamento"])
                 if _is_res:
                     d["ai_evaluation"] = (
-                        f"🏠 Edificación residencial en {muni} — {pem_s} ({phase_s}). "
-                        f"Sharing Co / Room00: contactar al promotor antes de que salga al mercado para gestión. "
-                        f"MEP instaladores: ascensores, HVAC y PCI se adjudican en fase de estructura — "
-                        f"contactar AHORA. Kiloutou: grúa torre y maquinaria de cimentación. "
-                        f"Promotor: {applicant}.")
+                        f"Edificación residencial {'nueva' if 'nueva' in pt else '(rehabilitación)'} en {muni} — {pem_s} ({phase_s}). "
+                        f"Promotor: {applicant}. "
+                        f"Ascensores, HVAC y PCI se adjudican típicamente en fase de estructura — ventana de instalaciones en {_timeline} meses. "
+                        f"Operadores residenciales o de gestión de activos: contactar al promotor antes de que el edificio salga al mercado. "
+                        f"Alquiler de maquinaria: grúa torre, maquinaria de cimentación y plataformas elevadoras.")
                 else:
                     d["ai_evaluation"] = (
-                        f"Obra mayor en {muni} — {pem_s} ({phase_s}). "
-                        f"MEP instaladores: contactar antes de que el constructor cierre subcontratos. "
-                        f"ACTIU: evaluar si incluye oficinas, zonas comunes o uso terciario. "
-                        f"Kiloutou/alquiler: grúa torre, plataformas elevadoras. "
-                        f"Promotor: {applicant}.")
+                        f"Obra mayor {'nueva construcción' if 'nueva' in pt else '(rehabilitación)'} en {muni} — {pem_s} ({phase_s}). "
+                        f"Promotor: {applicant}. "
+                        f"Instaladores MEP: contactar antes de que el constructor cierre los subcontratos de instalaciones. "
+                        f"Evaluar si el proyecto incluye oficinas, zonas comunes o uso terciario para equipamiento de contrato. "
+                        f"Alquiler de maquinaria: grúa torre, plataformas elevadoras y maquinaria de obra en {_timeline} meses.")
             else:
                 d["ai_evaluation"] = (
-                    f"Proyecto en {muni} — {pem_s} ({phase_s}). Promovido por: {applicant}. "
-                    f"Revisar PDF adjunto para m², cronograma y especificaciones técnicas. "
-                    f"FCC/Constructora: evaluar si es licitación pública. "
-                    f"MEP/Kiloutou: confirmar fecha de inicio de obras para ventana de equipos.")
+                    f"Proyecto en {muni} — {pem_s} ({phase_s}). Promovido por {applicant}. "
+                    f"Consultar el PDF adjunto para superficie, cronograma y especificaciones técnicas. "
+                    f"Gran Constructora: evaluar si es licitación pública o proyecto de iniciativa privada. "
+                    f"Instaladores MEP y alquiler de maquinaria: confirmar fecha de inicio de obras para planificar la ventana de equipos.")
 
         # Supplies needed: generate if missing — pass pdf_text for accurate quantities
         if not d.get("supplies_needed") or len(str(d.get("supplies_needed","")).strip()) < 10:
@@ -3059,27 +3101,28 @@ def get_sheet():
         log(f"❌ Sheet connection failed: {e}"); return None
 
 def load_seen():
-    """Load seen URLs from the active sheet tab (Leads) to prevent duplicates."""
+    """Load seen URLs from the Leads tab only to prevent duplicates."""
     global _seen_urls, _seen_bocm_ids
     ws = get_sheet()
     if not ws: return
     gc = ws.spreadsheet
-    # Read from whichever tab contains data — "Leads" is where write_permit() writes.
-    # Also try legacy "Permits" tab name in case it exists from older runs.
-    for tab in ["Leads", "Permits"]:
-        try:
-            tab_ws = gc.worksheet(tab)
-            for row in tab_ws.get_all_values()[1:]:
-                if len(row) > 9 and row[9].strip():
-                    u = row[9].strip()
-                    _seen_urls.add(u)
-                    bid = extract_bocm_id(u)
-                    if bid: _seen_bocm_ids.add(bid)
-        except gspread.WorksheetNotFound:
-            pass
-        except Exception as e:
-            log(f"⚠️  load_seen [{tab}]: {e}")
-    log(f"✅ {len(_seen_urls)} URLs / {len(_seen_bocm_ids)} IDs loaded (dedup cache)")
+    # ONLY read from "Leads" — this is the tab write_permit() writes to.
+    # Reading from "Permits" (old tab name) caused all old records to be treated
+    # as duplicates, resulting in 0 new leads saved on clean runs.
+    try:
+        tab_ws = gc.worksheet("Leads")
+        rows = tab_ws.get_all_values()
+        for row in rows[1:]:
+            if len(row) > 9 and row[9].strip():
+                u = row[9].strip()
+                _seen_urls.add(u)
+                bid = extract_bocm_id(u)
+                if bid: _seen_bocm_ids.add(bid)
+        log(f"✅ {len(_seen_urls)} URLs / {len(_seen_bocm_ids)} IDs loaded from 'Leads' tab")
+    except gspread.WorksheetNotFound:
+        log("ℹ️  'Leads' tab not found yet — starting fresh (0 seen URLs)")
+    except Exception as e:
+        log(f"⚠️  load_seen [Leads]: {e}")
 
 def write_permit(p, pdf_url=""):
     ws  = get_sheet()
@@ -4138,20 +4181,31 @@ def search_boe_construction(date_from, date_to, global_seen):
         sumario_id = f"BOE-S-{day.strftime('%Y%m%d')}"
         xml_url    = f"{BOE_BASE}/diario_boe/xml.php?id={sumario_id}"
         try:
-            # BOE requires explicit XML Accept header — without it the server
-            # may return an HTML error page which silently fails ET.fromstring()
-            sess = get_session()
-            r = sess.get(xml_url, timeout=30, verify=False,
-                         headers={"Accept": "application/xml, text/xml, */*",
-                                  "User-Agent": USER_AGENTS[0],
-                                  "Referer": "https://www.boe.es/"})
+            # BOE requires a clean session — BOCM cookies cause BOE to redirect to HTML.
+            # Use a dedicated BOE session with BOE-specific headers only.
+            boe_sess = requests.Session()
+            boe_sess.headers.update({
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "application/xml, text/xml, */*;q=0.8",
+                "Accept-Language": "es-ES,es;q=0.9",
+                "Referer": "https://www.boe.es/",
+                "Connection": "keep-alive",
+            })
+            r = None
+            for _attempt in range(3):
+                try:
+                    r = boe_sess.get(xml_url, timeout=30, verify=False, allow_redirects=True)
+                    if r and r.status_code == 200: break
+                    time.sleep(3 * (_attempt + 1))
+                except Exception: time.sleep(5)
             if not r or r.status_code != 200:
                 log(f"    ⚠️ BOE {sumario_id}: HTTP {r.status_code if r else 'no response'}")
                 continue
-            # Verify we got XML not HTML
-            ct = r.headers.get("Content-Type","")
-            if "html" in ct and "xml" not in ct:
-                log(f"    ⚠️ BOE {sumario_id}: got HTML instead of XML (server redirect?)")
+            # Detect HTML response regardless of Content-Type header
+            # (BOE sends HTML for holidays/non-publication days, sometimes with text/xml CT)
+            body_peek = r.content[:300].decode("utf-8", errors="replace").lower()
+            if "<!doctype" in body_peek or "<html" in body_peek or "<head>" in body_peek:
+                # Silent skip — this date had no BOE edition (holiday or error page)
                 continue
             try:
                 root = ET.fromstring(r.content)
@@ -4193,8 +4247,6 @@ def search_boe_construction(date_from, date_to, global_seen):
                 seen_local.add(boe_id)
                 boe_items.append((boe_id, title, department))
 
-        # Count items found this day for diagnostic logging
-            day_count = sum(1 for (bid,_,_) in boe_items if bid.endswith(f"-{day.strftime('%Y%m%d')[:6]}"))
         except Exception as e:
             log(f"  ⚠️ BOE sumario [{day.strftime('%d/%m')}]: {type(e).__name__}: {e}")
         else:
@@ -4333,7 +4385,7 @@ def process_boe_item(boe_id, title, department, idx, total):
         if not p.get("supplies_needed") or len(str(p.get("supplies_needed", "")).strip()) < 10:
             p["supplies_needed"] = generate_supplies_estimate(
                 p.get("permit_type", ""), p.get("declared_value_eur"), p.get("description", ""),
-                full_text=pdf_text or text or "")
+                full_text=text or "")
         
         # Write to sheet
         if write_permit(p, pdf_url):
