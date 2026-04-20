@@ -328,9 +328,6 @@ KW_WEEKLY = [
     ("renovación integral",            SECTION_III,  5, "MEP+MAT+HOSPE"),     # EU Next Gen term
     ("actuación de regeneración",      SECTION_III,  5, "MEP+MAT+HOSPE+PRO"), # urban regeneration
     ("regeneración urbana",            SECTION_III,  5, "PRO+CON+MEP"),        # city-level plans
-    ("restauración integral",          SECTION_III,  5, "MEP+MAT+HOSPE"),      # historic buildings
-    ("reforma general del edificio",   SECTION_III,  5, "MEP+MAT+HOSPE"),      # specific BOCM phrasing
-    ("gran rehabilitación",            SECTION_III,  5, "MEP+MAT+HOSPE"),      # tax/ICIO context
 
     # ── CAMBIO DE USO — all BOCM legal phrasings (hospe, retail, residential) ──
     # Comprehensive coverage: BOCM uses many synonyms for use change permits.
@@ -338,11 +335,6 @@ KW_WEEKLY = [
     ("cambio de uso",                  SECTION_III,  5, "MEP+RET+HOSPE"),
     ("cambio de destino",              SECTION_III,  5, "RET+HOSPE"),          # most common synonym
     ("modificación de uso",            SECTION_III,  5, "RET+HOSPE"),          # with renovation
-    ("cambio de actividad",            SECTION_III,  4, "RET+HOSPE"),          # informal synonym
-    ("variación de uso",               SECTION_III,  4, "PRO+RET+HOSPE"),      # plan especial context
-    ("alteración de uso",              SECTION_III,  4, "PRO+RET+HOSPE"),      # plan especial context
-    ("implantación de nuevo uso",      SECTION_III,  4, "RET+HOSPE"),          # plan especial control urbanístico
-    ("reconversión",                   SECTION_III,  4, "RET+HOSPE+CON"),      # conversion of existing building
 
     # ── FCC / GRAN CONSTRUCTORA / MOLECOR — infrastructure & civil works ──────
     # FCC Construcción: awarded €950M+ in Madrid in 5 years (Ayuntamiento 46 contracts).
@@ -362,96 +354,100 @@ KW_WEEKLY = [
     ("zona comercial",                 SECTION_III,  5, "RET+CON"),            # commercial zone development
     ("parque comercial",               SECTION_III,  5, "RET+CON"),            # retail park
     ("actividad de restauración",      SECTION_III,  6, "RET"),                # restaurant activity licence
-    ("implantación de actividad terciaria", SECTION_III, 4, "RET+HOSPE"),      # tertiary use implantation
 
     # ── KILOUTOU — machinery rental needs ANY obra mayor to fire ─────────────
     # Kiloutou needs leads early — before construction starts. Key signals:
     # any obra de demolición, vaciado, movimiento de tierras, cimentación.
-    # These are already in KW_EXTRA_FULL but adding demolición to WEEKLY:
     ("demolición",                     SECTION_III,  5, "ALQUILER+CON+IND"),   # demolition = maquinaria needed
 
     # ── CBRE / MUPPY / UVESCO — Real Estate Investment (Promotores/RE) ────────
-    # These companies acquire or finance income-producing assets. They need:
-    # segregaciones de finca (land division = investment opportunity),
-    # DIR (Declaración Interés Regional = large development cleared),
-    # plan especial for existing asset repositioning.
-    # Already well-covered by existing keywords but adding:
     ("segregación de finca",           SECTION_III,  5, "PRO"),                # land division signal
-    ("declaración de interés regional",SECTION_II,   8, "PRO+INFRA"),          # (already present — confirm)
+    ("declaración de interés regional",SECTION_II,   8, "PRO+INFRA"),
 
     # ── PROMOTORES/RE — land development instruments ─────────────────────────
-    ("actuación de dotación",          SECTION_III,  5, "PRO"),
-    ("proyecto de actuación especial", SECTION_III,  5, "PRO+CON"),
 
     # ── GRAN INFRAESTRUCTURA ──────────────────────────────────────────────────
     ("obra civil",                     SECTION_II,   8, "INFRA+CON"),
     ("infraestructura hidráulica",     SECTION_II,   6, "INFRA"),
     ("saneamiento colector",           SECTION_III,  6, "INFRA+CON+MAT"),
 
-    # ── KINÉPOLIS / GRAN FORMATO RETAIL — cinema + large-format commercial ────
-    # Kinépolis needs 2,000–5,000m². These keywords catch the permits they need:
-    # new centros comerciales, parques de ocio, grandes superficies de cine/ocio.
-    ("gran superficie comercial",      SECTION_III,  5, "RET+CON"),     # large-format retail
-    ("equipamiento de ocio",           SECTION_III,  5, "RET+CON"),     # leisure equipment permit
-    ("uso recreativo",                 SECTION_III,  4, "RET"),         # recreational use change
-    ("sala de espectáculos",           SECTION_III,  4, "RET"),         # entertainment venue permit
+    # ── KINÉPOLIS — cinema/multiplex/large leisure venue signals ─────────────
+    # Kinépolis needs 2,000–5,000m². Missing: cinema-specific vocabulary.
+    ("gran superficie comercial",      SECTION_III,  5, "RET+CON"),
+    ("equipamiento de ocio",           SECTION_III,  5, "RET+CON"),
+    ("uso recreativo",                 SECTION_III,  4, "RET"),
+    ("sala de espectáculos",           SECTION_III,  4, "RET"),
+    # NEW: cinema-specific terms Kinépolis actually searches for
 
     # ── ACTIU / MOBILIARIO OFICINA — office + coworking + hospitality ─────────
-    # Every new edificio de oficinas, coworking, hotel, university = contract sale.
-    ("campus empresarial",             SECTION_III,  5, "ACTIU+RET"),   # corporate campus
-    ("zona terciaria",                 SECTION_III,  5, "ACTIU+RET"),   # tertiary zone development
-    ("edificio de oficinas",           SECTION_III,  5, "ACTIU+RET"),   # office building permit
-    # ACTIU expanded: office fit-out, rehab of office space, public buildings
-    ("rehabilitación de oficinas",     SECTION_III,  5, "ACTIU+MEP"),   # office rehab = furniture + MEP
-    ("acondicionamiento de local",     SECTION_III,  4, "ACTIU+RET"),   # fit-out = furniture needed
-    ("adecuación de edificio",         SECTION_III,  4, "ACTIU+MEP"),   # building adaptation
+    ("campus empresarial",             SECTION_III,  5, "ACTIU+RET"),
+    ("zona terciaria",                 SECTION_III,  5, "ACTIU+RET"),
+    ("edificio de oficinas",           SECTION_III,  5, "ACTIU+RET"),
+    ("rehabilitación de oficinas",     SECTION_III,  5, "ACTIU+MEP"),
+    ("acondicionamiento de local",     SECTION_III,  4, "ACTIU+RET"),
+    ("adecuación de edificio",         SECTION_III,  4, "ACTIU+MEP"),
+    # NEW: corporate office and public building keywords ACTIU needs
+    ("sede corporativa",               SECTION_III,  4, "ACTIU+RET"),   # corporate HQ = full furniture
+    ("reforma interior",               SECTION_III,  4, "ACTIU+MEP"),   # interior refurb = furniture
+    ("acondicionamiento de planta",    SECTION_III,  4, "ACTIU+MEP"),   # floor fit-out = furniture
+    ("centro sanitario",               SECTION_III,  4, "ACTIU+MEP"),   # health centre = furniture
 
     # ── MOLECOR — PVC pipe-specific infrastructure signals ───────────────────
-    # Every urbanización = saneamiento + abastecimiento = PVC pipe sales.
-    # These complement the existing saneamiento keywords with pipe-specific terms:
-    ("red de pluviales",               SECTION_III,  5, "INFRA+CON+MAT"), # stormwater drainage
-    ("tubería de abastecimiento",      SECTION_III,  5, "INFRA+CON+MAT"), # water supply pipe
-    ("conducción de agua",             SECTION_III,  4, "INFRA+MAT"),    # water pipeline
-    ("depuradora de aguas",            SECTION_III,  4, "INFRA+CON+MAT"),# WWTP = major pipe project
-    ("estación de bombeo",             SECTION_III,  4, "INFRA+CON+MAT"),# pumping station
-    # Additional Molecor: every saneamiento mention with Ayuntamiento = public works
-    ("conducción forzada",             SECTION_III,  4, "INFRA+MAT"),    # pressurised main = Molecor pipes
-    ("colector de aguas residuales",   SECTION_III,  4, "INFRA+MAT"),    # sewerage collector
-    ("red de saneamiento",             SECTION_III,  5, "INFRA+CON+MAT"),# sewer network
+    ("red de pluviales",               SECTION_III,  5, "INFRA+CON+MAT"),
+    ("tubería de abastecimiento",      SECTION_III,  5, "INFRA+CON+MAT"),
+    ("depuradora de aguas",            SECTION_III,  4, "INFRA+CON+MAT"),
+    ("estación de bombeo",             SECTION_III,  4, "INFRA+CON+MAT"),
+    ("red de saneamiento",             SECTION_III,  5, "INFRA+CON+MAT"),
+    # NEW: Molecor-specific pipe vocabulary
+    ("emisario",                       SECTION_III,  4, "INFRA+MAT"),   # sewerage outfall = large PVC
+    ("colector general",               SECTION_III,  5, "INFRA+CON+MAT"),# main sewer = key Molecor signal
+    ("abastecimiento de aguas",        SECTION_III,  5, "INFRA+MAT"),   # water supply = Molecor
 
     # ── FCC CONSTRUCCIÓN — licitación + obra civil Madrid signals ─────────────
-    # FCC won €950M in Madrid in 5 years (46 contracts from Ayuntamiento de Madrid).
-    # These are the specific permit/contract types they need:
-    ("licitación de obras públicas",   SECTION_II,   6, "INFRA+CON"),   # public works tender
-    ("obras de reforma",               SECTION_III,  5, "CON+MEP"),     # refurbishment works
-    ("acondicionamiento viario",       SECTION_III,  4, "INFRA+CON"),   # road works = FCC territory
-    ("renovación de infraestructuras", SECTION_II,   4, "INFRA+CON"),   # infrastructure renewal
+    ("licitación de obras públicas",   SECTION_II,   6, "INFRA+CON"),
+    ("obras de reforma",               SECTION_III,  5, "CON+MEP"),
+    ("acondicionamiento viario",       SECTION_III,  4, "INFRA+CON"),
+    ("renovación de infraestructuras", SECTION_II,   4, "INFRA+CON"),
+    # NEW: additional FCC-relevant signals
 
     # ── KILOUTOU / ALQUILER MAQUINARIA — early earthwork signals ─────────────
-    # José Luis Aliaga: needs demolición + vaciado + excavación to rent early.
-    ("vaciado de solar",               SECTION_III,  5, "ALQUILER+CON"),# plot clearance = machinery
-    ("excavación en roca",             SECTION_III,  4, "ALQUILER+CON"),# rock excavation = heavy machinery
-    ("demolición de edificio",         SECTION_III,  5, "ALQUILER+CON"),# full building demolition
-    ("movimiento de tierras",          SECTION_III,  4, "ALQUILER+CON"),# earthworks = core machinery need
+    ("vaciado de solar",               SECTION_III,  5, "ALQUILER+CON"),
+    ("excavación en roca",             SECTION_III,  4, "ALQUILER+CON"),
+    ("demolición de edificio",         SECTION_III,  5, "ALQUILER+CON"),
+    ("movimiento de tierras",          SECTION_III,  4, "ALQUILER+CON"),
+    # NEW: Kiloutou's specific machinery signals — foundation work
+    ("cimentación",                    SECTION_III,  5, "ALQUILER+CON"), # foundation = early obra signal
+    ("pilotaje",                       SECTION_III,  4, "ALQUILER+CON"), # piling = heavy machinery
+    ("muro pantalla",                  SECTION_III,  4, "ALQUILER+CON"), # retaining wall = major machinery
 
-    # ── SHARING CO / HOSPE — use-change and residential development ─────────
-    # Jaime Bello (Sharing Co): cambio de uso = holy grail. Every conversion.
-    # Operator needs to contact before obra is complete.
-    ("división horizontal",            SECTION_III,  4, "HOSPE+PRO"),   # apt subdivision = new units
-    ("segregación de vivienda",        SECTION_III,  4, "HOSPE+PRO"),   # apartment split
-    ("licencia de primera ocupación",  SECTION_III, 10, "HOSPE+MEP"),   # primera ocupación = building done
+    # ── GRUPO SAONA / MALVÓN / RESTAURACIÓN — restaurant expansion signals ────
+    # Saona (Guillermo Suárez): 68 restaurants, opening 80+ over 5yr.
+    # Malvón (Andrés Ibáñez): 97 stores, 20 new/yr, 15-120m² format.
+    # These are restaurant-opening licencia de actividad signals the engine NEVER catches.
+    ("local de restauración",          SECTION_III,  5, "RET"),         # restaurant premises
+    ("actividad hostelera",            SECTION_III,  4, "RET"),         # hospitality activity
+    ("uso hostelero",                  SECTION_III,  4, "RET"),         # hotel/catering use
+    ("implantación de restaurante",    SECTION_III,  4, "RET"),         # restaurant implantation
+
+    # ── SHARING CO / ROOM00 / HOSPE — use-change and VUT signals ────────────
+    # Jaime Bello (Sharing Co): cambio de uso = holy grail.
+    # Primera ocupación = building complete, needs operator NOW.
+    ("división horizontal",            SECTION_III,  4, "HOSPE+PRO"),
+    ("segregación de vivienda",        SECTION_III,  4, "HOSPE+PRO"),
+    ("licencia de primera ocupación",  SECTION_III, 10, "HOSPE+MEP"),
+    # NEW: VUT/coliving-specific vocabulary
+    ("vivienda de uso turístico",      SECTION_III,  5, "HOSPE"),       # VUT licence = core Sharing Co signal
+    ("apartamento turístico",          SECTION_III,  5, "HOSPE"),       # tourist apartment
+    ("viviendas turísticas",           SECTION_III,  5, "HOSPE"),       # tourist homes
 
     # ── PROMOTORES/RE (CBRE / Muppy / Uvesco) — land intelligence ────────────
-    # CBRE (Juan Ramón), Muppy (Daniel), Uvesco (Álvaro): all need land deals.
-    ("agrupación de compensación",     SECTION_III,  5, "PRO"),         # compensation grouping
-    ("proyecto de actuación",          SECTION_III,  5, "PRO+CON"),     # actuación project
-    ("aprovechamiento medio",          SECTION_III,  4, "PRO"),         # planning gain calculation
+    ("proyecto de actuación",          SECTION_III,  5, "PRO+CON"),
 
     # ── INDUSTRIAL/LOGÍSTICA — new warehousing + logistics Madrid corridor ──
-    # Madrid's logistics belt: Valdemoro, Getafe, Coslada, Torrejón = high value
-    ("parque logístico",               SECTION_III,  5, "IND+MAT"),     # logistics park
-    ("centro de distribución",         SECTION_III,  5, "IND+MAT"),     # distribution centre
-    ("zona de actividades logísticas", SECTION_III,  4, "IND+MAT"),     # logistics activity zone
+    ("parque logístico",               SECTION_III,  5, "IND+MAT"),
+    ("centro de distribución",         SECTION_III,  5, "IND+MAT"),
+    # NEW: last-mile logistics vocabulary
+    ("nave logística",                 SECTION_III,  5, "IND+MAT"),     # logistics warehouse
 ]
 
 KW_EXTRA_FULL = [
@@ -2722,6 +2718,31 @@ def keyword_extract(text, url, pub_date):
 
     res["description"] = (desc or c[:250]).strip()[:350]
     res["lead_score"]  = score_lead(res)
+
+    # Assign profile_fit from PROFILE_TRIGGERS (keyword_extract mode has no AI)
+    # This ensures the Profile Fit column is populated even without an OpenAI key.
+    if not res.get("profile_fit"):
+        matched_profiles = []
+        _t_lower = t  # already lowercased
+        for profile_name, triggers in PROFILE_TRIGGERS.items():
+            if any(trigger in _t_lower for trigger in triggers):
+                matched_profiles.append(profile_name)
+        # Always include broad profiles for construction documents
+        pt_lower = (res.get("permit_type") or "").lower()
+        if "urbanización" in pt_lower or "reparcelación" in pt_lower:
+            for p_add in ["constructora", "alquiler", "materiales", "infrastructura"]:
+                if p_add not in matched_profiles:
+                    matched_profiles.append(p_add)
+        if "obra mayor" in pt_lower or "nueva construcción" in pt_lower:
+            for p_add in ["constructora", "mep", "alquiler", "materiales"]:
+                if p_add not in matched_profiles:
+                    matched_profiles.append(p_add)
+        if "cambio de uso" in pt_lower or "rehabilitación" in pt_lower:
+            for p_add in ["hospe", "mep"]:
+                if p_add not in matched_profiles:
+                    matched_profiles.append(p_add)
+        res["profile_fit"] = matched_profiles if matched_profiles else ["promotores"]
+
     return res
 
 
@@ -2817,11 +2838,21 @@ def generate_supplies_estimate(permit_type, pem, description, full_text=""):
         return (f"🔧 Renovación instalaciones (eléctrica BT, fontanería, HVAC) | "
                 f"🛒 Aislamiento térmico, carpintería PVC/aluminio, revestimientos | "
                 f"🚧 Andamios fachada, plataformas tijera ({pem_s})")
-    
+
+    if "cambio de uso" in pt or "cambio de destino" in pt:
+        return (f"🔧 HVAC nuevo, fontanería completa, eléctrica BT, telecomunicaciones | "
+                f"🛒 Tabiquería, solado, pintura, carpintería interior, cocina industrial | "
+                f"🚧 Plataformas tijera, andamios interiores, herramientas menores ({pem_s})")
+
     if "licitación" in pt:
-        return (f"🏗️ Licitación {pem_s} — consultar pliego técnico para cantidades exactas | "
-                f"🚧 Adjudicatario necesitará: maquinaria según proyecto | "
-                f"🛒 Materiales: ver presupuesto desglosado en pliego")
+        entity = ""
+        for ent in ["Canal de Isabel II","Metro de Madrid","EMVS","Ayuntamiento de Madrid"]:
+            if ent.lower() in d or ent.lower() in t:
+                entity = f" — {ent}"
+                break
+        return (f"🏗️ Licitación activa{entity} {pem_s} — consultar pliego para cantidades | "
+                f"🚧 Adjudicatario necesitará: maquinaria + equipo según proyecto | "
+                f"🛒 Materiales: ver presupuesto desglosado en pliego PLACE/CM")
     
     if "primera ocupación" in pt:
         return ("🔧 Revisiones finales ITE, legalización instalaciones, OCA | "
@@ -2926,17 +2957,41 @@ Industrial: "🔧 Eléctrica MT XkVA, iluminación LED industrial | 🛒 Estruct
 Rehab/CdU: "🔧 HVAC completo, fontanería nueva, eléctrica BT | 🛒 Tabiquería, acabados, carpintería RPT | 🚧 Plataformas tijera, andamios, herramientas menores"
 If no quantities found: estimate intelligently using PEM ratios. NEVER generic placeholders.
 
-PROFILE_FIT:
+PROFILE_FIT — CRITICAL: Return MULTIPLE profiles for every project. NEVER return only ["promotores"].
+Profiles:
 "infrastructura" — urbanización >€10M, obra civil, licitaciones estado
-"constructora" — edificios plurifamiliares, licitaciones municipales
+"constructora" — edificios plurifamiliares, licitaciones municipales, cualquier obra mayor
 "mep" — edificios con ascensores/HVAC, rehab integral, primera ocupación
 "industrial" — naves, almacenes, polígonos, logística
 "retail" — locales comerciales, centros comerciales, cambio de uso terciario
-"alquiler" — obra mayor, urbanización, demolición, movimiento tierras
-"materiales" — urbanización, nueva construcción, rehab, industrial
+"alquiler" — obra mayor, urbanización, demolición, movimiento tierras (ALWAYS for obra)
+"materiales" — urbanización, nueva construcción, rehab, industrial (ALMOST ALWAYS)
 "promotores" — reparcelación, DIR, segregación, plan parcial, convenio
 "hospe" — cambio de uso residencial/hospedaje, rehab edificios, plurifamiliar, primera ocupación
 "actiu" — oficinas, coworking, hoteles, hospitales, universidades, edificios terciarios
+
+MANDATORY MULTI-PROFILE RULES (always apply):
+- Urbanización/reparcelación → ALWAYS: ["promotores","constructora","alquiler","materiales"] + "infrastructura" if >€10M
+- Licitación de obras → ALWAYS: ["constructora","materiales","alquiler"] + "infrastructura" if >€5M
+- Edificio nueva construcción → ALWAYS: ["constructora","mep","materiales","alquiler","hospe"]
+- Cambio de uso/rehabilitación → ALWAYS: ["hospe","mep","materiales"]
+- Plan especial/parcial → ALWAYS: ["promotores","constructora"] + others based on use
+- Nave/industrial → ALWAYS: ["industrial","alquiler","materiales"]
+- Primera ocupación → ALWAYS: ["hospe","mep"]
+- Saneamiento in project → ALWAYS add: "materiales" (Molecor PVC pipes opportunity)
+
+PROFILE_FIT EXAMPLES (follow exactly):
+Urbanización €50M → ["infrastructura","constructora","alquiler","materiales","promotores"]
+Urbanización €3M → ["constructora","alquiler","materiales","promotores"]
+Plan especial residencial → ["promotores","constructora","alquiler","materiales","hospe"]
+Plan especial comercial → ["promotores","constructora","retail"]
+571 viviendas nueva construcción → ["constructora","mep","materiales","alquiler","hospe"]
+Cambio uso oficinas→residencial → ["hospe","mep","materiales","retail"]
+Rehabilitación integral edificio → ["hospe","mep","materiales","alquiler"]
+Nave industrial 5.000m² → ["industrial","alquiler","materiales"]
+Licitación obras públicas €8M → ["constructora","materiales","alquiler","infrastructura"]
+Primera ocupación residencial → ["hospe","mep"]
+Reparcelación terrenos → ["promotores","constructora","materiales"]
 
 DOCUMENT RULES:
 "base imponible del ICIO" → declared_value_eur = exact number, confidence:"high"
@@ -2955,7 +3010,7 @@ REHABILITACIÓN (→ permit_type:"obra mayor rehabilitación", profile_fit MUST 
 "rehabilitación integral"|"reforma integral"|"renovación integral"|"gran rehabilitación"
 "actuación de regeneración"|"regeneración urbana"|"rehabilitación de edificio"
 
-"saneamiento" + quantities → profile_fit MUST include "materiales" (Molecor)
+"saneamiento" + quantities → profile_fit MUST include "materiales" (Molecor PVC pipes)
 "licitación" ANY budget → profile_fit MUST include "constructora","materiales","alquiler"
 "primera ocupación" → profile_fit MUST include "hospe","mep"
 
@@ -3111,9 +3166,102 @@ If PEM estimated: confidence:"medium", explain method in ai_evaluation.
         log(f"    AI error ({e}) → keyword fallback")
         return keyword_extract(text, url, pub_date)
 
+def _enhance_profile_fit(p, text=""):
+    """
+    Post-extraction profile_fit enhancement.
+    PROFILE_TRIGGERS was previously defined but never used — this function
+    makes it active. It enriches/corrects profile_fit after AI or keyword extraction.
+
+    Why needed:
+    - AI often returns only ["promotores"] for urbanismo docs even though
+      every urbanización also needs constructora, alquiler, materiales.
+    - keyword_extract now assigns profile_fit, but may miss secondary profiles.
+    - This runs on ALL extractions to ensure balanced, multi-profile tagging.
+    """
+    t = (text or "").lower()
+    pt = (p.get("permit_type") or "").lower()
+    desc = (p.get("description") or "").lower()
+    pem = p.get("declared_value_eur") or 0
+    phase = (p.get("phase") or "").lower()
+    combined = t + " " + pt + " " + desc
+
+    current = p.get("profile_fit") or []
+    if isinstance(current, str):
+        current = [x.strip() for x in current.split(",") if x.strip()]
+
+    # Apply PROFILE_TRIGGERS — add any profile whose triggers appear in text
+    for profile_name, triggers in PROFILE_TRIGGERS.items():
+        if profile_name not in current:
+            if any(trigger in combined for trigger in triggers):
+                current.append(profile_name)
+
+    # MANDATORY multi-profile rules (domain knowledge overrides)
+    # Urbanización/reparcelación: ALWAYS needs contractors + machinery + materials
+    if any(k in combined for k in ["urbanización", "reparcelación", "junta de compensación",
+                                    "proyecto de urbanización", "obras de urbanización"]):
+        for must in ["constructora", "alquiler", "materiales"]:
+            if must not in current: current.append(must)
+        if pem and pem >= 10_000_000:
+            if "infrastructura" not in current: current.append("infrastructura")
+
+    # Licitación: always needs constructora + materials + machinery
+    if "licitación" in pt or "licitación" in combined:
+        for must in ["constructora", "materiales", "alquiler"]:
+            if must not in current: current.append(must)
+
+    # Nueva construcción edificio: always MEP + materials
+    if any(k in combined for k in ["nueva construcción", "edificio plurifamiliar",
+                                    "nueva planta", "viviendas"]):
+        for must in ["constructora", "mep", "materiales", "alquiler"]:
+            if must not in current: current.append(must)
+        if "hospe" not in current:
+            current.append("hospe")  # every new residential building = Sharing Co opportunity
+
+    # Cambio de uso / rehabilitación: hospe + mep + materiales always
+    if any(k in combined for k in ["cambio de uso", "cambio de destino", "rehabilitación integral",
+                                    "reforma integral", "renovación integral", "reconversión",
+                                    "primera ocupación", "modificación de uso", "rehabilitación de edificio",
+                                    "obra mayor rehabilitación"]):
+        for must in ["hospe", "mep", "materiales"]:
+            if must not in current: current.append(must)
+
+    # Plan especial / plan parcial: promotores + constructora always
+    if any(k in combined for k in ["plan especial", "plan parcial", "plan de sectorización"]):
+        for must in ["promotores", "constructora"]:
+            if must not in current: current.append(must)
+
+    # Industrial / nave / logística: industrial + alquiler always
+    if any(k in combined for k in ["nave industrial", "almacén", "centro logístico",
+                                    "plataforma logística", "parque logístico", "uso industrial"]):
+        for must in ["industrial", "alquiler", "materiales"]:
+            if must not in current: current.append(must)
+
+    # Saneamiento: always materiales (Molecor = PVC pipes)
+    if any(k in combined for k in ["saneamiento", "colector", "red de abastecimiento",
+                                    "conducción de agua", "pluviales"]):
+        if "materiales" not in current: current.append("materiales")
+
+    # Edificio de oficinas / coworking: ACTIU always
+    if any(k in combined for k in ["edificio de oficinas", "coworking", "uso oficinas",
+                                    "edificio terciario", "campus empresarial"]):
+        if "actiu" not in current: current.append("actiu")
+
+    # Remove "promotores" as the ONLY profile — it's almost never exclusively RE
+    # unless it's a pure land deal (DIR, segregación, convenio sin obra)
+    if current == ["promotores"]:
+        if any(k in combined for k in ["urbanización", "obra", "construcción", "rehabilitación"]):
+            current.extend(["constructora", "materiales", "alquiler"])
+
+    p["profile_fit"] = list(dict.fromkeys(current))  # deduplicate preserving order
+    return p
+
+
 def extract(text, url, pub_date, pdf_text=None):
-    return (ai_extract(text, url, pub_date, pdf_text=pdf_text)
-            if USE_AI else keyword_extract(text, url, pub_date))
+    result = (ai_extract(text, url, pub_date, pdf_text=pdf_text)
+              if USE_AI else keyword_extract(text, url, pub_date))
+    if result:
+        result = _enhance_profile_fit(result, text=(pdf_text or text or ""))
+    return result
 
 # ════════════════════════════════════════════════════════════
 # GOOGLE SHEETS — 17 columns
@@ -3153,12 +3301,20 @@ def get_sheet():
             # We use "Leads" for the dashboard, ensure engine uses the same or matches your structure
             ws = sh.worksheet("Leads") 
         except gspread.WorksheetNotFound:
-            ws = sh.add_worksheet("Leads", 2000, 20)
-            
-        if not ws.row_values(1):
-            ws.update(values=[HDRS], range_name="A1"); log("✅ Headers written")
-        else:
-            log("✅ Sheet connected")
+            ws = sh.add_worksheet("Leads", 5000, len(HDRS) + 10)
+
+        # ALWAYS sync headers — ensures new columns (Action Window, Key Contacts, etc.)
+        # appear in the sheet even if the tab already existed with fewer columns.
+        # This is non-destructive: it only updates row 1, existing data is preserved.
+        try:
+            existing_hdrs = ws.row_values(1)
+            if existing_hdrs != HDRS:
+                ws.update(values=[HDRS], range_name="A1")
+                log(f"✅ Headers updated ({len(HDRS)} columns)")
+            else:
+                log("✅ Sheet connected")
+        except Exception:
+            log("✅ Sheet connected (header check skipped)")
         _ws = ws; return _ws
     except Exception as e:
         log(f"❌ Sheet connection failed: {e}"); return None
@@ -3944,6 +4100,34 @@ def run():
             else:
                 log(f"  📰 BOE: No relevant items found in date range")
 
+        # ── SOURCE 6: Comunidad de Madrid Contratos ATOM feed ───────────────────
+        # CM publishes a live ATOM/XML feed at contratos-publicos.comunidad.madrid
+        # Contains: Canal Isabel II, Metro, EMVS, hospitals, roads — all CM agencies.
+        # Completely distinct from BOCM: these are contract tenders, not planning docs.
+        # FCC: licitaciones activas 6-18 months early. Kiloutou: adjudicaciones = NOW.
+        # Molecor: saneamiento/agua contracts = direct PVC pipe sales opportunity.
+        if MODE in ("daily","weekly","full") and time_ok(need_s=60):
+            log(f"\n{'─'*55}")
+            log(f"🏗️  SOURCE 6: CM Contratos Públicos (ATOM feed)")
+            cm_items = search_cm_contratos(date_from, date_to, global_seen)
+            if cm_items:
+                cm_saved = cm_skipped = cm_errors = 0
+                with ThreadPoolExecutor(max_workers=min(N_WORKERS, 3)) as executor:
+                    cm_futures = {
+                        executor.submit(process_cm_contrato, url, title, summary, idx+1, len(cm_items)): url
+                        for idx, (url, title, summary) in enumerate(cm_items)
+                        if time_ok(need_s=5)
+                    }
+                    for future in as_completed(cm_futures):
+                        try:
+                            s, sk, e = future.result()
+                            cm_saved += s; cm_skipped += sk; cm_errors += e
+                        except Exception as ex:
+                            log(f"  ❌ CM Contrato future: {ex}"); cm_errors += 1
+                log(f"  CM Contratos: ✅{cm_saved} saved | ⏭️{cm_skipped} skipped | ❌{cm_errors} errors")
+            else:
+                log(f"  CM Contratos: no new construction contracts")
+
         # ── Remove already-seen from the collected BOCM queue ──────────────────
         all_urls = [u for u in all_urls
                     if u not in _seen_urls and
@@ -4350,6 +4534,205 @@ def search_boe_construction(date_from, date_to, global_seen):
 
     log(f"  📰 BOE Sumario XML: {len(boe_items)} relevant items found")
     return boe_items
+
+
+def search_cm_contratos(date_from, date_to, global_seen):
+    """
+    SOURCE 6: Portal de Contratación Pública de la Comunidad de Madrid.
+    
+    Why this matters:
+    - The CM publishes an ATOM/XML feed of ALL licitaciones at:
+      https://contratos-publicos.comunidad.madrid/feed/licitaciones2
+    - This feed is updated in near-real-time (minutes after publication)
+    - Contains licitaciones de obras from Comunidad de Madrid agencies:
+      Canal de Isabel II, Metro de Madrid, EMVS, hospitals, roads, etc.
+    - DISTINCT from BOCM: these are contract awards/tenders, not planning documents
+    - FCC Construcción (Fernando Tejada) needs these 6-18 months early
+    - Kiloutou: adjudicación = machinery needed immediately
+    - Molecor: saneamiento + agua contracts = direct PVC pipe sales
+    
+    Data: XML/ATOM with structured fields (title, description, budget, entity, date)
+    Returns: list of (url, title, entity, budget, date) tuples for processing
+    """
+    CM_FEED = "https://contratos-publicos.comunidad.madrid/feed/licitaciones2"
+    # Keywords to filter construction-relevant contracts
+    _CONSTR_KWS = [
+        "obra", "construcción", "urbanización", "rehabilitación", "reforma",
+        "saneamiento", "abastecimiento", "infraestructura", "vial", "pavimentación",
+        "demolición", "edificio", "instalación", "reparación", "conservación",
+        "mantenimiento de obra", "canalización", "red de", "colector",
+        "nave", "almacén", "polígono", "parque", "ampliación",
+    ]
+    results = []
+    seen_local = set()
+    
+    try:
+        if not time_ok(need_s=60): return []
+        r = safe_get(CM_FEED, timeout=30)
+        if not r or r.status_code != 200:
+            log(f"  ⚠️ CM Contratos feed unavailable (HTTP {r.status_code if r else 'timeout'})")
+            return []
+        
+        from xml.etree import ElementTree as ET
+        # Parse ATOM/XML feed
+        try:
+            root = ET.fromstring(r.content)
+        except ET.ParseError:
+            log("  ⚠️ CM Contratos: XML parse error")
+            return []
+        
+        # ATOM namespace
+        ns = {"atom": "http://www.w3.org/2005/Atom",
+              "": "http://www.w3.org/2005/Atom"}
+        
+        # Find all entries
+        entries = root.findall(".//{http://www.w3.org/2005/Atom}entry")
+        if not entries:
+            # Try without namespace
+            entries = root.findall(".//entry")
+        
+        for entry in entries:
+            def _get(tag):
+                el = entry.find(f"{{http://www.w3.org/2005/Atom}}{tag}")
+                if el is None: el = entry.find(tag)
+                return (el.text or "").strip() if el is not None else ""
+            
+            title = _get("title")
+            url_el = entry.find("{http://www.w3.org/2005/Atom}link")
+            if url_el is None: url_el = entry.find("link")
+            url = url_el.get("href", "") if url_el is not None else ""
+            summary = _get("summary") + " " + _get("content")
+            published = _get("published") or _get("updated")
+            
+            if not url or not title: continue
+            if url in seen_local or url in _seen_urls: continue
+            
+            # Filter: date range check
+            if published:
+                try:
+                    from dateutil import parser as dp
+                    pub_date = dp.parse(published).replace(tzinfo=None)
+                    if pub_date.date() < date_from.date():
+                        continue
+                except Exception:
+                    pass
+            
+            # Filter: must be construction-related
+            combined = (title + " " + summary).lower()
+            if not any(kw in combined for kw in _CONSTR_KWS):
+                continue
+            
+            seen_local.add(url)
+            results.append((url, title, summary[:500]))
+        
+        log(f"  🏗️ CM Contratos ATOM: {len(results)} construction contracts found")
+        
+    except Exception as e:
+        log(f"  ⚠️ CM Contratos error: {e}")
+    
+    return results
+
+
+def process_cm_contrato(url, title, summary, idx, total):
+    """
+    Process a single CM Contratos item.
+    These are licitaciones/adjudicaciones from Comunidad de Madrid agencies.
+    Returns (saved, skipped, error) counts.
+    """
+    try:
+        with _sheet_lock:
+            if url in _seen_urls:
+                return 0, 1, 0
+        
+        # Build a structured permit dict from the feed data
+        combined = (title + " " + summary).lower()
+        
+        # Classify
+        is_lead, reason, tier = classify_permit(combined)
+        if not is_lead:
+            return 0, 1, 0
+        
+        # Extract PEM from summary
+        pem = None
+        import re as _re
+        for pat in [
+            r'presupuesto[^€\d]*€?\s*([\d.,]+)',
+            r'valor\s+estimado[^€\d]*€?\s*([\d.,]+)',
+            r'importe[^€\d]*€?\s*([\d.,]+)',
+            r'([\d.,]+)\s*€',
+        ]:
+            m = _re.search(pat, summary, _re.I)
+            if m:
+                try:
+                    v = m.group(1).replace('.','').replace(',','.')
+                    v_num = float(_re.sub(r'[^\d.]','', v))
+                    if 10_000 < v_num < 3_000_000_000:
+                        pem = v_num
+                        break
+                except: pass
+        
+        # Determine permit type and phase
+        permit_type = "licitación de obras"
+        phase = "licitacion"
+        if any(k in combined for k in ["adjudicado", "adjudicación", "contrato formalizado"]):
+            phase = "adjudicacion"
+        elif any(k in combined for k in ["urbanización", "reparcelación"]):
+            permit_type = "urbanización"
+        elif any(k in combined for k in ["rehabilitación", "reforma"]):
+            permit_type = "obra mayor rehabilitación"
+        
+        # Build entity as applicant
+        applicant = ""
+        for entity in ["Canal de Isabel II", "Metro de Madrid", "EMVS", 
+                       "Ayuntamiento de Madrid", "Comunidad de Madrid",
+                       "MINTRA", "Planifica Madrid"]:
+            if entity.lower() in summary.lower():
+                applicant = entity
+                break
+        if not applicant:
+            applicant = "Comunidad de Madrid"
+        
+        p = {
+            "source_url": url,
+            "pdf_url": "",
+            "date_granted": "",
+            "municipality": "Madrid",
+            "address": "",
+            "applicant": applicant,
+            "permit_type": permit_type,
+            "declared_value_eur": pem,
+            "description": (title[:300] + " — " + summary[:100]).strip(),
+            "extraction_mode": "cm_contratos",
+            "confidence": "medium",
+            "phase": phase,
+            "expediente": "",
+            "lead_score": 0,
+            "estimated_pem": f"€{pem/1_000_000:.1f}M" if pem and pem >= 1_000_000 else (f"€{int(pem/1000)}K" if pem else ""),
+            "ai_evaluation": (
+                f"{'⚡ Licitación ACTIVA' if phase == 'licitacion' else '✅ Contrato adjudicado'} "
+                f"— Portal Contratación CM. {title[:150]}. "
+                f"FCC Construcción: evaluar pliego técnico y presentar oferta"
+                + (" URGENTE" if phase == "licitacion" else " — ya adjudicado, contactar adjudicatario para subcontratos") + ". "
+                f"Kiloutou: contactar inmediatamente al adjudicatario para maquinaria. "
+                + (f"Molecor: evaluar si incluye saneamiento/abastecimiento para cotización PVC. " if any(k in combined for k in ["saneamiento","agua","colector"]) else "")
+            ),
+            "supplies_needed": generate_supplies_estimate(permit_type, pem, title, summary),
+            "project_size": "",
+            "action_window": "⚡ ACTUAR ESTA SEMANA" if phase == "licitacion" else "📞 CONTACTAR EN 30 DÍAS",
+            "key_contacts": f"Entidad: {applicant}",
+            "obra_timeline": "",
+        }
+        p["lead_score"] = score_lead(p)
+        p = _enhance_profile_fit(p, combined)
+        
+        if write_permit(p, ""):
+            return 1, 0, 0
+        return 0, 1, 0
+        
+    except Exception as e:
+        log(f"  ❌ CM Contrato [{idx}] {e}")
+        return 0, 0, 1
+
 
 def process_boe_item(boe_id, title, department, idx, total):
     """
