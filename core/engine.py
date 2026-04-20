@@ -43,28 +43,47 @@ def time_ok(need_s=60):
 # ════════════════════════════════════════════════════════════
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument("--client",  required=True)
 parser.add_argument("--weeks",   type=int, default=1,
-    help="1=daily(2 days), 2-3=weekly(81kw), 4+=full backfill(152kw)")
+    help="1=daily(2 days), 2-8=weekly, 9+=full backfill")
 parser.add_argument("--digest",  action="store_true")
 parser.add_argument("--resume",  action="store_true",
     help="Skip collection, process saved queue from previous run")
 parser.add_argument("--backfill-ai", action="store_true",
-    help="Re-run AI evaluation on existing sheet rows that have empty AI Evaluation column")
+    help="Re-run AI evaluation on existing sheet rows with empty AI Evaluation")
 parser.add_argument("--workers", type=int, default=4,
     help="Concurrent processing threads (default 4)")
 parser.add_argument("--max-pages-backfill", type=int, default=6,
-    help="Max pages per keyword chunk in backfill (full) mode. "
-         "Lower = faster but may miss tail pages. Default 6 (~90 results/chunk). "
-         "Use 10-15 for thorough backfill if time allows.")
+    help="Max pages per keyword per date-chunk in backfill mode.")
+# Legacy --client flag: accepted but ignored (config is now embedded below)
+parser.add_argument("--client",  default="", help="(Legacy — ignored)")
 args = parser.parse_args()
 
-with open(args.client, "r", encoding="utf-8") as f:
-    CFG = json.load(f)
+# ════════════════════════════════════════════════════════════════════
+# CLIENT CONFIG  — was previously in demo_madrid.json
+# All settings are now embedded here. No external .json file needed.
+# ════════════════════════════════════════════════════════════════════
+SHEET_ID         = os.environ.get("SHEET_ID", "1sh3qyEXOV2mz1WofBSeHMFOncuTsGZmVM-FX2tfOg_4")
+CLIENT_EMAIL_VAR = os.environ.get("EMAIL_SECRET_NAME", "GMAIL_TO_DEMO_MADRID")
 
-SHEET_ID         = CFG["sheet_id"]
-CLIENT_EMAIL_VAR = CFG["email_to_secret_name"]
-MIN_VALUE_EUR    = CFG.get("min_declared_value_eur", 0)
+# ── PEM filter ────────────────────────────────────────────────────
+# IMPORTANT: This filter ONLY skips rows where the PEM is explicitly
+# declared AND below this threshold. Rows with NO declared PEM (the
+# vast majority of plan especial/urbanización docs) are ALWAYS saved.
+# Set to 0 to disable filtering entirely.
+MIN_VALUE_EUR    = int(os.environ.get("MIN_VALUE_EUR", "0"))
+
+# ── Keywords to hard-exclude from results ────────────────────────
+# These override the classifier — any document containing these exact
+# strings is rejected regardless of other signals.
+KEYWORDS_EXCLUDE = [
+    "menor", "vallado", "señalización", "vado", "tala de arbolado",
+    "terraza", "veladores", "zanjas", "piscina individual", "rótulo",
+    "nombramiento", "festejos", "teatro", "eurotaxi", "comisión",
+    "modificación presupuestaria", "matrícula del impuesto",
+    "organización y funcionamiento", "delegación de competencias",
+    "subvenciones para", "juez de paz",
+]
+
 WEEKS_BACK       = args.weeks
 OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "").strip()
 USE_AI           = bool(OPENAI_API_KEY)
@@ -629,11 +648,11 @@ PROFILE_TRIGGERS = {
         "aprovechamiento urbanístico", "coeficiente de edificabilidad",
         "proyecto de actuación especial",
     ],
-    # ── Compras/Materiales — Molecor (PVC pipes) + cement, steel, all materials ─
+    # ── Materiales/Compras — Molecor (PVC pipes) + cement, steel, all materials ─
     # Molecor (Javier González): manufactures PVC pipes in Loeches/Getafe Madrid.
     # EVERY urbanización = saneamiento network = direct pipe sales opportunity.
-    # Added: saneamiento signals, colector, zahorra, quantities vocabulary.
-    "compras": [
+    # Label: "materiales" (consistent with AI prompt and _enhance_profile_fit)
+    "materiales": [
         "proyecto de urbanización", "nueva construcción", "rehabilitación integral",
         "nave industrial", "licitación de obras", "hormigón", "tubería",
         "acero", "áridos", "pavimentación", "cerramiento", "cubierta",
@@ -2039,6 +2058,11 @@ def _is_major_construction(text: str) -> bool:
 def classify_permit(text):
     """Returns (is_lead, reason, tier 1-5)."""
     t = text.lower()
+
+    # ── Stage 0: Config-level keyword exclusions ─────────────────────────────
+    # Applied before any other check — these come from KEYWORDS_EXCLUDE above.
+    for kw in KEYWORDS_EXCLUDE:
+        if kw in t: return False, f"Excluded keyword: '{kw}'", 0
 
     # ── Stage 1: Hard reject — admin noise ───────────────────────────────────
     for kw in HARD_REJECT:
@@ -3929,7 +3953,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v10 (BOE+ContribEsp+IVAfix)")
+    log(f"🏗️  PlanningScout Madrid — Engine v12 (Source7:datos.madrid+keywords_exclude+materiales)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
@@ -3986,11 +4010,18 @@ def run():
         log(f"  Scanning {len(scan_days)} working days…")
         day_total = 0
         for day in scan_days:
-            if not time_ok(need_s=60): break
+            if not time_ok(need_s=60):
+                log(f"  ⏱️  Time budget reached — day scan stopped at {day.strftime('%d/%m/%Y')}")
+                break
             day_urls = scrape_day_section(day, sec=SECTION_III, global_seen=global_seen)
             added    = sum(1 for u in day_urls if add_url(u))
             if added > 0:
-                log(f"  📅 {day.strftime('%d/%m/%Y')} [III]: +{added}"); day_total += added
+                log(f"  📅 {day.strftime('%d/%m/%Y')} [III]: +{added}")
+                day_total += added
+            else:
+                # Always log — so you can confirm dates were checked
+                # 0 results = Semana Santa/holiday, or all docs already seen
+                log(f"  📅 {day.strftime('%d/%m/%Y')} [III]: 0 (ya visto o sin publicación)")
             time.sleep(0.4)
 
         # Section II (CM-level plans) — scan 2× per week
@@ -4127,6 +4158,40 @@ def run():
                 log(f"  CM Contratos: ✅{cm_saved} saved | ⏭️{cm_skipped} skipped | ❌{cm_errors} errors")
             else:
                 log(f"  CM Contratos: no new construction contracts")
+
+        # ── SOURCE 7: datos.madrid.es — Licencias Urbanísticas Ayuntamiento Madrid ─
+        # THE MOST IMPORTANT SOURCE FOR CAMBIO DE USO + OBRA MAYOR + REHABILITACIÓN.
+        # BOCM doesn't publish individual building licences for Madrid capital.
+        # This API provides every licence granted by the Ayuntamiento de Madrid:
+        #   - Cambio de uso (oficinas→vivienda) ← Sharing Co holy grail
+        #   - Obra mayor nueva construcción ← MEP + constructora
+        #   - Rehabilitación integral ← hospe + MEP
+        #   - Primera ocupación ← ACTUAR ESTA SEMANA
+        # Runs in DAILY mode too — this data is continuous, not batch.
+        if time_ok(need_s=60):
+            log(f"\n{'─'*55}")
+            log(f"🏛️  SOURCE 7: datos.madrid.es (licencias urbanísticas Madrid capital)")
+            dm_items = search_datos_madrid(date_from, date_to, global_seen)
+            if dm_items:
+                dm_saved = dm_skipped = dm_errors = 0
+                with ThreadPoolExecutor(max_workers=min(N_WORKERS, 3)) as executor:
+                    dm_futures = {
+                        executor.submit(
+                            process_datos_madrid_item,
+                            exp, rec, source_url, profile_hint, idx+1, len(dm_items)
+                        ): exp
+                        for idx, (exp, rec, source_url, profile_hint) in enumerate(dm_items)
+                        if time_ok(need_s=5)
+                    }
+                    for future in as_completed(dm_futures):
+                        try:
+                            s, sk, e = future.result()
+                            dm_saved += s; dm_skipped += sk; dm_errors += e
+                        except Exception as ex:
+                            log(f"  ❌ datos.madrid future: {ex}"); dm_errors += 1
+                log(f"  datos.madrid: ✅{dm_saved} saved | ⏭️{dm_skipped} skipped | ❌{dm_errors} errors")
+            else:
+                log(f"  datos.madrid: no new licencias in date range (API may be throttling — check on next run)")
 
         # ── Remove already-seen from the collected BOCM queue ──────────────────
         all_urls = [u for u in all_urls
@@ -4731,6 +4796,335 @@ def process_cm_contrato(url, title, summary, idx, total):
         
     except Exception as e:
         log(f"  ❌ CM Contrato [{idx}] {e}")
+        return 0, 0, 1
+
+
+def search_datos_madrid(date_from, date_to, global_seen):
+    """
+    SOURCE 7: datos.madrid.es Open Data API — Licencias Urbanísticas.
+
+    WHY THIS IS THE MOST IMPORTANT NEW SOURCE:
+    ─────────────────────────────────────────
+    BOCM Section III publishes planning instruments (plan especial, urbanización,
+    reparcelación). It does NOT publish individual building licences for Madrid
+    capital — Ayuntamiento de Madrid uses its own Sistema de Licencias (SLIM).
+
+    datos.madrid.es publishes every individual licencia urbanística and
+    declaración responsable granted by the Ayuntamiento de Madrid since 2015.
+    This is EXACTLY what was missing from the database:
+      - Obra mayor nueva construcción (edificios, naves)
+      - Cambio de uso (oficinas→vivienda, local→residencial) ← Sharing Co holy grail
+      - Rehabilitación integral ← hospe + MEP opportunity
+      - Primera ocupación ← building complete, operator needed TODAY
+      - Declaración responsable de obra mayor ← fast-track licences
+
+    RESOURCE: resource_id = 300193-10-licencias-urbanisticas
+    API: https://datos.madrid.es/api/3/action/datastore_search
+    Auth: None (public open data, free commercial use)
+    Update freq: Continuously updated as licences are granted
+
+    FIELDS RETURNED:
+      EXPEDIENTE          → licence reference number
+      CLASE_LICENCIA      → "Licencia urbanística" | "Declaración responsable"
+      OBJETO              → type of work (cambio de uso, obra mayor, etc.)
+      DESCRIPCION         → full description of the work
+      DIRECCION           → full street address
+      BARRIO              → neighbourhood (Malasaña, Chamberí, etc.)
+      DISTRITO            → district (Centro, Salamanca, etc.)
+      FECHA_OTORGAMIENTO  → grant date
+      RESULTADO           → "Otorgada" | "En tramitación" | "Inadmitida"
+      PEM                 → presupuesto de ejecución material (€)
+      COORDINADA_X/Y      → UTM ETRS89 coordinates
+
+    WARM LEAD VALUE:
+      Sharing Co / Room00: every cambio de uso in prime Madrid barrios
+      Instaladores MEP: every obra mayor > €80K
+      Gran Constructora: obra mayor nueva construcción in Madrid capital
+      ACTIU: office buildings, hotels, hospitals in Madrid
+    """
+    DATOS_API    = "https://datos.madrid.es/api/3/action/datastore_search"
+    RESOURCE_ID  = "300193-10-licencias-urbanisticas"
+
+    # Keywords targeting each warm-lead profile — searched as free-text in OBJETO+DESCRIPCION
+    # Each keyword targets one or more profiles. Ordered by commercial priority.
+    DATOS_KEYWORDS = [
+        ("cambio de uso",           "hospe+mep+retail"),
+        ("cambio de destino",        "hospe+mep+retail"),
+        ("obra mayor",               "constructora+mep+alquiler+materiales"),
+        ("rehabilitación integral",  "hospe+mep+materiales"),
+        ("nueva construcción",       "constructora+mep+alquiler+materiales"),
+        ("primera ocupación",        "hospe+mep"),
+        ("reforma integral",         "hospe+mep"),
+        ("declaración responsable",  "mep+constructora"),
+        ("vivienda",                 "hospe+constructora+promotores"),
+        ("oficinas",                 "actiu+mep"),
+    ]
+
+    # Date filter: only licences from our date window
+    df_s = date_from.strftime("%Y-%m-%d")
+    dt_s = date_to.strftime("%Y-%m-%d")
+
+    results = []
+    seen_exp = set()
+
+    for kw, _profile_hint in DATOS_KEYWORDS:
+        if not time_ok(need_s=30): break
+        try:
+            params = {
+                "resource_id": RESOURCE_ID,
+                "q": kw,
+                "limit": 100,
+                "offset": 0,
+            }
+            # URL-encode parameters manually
+            param_str = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
+            url = f"{DATOS_API}?{param_str}"
+
+            r = safe_get(url, timeout=20)
+            if not r or r.status_code != 200:
+                log(f"  ⚠️ datos.madrid [{kw}]: HTTP {r.status_code if r else 'timeout'}")
+                continue
+
+            try:
+                data = r.json()
+            except Exception:
+                continue
+
+            if not data.get("success"):
+                continue
+
+            records = data.get("result", {}).get("records", [])
+
+            for rec in records:
+                exp = str(rec.get("EXPEDIENTE", "")).strip()
+                if not exp or exp in seen_exp:
+                    continue
+
+                # Date filter
+                fecha = str(rec.get("FECHA_OTORGAMIENTO", "") or "").strip()
+                if fecha:
+                    try:
+                        from dateutil import parser as dp
+                        rec_date = dp.parse(fecha[:10]).date()
+                        if rec_date < date_from.date() or rec_date > date_to.date():
+                            continue
+                    except Exception:
+                        pass  # keep if date parse fails
+
+                # Only "Otorgada" or "En tramitación" results
+                resultado = str(rec.get("RESULTADO", "")).strip().lower()
+                if resultado in ("inadmitida", "desistida", "caducada", "denegada"):
+                    continue
+
+                # Skip noise: small repairs, paint jobs, minor works
+                obj = str(rec.get("OBJETO", "") or "").lower()
+                desc_lower = str(rec.get("DESCRIPCION", "") or "").lower()
+                combined = obj + " " + desc_lower
+
+                # Apply KEYWORDS_EXCLUDE filter
+                if any(exc in combined for exc in KEYWORDS_EXCLUDE):
+                    continue
+
+                # Skip micro-scale works: below €30K PEM
+                pem_raw = rec.get("PEM", None)
+                try:
+                    pem_val = float(str(pem_raw).replace(",", ".").replace(".", "")
+                                    .replace(",", ".")) if pem_raw else 0
+                    # Handle Spanish number formats like "150.000,00"
+                    pem_str = str(pem_raw or "")
+                    if "," in pem_str and "." in pem_str:
+                        pem_val = float(pem_str.replace(".", "").replace(",", "."))
+                    elif "," in pem_str:
+                        pem_val = float(pem_str.replace(",", "."))
+                    else:
+                        pem_val = float(pem_str) if pem_str else 0
+                except Exception:
+                    pem_val = 0
+
+                if pem_val > 0 and pem_val < 30_000:
+                    continue  # skip very small works
+
+                seen_exp.add(exp)
+                # Build a synthetic URL as the "source" (CONEX expediente lookup)
+                source_url = (f"https://sede.madrid.es/portal/site/tramites/"
+                              f"menuitem.62876cb64654a55e2dbd7003a8a409a0/"
+                              f"?expediente={exp}")
+
+                results.append((exp, rec, source_url, _profile_hint))
+
+            time.sleep(1.0)
+
+        except Exception as e:
+            log(f"  ⚠️ datos.madrid [{kw}]: {e}")
+
+    log(f"  🏛️ datos.madrid.es: {len(results)} licencias found")
+    return results
+
+
+def process_datos_madrid_item(exp, rec, source_url, profile_hint, idx, total):
+    """
+    Convert a datos.madrid.es licence record into a PlanningScout permit dict
+    and write it to the sheet.
+
+    This source gives the CAMBIO DE USO, OBRA MAYOR, and REHABILITACIÓN
+    leads that BOCM doesn't provide for Madrid capital.
+
+    Returns (saved, skipped, errors).
+    """
+    try:
+        with _sheet_lock:
+            if source_url in _seen_urls:
+                return 0, 1, 0
+
+        obj    = str(rec.get("OBJETO", "") or "").strip()
+        desc   = str(rec.get("DESCRIPCION", "") or "").strip()
+        addr   = str(rec.get("DIRECCION", "") or "").strip()
+        barrio = str(rec.get("BARRIO", "") or "").strip()
+        dist   = str(rec.get("DISTRITO", "") or "").strip()
+        fecha  = str(rec.get("FECHA_OTORGAMIENTO", "") or "").strip()[:10]
+        clase  = str(rec.get("CLASE_LICENCIA", "") or "").strip()
+        result = str(rec.get("RESULTADO", "") or "").strip()
+
+        # PEM extraction
+        pem_val = 0.0
+        pem_raw = str(rec.get("PEM", "") or "")
+        try:
+            if "," in pem_raw and "." in pem_raw:
+                pem_val = float(pem_raw.replace(".", "").replace(",", "."))
+            elif "," in pem_raw:
+                pem_val = float(pem_raw.replace(",", "."))
+            elif pem_raw.strip():
+                pem_val = float(pem_raw.strip())
+        except Exception:
+            pem_val = 0.0
+
+        # Build full text for classification
+        combined = f"{obj} {desc} {clase}".lower()
+
+        # Classify
+        is_lead, reason, tier = classify_permit(combined)
+        if not is_lead:
+            # datos.madrid gives us confirmed licences — be more permissive
+            # Only skip if it's truly noise
+            if any(x in combined for x in ["valla", "terraza", "velador", "señal", "rótulo",
+                                             "piscina individual", "jardin", "tala"]):
+                return 0, 1, 0
+            # If it mentions obra mayor, cambio de uso, rehabilitación → keep
+            if not any(x in combined for x in ["obra", "cambio", "rehabilit", "reforma",
+                                                "construcción", "vivienda", "ocupación"]):
+                return 0, 1, 0
+
+        # Permit type mapping
+        obj_lower = obj.lower()
+        if "cambio de uso" in obj_lower or "cambio de destino" in obj_lower:
+            permit_type = "cambio de uso"
+            phase = "definitivo" if "otorgada" in result.lower() else "en_tramite"
+        elif "nueva construcción" in obj_lower or "nueva planta" in obj_lower:
+            permit_type = "obra mayor nueva construcción"
+            phase = "definitivo" if "otorgada" in result.lower() else "en_tramite"
+        elif "rehabilitación" in obj_lower or "reforma integral" in obj_lower:
+            permit_type = "obra mayor rehabilitación"
+            phase = "definitivo" if "otorgada" in result.lower() else "en_tramite"
+        elif "primera ocupación" in obj_lower:
+            permit_type = "licencia primera ocupación"
+            phase = "primera_ocupacion"
+        elif "obra mayor" in obj_lower:
+            permit_type = "obra mayor nueva construcción"
+            phase = "definitivo" if "otorgada" in result.lower() else "en_tramite"
+        elif "declaración responsable" in clase.lower():
+            permit_type = "declaración responsable obra mayor"
+            phase = "definitivo"
+        else:
+            permit_type = "obra mayor nueva construcción"
+            phase = "definitivo" if "otorgada" in result.lower() else "en_tramite"
+
+        # Action window
+        if phase == "primera_ocupacion":
+            action_window = "⚡ ACTUAR ESTA SEMANA"
+        elif phase == "definitivo" and "cambio" in permit_type:
+            action_window = "📞 CONTACTAR EN 30 DÍAS"
+        elif phase == "definitivo":
+            action_window = "📞 CONTACTAR EN 30 DÍAS"
+        else:
+            action_window = "📅 MONITORIZAR (3-6 meses)"
+
+        # Build description
+        location = f"{addr}, {barrio}, {dist}, Madrid" if barrio else f"{addr}, {dist}, Madrid"
+        full_desc = f"{obj} — {desc[:150]}" if desc and desc.lower() != obj.lower() else obj
+        full_desc = f"{full_desc}. {location}"
+        if pem_val > 0:
+            pem_s = f"€{pem_val/1e6:.1f}M" if pem_val >= 1e6 else f"€{pem_val/1e3:.0f}K"
+            full_desc += f" PEM: {pem_s}"
+
+        # AI evaluation (rule-based since no PDF available)
+        ai_eval = (
+            f"{'✅ Licencia Otorgada' if 'otorgada' in result.lower() else '🔄 En tramitación'} — "
+            f"{obj}, {location}. "
+        )
+        if "cambio de uso" in permit_type:
+            ai_eval += (
+                f"Cambio de uso en Madrid capital — exactamente lo que busca Sharing Co / Room00. "
+                f"Contactar al promotor AHORA antes de que busque operador en el mercado abierto. "
+                f"{'PEM: ' + pem_s if pem_val > 0 else 'PEM no declarado'}. "
+                f"Barrio: {barrio or dist}."
+            )
+        elif "primera_ocupacion" in phase:
+            ai_eval += (
+                f"Primera ocupación concedida — edificio TERMINADO. "
+                f"Sharing Co / Room00: contactar al promotor HOY para gestión de activo. "
+                f"Instaladores MEP: legalización instalaciones + OCA + revisiones finales."
+            )
+        elif "rehabilitación" in permit_type:
+            ai_eval += (
+                f"Rehabilitación integral en Madrid capital. "
+                f"Instaladores MEP: renovación completa de instalaciones. "
+                f"Sharing Co: edificio en rehabilitación = futuro activo operacional. "
+                f"{'PEM: ' + pem_s if pem_val > 0 else 'Sin PEM declarado'}."
+            )
+        elif "nueva construcción" in permit_type:
+            ai_eval += (
+                f"Licencia de obra mayor nueva construcción en {dist}, Madrid capital. "
+                f"Gran Constructora: obra en ejecución o próxima. "
+                f"Instaladores MEP: instalar HVAC, electricidad, fontanería. "
+                f"{'PEM: ' + pem_s if pem_val > 0 else 'Sin PEM declarado'}."
+            )
+        else:
+            ai_eval += f"Licencia urbanística en {dist}. {'PEM: ' + pem_s if pem_val > 0 else ''}."
+
+        supplies = generate_supplies_estimate(permit_type, pem_val if pem_val > 0 else None, full_desc)
+
+        p = {
+            "source_url":         source_url,
+            "date_granted":       fecha,
+            "municipality":       "Madrid",
+            "address":            addr,
+            "applicant":          "",
+            "permit_type":        permit_type,
+            "declared_value_eur": pem_val if pem_val > 0 else None,
+            "description":        full_desc[:350],
+            "extraction_mode":    "datos_madrid",
+            "confidence":         "high" if "otorgada" in result.lower() else "medium",
+            "phase":              phase,
+            "expediente":         exp,
+            "lead_score":         0,
+            "estimated_pem":      (f"€{pem_val/1e6:.1f}M" if pem_val >= 1e6
+                                   else (f"€{pem_val/1e3:.0f}K" if pem_val > 0 else "")),
+            "ai_evaluation":      ai_eval[:600],
+            "supplies_needed":    supplies,
+            "project_size":       "",
+            "action_window":      action_window,
+            "key_contacts":       "",
+            "obra_timeline":      "",
+        }
+        p["lead_score"] = score_lead(p)
+        p = _enhance_profile_fit(p, combined)
+
+        if write_permit(p, ""):
+            return 1, 0, 0
+        return 0, 1, 0
+
+    except Exception as e:
+        log(f"  ❌ datos.madrid [{idx}]: {e}")
         return 0, 0, 1
 
 
