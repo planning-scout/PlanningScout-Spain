@@ -647,6 +647,7 @@ PROFILES = {
         "tip": "💡 <strong>Llega al constructor ANTES de que empiece la obra.</strong> Cualquier proyecto >€200K = excavadoras, plataformas elevadoras, robots de demolición.",
         "min_score": 0, "min_value": 200_000, "days": 60,
         "types": [],
+        "action_filter": "ACTUAR",  # Only show ⚡ ACTUAR ESTA SEMANA leads
     },
     "🛒 Compras / Materiales": {
         "key": "compras",
@@ -948,7 +949,44 @@ def build_card(row):
         q = html_lib.unescape(prom).replace(" ", "+")
         links.append(f'<a href="https://www.linkedin.com/search/results/all/?keywords={html_lib.escape(q)}" target="_blank" rel="noopener" style="{SBT}">🔍 Promotor</a>')
 
-    footer = (
+    # ── Key Contacts (Apollo enrichment) ─────────────────────────────────────
+    _raw_kc = str(row.get("key_contacts", "") or "").strip()
+    _raw_aw = str(row.get("action_window", "") or "").strip()
+    _raw_ot = str(row.get("obra_timeline", "") or "").strip()
+
+    if _raw_kc and _raw_kc.lower() not in ("nan", "none"):
+        _kc_e = _html_esc.escape(_raw_kc[:300])
+        extras_html += (
+            "<div style='padding:10px 20px;background:#f0fdf4;"
+            "border-top:1px solid #bbf7d0;'>"
+            "<div style='font-size:10px;font-weight:700;color:#16a34a;"
+            "text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px;'>"
+            "🔍 Contacto clave</div>"
+            f"<div style='font-size:12.5px;color:#0d1a2b;line-height:1.6;'>{_kc_e}</div>"
+            "</div>"
+        )
+
+    if _raw_aw and _raw_aw.lower() not in ("nan", "none"):
+        _aw_color = ("#16a34a" if "ACTUAR" in _raw_aw
+                     else "#c8860a" if "30 DÍAS" in _raw_aw
+                     else "#64748b")
+        _aw_bg    = ("#dcfce7" if "ACTUAR" in _raw_aw
+                     else "#fef3c7" if "30 DÍAS" in _raw_aw
+                     else "#f1f5f9")
+        _aw_e     = _html_esc.escape(_raw_aw)
+        extras_html += (
+            "<div style='padding:6px 20px;background:#fafafa;"
+            "border-top:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;'>"
+            f"<span style='background:{_aw_bg};color:{_aw_color};font-size:11px;"
+            f"font-weight:700;padding:3px 8px;border-radius:6px;'>{_aw_e}</span>"
+            + (
+                f"<span style='font-size:11px;color:#64748b;'>{_html_esc.escape(_raw_ot[:80])}</span>"
+                if _raw_ot and _raw_ot.lower() not in ("nan","none") else ""
+            )
+            + "</div>"
+        )
+
+        footer = (
         f'<div style="{SFO}">'
         + "".join(links)
         + f'<span style="{SNO}">Datos públicos · {"BOE" if bocm and (bocm.lower().startswith("https://www.boe.es") or bocm.lower().startswith("https://boe.es")) else "BOCM"}</span>'
@@ -1146,6 +1184,33 @@ _MUNI_CENTROIDS = {
     "velilla de san antonio": (40.3774, -3.5115),
     "villanueva de la cañada": (40.4521, -3.9849),
     "villanueva del pardillo": (40.4748, -3.9354),
+    "ajalvir": (40.5415, -3.4632),
+    "becerril de la sierra": (40.7188, -3.8906),
+    "brunete": (40.4014, -3.9976),
+    "buitrago del lozoya": (40.9988, -3.6352),
+    "casarrubuelos": (40.2020, -3.8890),
+    "ciempozuelos": (40.1600, -3.6215),
+    "collado mediano": (40.6972, -3.8844),
+    "cubas de la sagra": (40.2158, -3.8384),
+    "el boalo": (40.7019, -3.9027),
+    "el molar": (40.7158, -3.5879),
+    "fuente el saz de jarama": (40.6235, -3.4856),
+    "griñón": (40.2125, -3.8684),
+    "humanes de madrid": (40.2593, -3.8270),
+    "meco": (40.5530, -3.3350),
+    "mejorada del campo": (40.3961, -3.4920),
+    "paracuellos de jarama": (40.5065, -3.5271),
+    "quijorna": (40.4168, -3.9900),
+    "robledo de chavela": (40.5068, -4.2424),
+    "san agustín del guadalix": (40.7107, -3.6171),
+    "san martín de la vega": (40.2078, -3.5680),
+    "sevilla la nueva": (40.3556, -3.9711),
+    "soto del real": (40.7666, -3.7813),
+    "torres de la alameda": (40.4284, -3.3774),
+    "valdilecha": (40.3468, -3.2897),
+    "villa del prado": (40.2762, -4.2777),
+    "villalbilla": (40.4284, -3.3017),
+    "villaviciosa de odón": (40.3556, -3.9003),
 }
 
 def _get_coords(row):
@@ -1363,7 +1428,10 @@ COL_MAP = {
     "AI Evaluation": "ai_evaluation", "Supplies Needed": "supplies_needed",
     "Estimated PEM": "pem_est_raw",
     "Profile Fit": "profile_fit", "Fuente": "fuente",
-    "Project Size": "project_size",
+    "Project Size":        "project_size",
+    "Action Window":       "action_window",
+    "Key Contacts":        "key_contacts",
+    "Obra Timeline":       "obra_timeline",
 }
 
 @st.cache_data(ttl=300)
@@ -1375,7 +1443,7 @@ def load_data():
             "https://www.googleapis.com/auth/drive",
         ])
         gc = gspread.authorize(creds)
-        ws = gc.open_by_key(st.secrets.get("SHEET_ID", SHEET_ID)).worksheet("Permits")
+        ws = gc.open_by_key(st.secrets.get("SHEET_ID", SHEET_ID)).worksheet("Leads")
         data = ws.get_all_records()
         return pd.DataFrame(data) if data else pd.DataFrame()
     except Exception as ex:
@@ -1537,6 +1605,20 @@ with st.sidebar:
         placeholder="Todas las fases",
     )
 
+    # ── Action Window quick filter ──
+    _AW_OPTIONS = {
+        "ACTUAR": "⚡ Actuar esta semana",
+        "30 DÍAS": "📞 Contactar en 30 días",
+        "MONITORIZAR": "📅 Monitorizar",
+        "PIPELINE": "🔮 Pipeline largo",
+    }
+    aw_sel = st.multiselect(
+        "Urgencia",
+        options=list(_AW_OPTIONS.keys()),
+        format_func=lambda k: _AW_OPTIONS[k],
+        placeholder="Toda urgencia",
+    )
+
     muni_sel  = st.multiselect("Municipio", options=all_munis, placeholder="Todos")
 
     # ── Keyword search ──
@@ -1607,6 +1689,70 @@ with st.sidebar:
                         st.warning("No se encontr\u00f3 tu cuenta. Contacta con soporte.")
             st.caption("La nueva contrase\u00f1a se activa de inmediato.")
 
+
+# ════════════════════════════════════════════════════════════
+# WATCHLIST — Save alert for a project
+# ════════════════════════════════════════════════════════════
+def _get_sheet_connection():
+    """Get gspread spreadsheet object for watchlist write-back."""
+    try:
+        sa = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(sa, scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ])
+        gc = gspread.authorize(creds)
+        return gc.open_by_key(st.secrets.get("SHEET_ID", SHEET_ID))
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=60)
+def load_watchlist(user_email: str) -> list:
+    """Load current watchlist for this user."""
+    try:
+        ss = _get_sheet_connection()
+        if not ss:
+            return []
+        try:
+            ws = ss.worksheet("Watchlist")
+        except Exception:
+            return []
+        rows = ws.get_all_records()
+        return [r.get("expediente", "") for r in rows
+                if r.get("email", "").lower() == user_email.lower()]
+    except Exception:
+        return []
+
+
+def add_to_watchlist(user_email: str, row: dict) -> bool:
+    """Add a project to the user's watchlist. Returns True on success."""
+    try:
+        ss = _get_sheet_connection()
+        if not ss:
+            return False
+        # Get or create Watchlist tab
+        try:
+            ws = ss.worksheet("Watchlist")
+        except Exception:
+            ws = ss.add_worksheet("Watchlist", rows=500, cols=8)
+            ws.append_row(["email", "source_url", "expediente", "fecha_added",
+                           "phase_at_add", "last_alerted", "muni", "description"])
+
+        exp   = str(row.get("expediente", "") or "").strip()
+        bocm  = str(row.get("bocm_url", "") or "").strip()
+        fase  = str(row.get("fase", "") or "").strip()
+        muni  = str(row.get("municipio", "") or "").strip()
+        desc  = str(row.get("descripcion", "") or "")[:150]
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        ws.append_row([user_email, bocm, exp, today, fase, "", muni, desc])
+        # Clear the load_watchlist cache so button updates immediately
+        load_watchlist.clear()
+        return True
+    except Exception as e:
+        return False
+
 # ════════════════════════════════════════════════════════════
 # MAIN CONTENT
 # ════════════════════════════════════════════════════════════
@@ -1642,6 +1788,11 @@ if prof["types"] and "tipo" in df_f.columns:
     pat  = "|".join(re.escape(t) for t in prof["types"])
     df_f = df_f[df_f["tipo"].str.contains(pat, case=False, na=False)]
 
+# Action window filter — Alquiler Maquinaria only shows urgent leads
+if prof.get("action_filter") and "action_window" in df_f.columns:
+    _aw_pat = prof["action_filter"]
+    df_f = df_f[df_f["action_window"].astype(str).str.contains(_aw_pat, na=False) | (df_f["action_window"].astype(str) == "")]
+
 if muni_sel and "municipio" in df_f.columns:
     df_f = df_f[df_f["municipio"].isin(muni_sel)]
 
@@ -1649,9 +1800,17 @@ if muni_sel and "municipio" in df_f.columns:
 if fase_sel and "fase" in df_f.columns:
     df_f = df_f[df_f["fase"].isin(fase_sel)]
 
+# ── Action Window filter ──
+if aw_sel and "action_window" in df_f.columns:
+    _aw_mask = pd.Series([False] * len(df_f), index=df_f.index)
+    for _aw_key in aw_sel:
+        _aw_mask = _aw_mask | df_f["action_window"].astype(str).str.contains(
+            _aw_key, na=False, case=False)
+    df_f = df_f[_aw_mask]
+
 # ── Keyword search across key text fields ──
 if kw_search:
-    _search_cols = ["municipio", "direccion", "promotor", "tipo", "descripcion", "expediente"]
+    _search_cols = ["municipio", "direccion", "promotor", "tipo", "descripcion", "expediente", "ai_evaluation", "key_contacts", "supplies_needed", "fuente"]
     _mask = pd.Series([False] * len(df_f), index=df_f.index)
     for _col in _search_cols:
         if _col in df_f.columns:
@@ -1753,6 +1912,29 @@ with _tab_leads:
         )
         for _, row in df_f.iterrows():
             st.markdown(build_card(row.to_dict()), unsafe_allow_html=True)
+
+            # ── Watchlist save button ──────────────────────────────────────────
+            _exp = str(row.get("expediente", "") or "").strip()
+            _u   = st.session_state.get("user_email", "")
+            # Only show for logged-in email users (not admin token) with an expediente
+            if _exp and _u and not _u.startswith("token:"):
+                _watched = load_watchlist(_u)
+                _already = _exp in _watched
+                _btn_label = "✅ Siguiendo" if _already else "🔔 Guardar alerta"
+                _col1, _col2 = st.columns([1, 8])
+                with _col1:
+                    if st.button(
+                        _btn_label,
+                        key=f"watch_{_exp}_{row.get('bocm_url','')}",
+                        disabled=_already,
+                        help=("Recibirás un email cuando este proyecto avance de fase."
+                              if not _already else "Ya recibirás alertas sobre este proyecto."),
+                    ):
+                        if add_to_watchlist(_u, row.to_dict()):
+                            st.toast(f"✅ Alerta guardada para expediente {_exp}")
+                            load_watchlist.clear()
+                        else:
+                            st.toast("❌ Error guardando alerta. Inténtalo de nuevo.")
 
 # ── TAB 2: INTERACTIVE MAP ───────────────────────────────────
 with _tab_mapa:
