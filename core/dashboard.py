@@ -986,7 +986,8 @@ def build_card(row):
             + "</div>"
         )
 
-        footer = (
+    # 👇 OUTDENTED CORRECTLY
+    footer = (
         f'<div style="{SFO}">'
         + "".join(links)
         + f'<span style="{SNO}">Datos públicos · {"BOE" if bocm and (bocm.lower().startswith("https://www.boe.es") or bocm.lower().startswith("https://boe.es")) else "BOCM"}</span>'
