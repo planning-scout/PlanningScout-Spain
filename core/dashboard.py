@@ -495,13 +495,40 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
 /* Hide Streamlit "Press Enter to apply" hint — it overlaps the placeholder text */
 [data-testid="InputInstructions"] { display: none !important; }
 
-/* Watch/follow button — flush to card bottom, zero gap */
-div[data-testid="stButton"] > button[kind="secondary"] {
-    font-size: 11px !important;
-    padding: 3px 10px !important;
+/* ── Per-card control row (Seguir + Urgencia) ──────────────────────────────
+   These buttons render immediately below each card. We pull them up slightly
+   to close the visual gap, and style them small/secondary so they read as
+   "card actions" rather than primary CTAs.
+───────────────────────────────────────────────────────────────────────────── */
+div[data-testid="stHorizontalBlock"] {
+    /* The row of per-card controls */
+    margin-top: -6px !important;
+    margin-bottom: 8px !important;
 }
-/* Negative margin trick: attach Seguir button flush to card bottom */
-.watch-btn-wrap { margin-top: -1px !important; margin-bottom: 10px !important; }
+div[data-testid="stHorizontalBlock"] button[kind="secondary"] {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+    border-radius: 7px !important;
+    color: #64748b !important;
+    border-color: #e2e8f0 !important;
+    background: #f8fafc !important;
+    min-height: 30px !important;
+}
+div[data-testid="stHorizontalBlock"] button[kind="primary"] {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+    border-radius: 7px !important;
+    min-height: 30px !important;
+}
+/* The "🔔 Seguir" button specifically */
+div[data-testid="stHorizontalBlock"] button:first-child {
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    color: #1e3a5f !important;
+    border-color: #1e3a5f !important;
+    background: #fff !important;
+    min-height: 34px !important;
+}
 
 /* ── DARK MODE ───────────────────────────────────────────────────────────────
    Fires only when the user's OS/browser is set to dark mode.
@@ -1031,18 +1058,30 @@ def build_card(row, is_watched=False):
             + "</div>"
         )
 
-    # ── Watch state tag — rendered INSIDE the card footer ──────────────────────
-    # is_watched=True  → green "🔔 Siguiendo" tag in footer (always visible)
-    # is_watched=False → bell tag rendered visually BUT actual click uses st.button below card
-    _watch_in_card = ""
+    # ── Watch state button — always in the card footer, next to Promotor ────────
+    # is_watched=True  → green static pill "🔔 Siguiendo"
+    # is_watched=False → blue-outline "🔔 Seguir" button-style element (visual; real click via st.button below)
+    _watch_btn_html = ""
     if expd:
         if is_watched:
-            _watch_in_card = (
-                f'<span style="{_F};display:inline-flex;align-items:center;gap:4px;'
-                f'font-size:11px;font-weight:600;color:#16a34a;background:#f0fdf4;'
-                f'border:1.5px solid #bbf7d0;padding:4px 11px;border-radius:7px;'
-                f'white-space:nowrap;flex-shrink:0;">🔔 Siguiendo</span>'
+            _watch_btn_html = (
+                f'<span style="{_F};display:inline-flex;align-items:center;gap:5px;'
+                f'font-size:12px;font-weight:600;color:#16a34a;background:#f0fdf4;'
+                f'border:1.5px solid #bbf7d0;padding:5px 13px;border-radius:7px;'
+                f'white-space:nowrap;flex-shrink:0;cursor:default;">🔔 Siguiendo</span>'
             )
+        else:
+            _watch_btn_html = (
+                f'<span class="_seguir_visual" style="{_F};display:inline-flex;align-items:center;gap:5px;'
+                f'font-size:12px;font-weight:500;color:#1e3a5f;background:#fff;'
+                f'border:1.5px solid #1e3a5f;padding:5px 13px;border-radius:7px;'
+                f'white-space:nowrap;flex-shrink:0;cursor:pointer;" '
+                f'title="Seguir este proyecto">🔔 Seguir</span>'
+            )
+
+    # Add to links list so it appears right after Promotor
+    if _watch_btn_html:
+        links.append(_watch_btn_html)
 
     _src_label = "BOE" if bocm and (bocm.lower().startswith("https://www.boe.es") or bocm.lower().startswith("https://boe.es")) else "BOCM"
     _mailto = (
@@ -1051,9 +1090,8 @@ def build_card(row, is_watched=False):
         f'&body={html_lib.escape("Municipio: " + muni + chr(10) + "Dirección: " + addr + chr(10) + "Expediente: " + expd + chr(10) + "URL: " + bocm)}'
     )
     footer = (
-        f'<div style="{SFO};">'
+        f'<div style="{SFO}">'
         + "".join(links)
-        + _watch_in_card
         + f'<span style="{SNO}">{_src_label}</span>'
         + f'<a href="{_mailto}" style="{_F};display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#94a3b8;background:#f8fafc;border:1px solid #e2e8f0;padding:4px 9px;border-radius:7px;text-decoration:none;white-space:nowrap;" title="Reportar error o pedir más info">✉️ Reportar</a>'
         + '</div>'
@@ -1478,8 +1516,7 @@ def build_map(df_map, profile_key="general"):
     <div style="font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:6px;">{pem_s}</div>
     {prec_note}
   </div>
-  {'<details style="border-top:1px solid #f1f5f9;"><summary style="padding:8px 12px;font-size:11px;font-weight:600;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;"><span>📋</span><span>Descripción</span><span style="margin-left:auto;font-size:9px;color:#94a3b8;">▼</span></summary><div style="padding:4px 12px 10px;font-size:11px;color:#64748b;line-height:1.5;">' + desc[:300] + ('…' if len(desc) > 300 else '') + '</div></details>' if desc else ''}
-  {'<details style="border-top:1px solid #f1f5f9;"><summary style="padding:8px 12px;font-size:11px;font-weight:600;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;"><span>🤖</span><span>Análisis IA</span><span style="margin-left:auto;font-size:9px;color:#94a3b8;">▼</span></summary><div style="padding:4px 12px 10px;font-size:11px;color:#374151;line-height:1.5;background:#f8fafc;margin:0 8px 8px;border-radius:6px;">' + r.get("ai_evaluation","")[:350] + ('…' if len(r.get("ai_evaluation","")) > 350 else '') + '</div></details>' if r.get("ai_evaluation","") and str(r.get("ai_evaluation","")).lower() not in ("nan","none","") else ''}
+  {'<details style="border-top:1px solid #f1f5f9;"><summary style="padding:8px 12px;font-size:11px;font-weight:600;color:#334155;cursor:pointer;list-style:none;-webkit-user-select:none;user-select:none;display:flex;align-items:center;gap:6px;"><span>📋</span><span>Descripción</span><span style="margin-left:auto;font-size:9px;color:#94a3b8;">▼</span></summary><div style="padding:6px 12px 12px;font-size:11px;color:#64748b;line-height:1.55;max-height:160px;overflow-y:auto;">' + html_lib.escape(desc[:400]) + ('…' if len(desc) > 400 else '') + '</div></details>' if desc else ''}
   <div style="padding:10px 12px;border-top:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
     {link_bocm}{link_maps}
     <span style="font-size:10px;color:#94a3b8;margin-left:auto;">↩ Vuelve a 📋 Lista para la ficha completa</span>
@@ -1689,22 +1726,11 @@ with st.sidebar:
         placeholder="Todas las fases",
     )
 
-    # ── Action Window quick filter ──
-    _AW_OPTIONS = {
-        "ACTUAR": "⚡ Actuar esta semana",
-        "30 DÍAS": "📞 Contactar en 30 días",
-        "MONITORIZAR": "📅 Monitorizar",
-        "PIPELINE": "🔮 Pipeline largo",
-    }
-    aw_sel = st.multiselect(
-        "Urgencia",
-        options=list(_AW_OPTIONS.keys()),
-        format_func=lambda k: _AW_OPTIONS[k],
-        placeholder="Toda urgencia",
-    )
-
     muni_sel  = st.multiselect("Municipio", options=all_munis, placeholder="Todos")
     st.caption(f"📍 {len(all_munis)} municipios con datos en el período seleccionado")
+
+    # aw_sel intentionally removed from sidebar — urgencia se gestiona por tarjeta
+    aw_sel = []
 
     # ── Keyword search ──
     st.markdown(
@@ -2043,37 +2069,49 @@ with _tab_leads:
             f'</div>',
             unsafe_allow_html=True
         )
-        # ── Initialise just_saved set in session once ─────────────────────────
-        if "just_saved" not in st.session_state:
-            st.session_state["just_saved"] = set()
+        # ── Init session state for urgency overrides and just_saved ──────────
+        if "just_saved"        not in st.session_state: st.session_state["just_saved"]        = set()
+        if "urgency_overrides" not in st.session_state: st.session_state["urgency_overrides"] = {}
 
-        # Load watchlist once before the loop (not inside — avoid 1 Sheets call per card)
+        # Load watchlist once before the loop
         _u = st.session_state.get("user_email", "")
         _sheet_watched = set(load_watchlist(_u)) if (_u and not _u.startswith("token:")) else set()
-        # Merge sheet + this-session saves for immediate green feedback
-        _watched_set = _sheet_watched | st.session_state.get("just_saved", set())
+        _watched_set   = _sheet_watched | st.session_state.get("just_saved", set())
+
+        _URGENCY_OPTS = {
+            "⚡ Esta semana":   "ACTUAR",
+            "📞 30 días":       "30 DÍAS",
+            "📅 Monitorizar":   "MONITORIZAR",
+            "🔮 Pipeline":      "PIPELINE",
+        }
 
         for _, row in df_f.iterrows():
             _exp     = str(row.get("expediente", "") or "").strip()
             _already = (_exp in _watched_set) if _exp else False
 
-            # Pass is_watched so card footer shows green "Siguiendo" tag when saved
+            # Build and render the card (Seguir button visual is inside the footer)
             st.markdown(build_card(row.to_dict(), is_watched=_already), unsafe_allow_html=True)
 
-            # ── 🔔 Seguir button — visually attached to card bottom ────────────
-            # Only shown when: logged-in email user + expediente exists + not yet saved
-            if _exp and _u and not _u.startswith("token:") and not _already:
-                # Wrap in a zero-gap container to flush against card
-                with st.container():
-                    st.markdown(
-                        '<div class="watch-btn-wrap" style="margin-top:-2px;margin-bottom:10px;'
-                        'background:#fff;border:1.5px solid #e2e8f0;border-top:none;'
-                        'border-radius:0 0 14px 14px;padding:6px 12px 8px 12px;'
-                        'display:flex;align-items:center;gap:8px;">',
-                        unsafe_allow_html=True,
-                    )
-                    _bcol, _spacer = st.columns([1, 7])
-                    with _bcol:
+            # ── Row of inline controls below card ────────────────────────────
+            # • 🔔 Seguir real button (only when not yet saved)
+            # • Urgencia per-card picker (replaces the removed sidebar filter)
+            _show_seguir  = _exp and _u and not _u.startswith("token:") and not _already
+            _show_urgency = True   # urgency shown for all leads
+
+            if _show_seguir or _show_urgency:
+                # Build column layout: Seguir | spacer | Urgencia label | pills
+                _n_urgency_cols = len(_URGENCY_OPTS)
+                if _show_seguir:
+                    _cols = st.columns([1.2, 0.3] + [1] * _n_urgency_cols)
+                    _seg_col = _cols[0]
+                    _urg_cols = _cols[2:]
+                else:
+                    _cols = st.columns([0.01] + [1] * _n_urgency_cols)
+                    _seg_col = None
+                    _urg_cols = _cols[1:]
+
+                if _show_seguir and _seg_col is not None:
+                    with _seg_col:
                         if st.button(
                             "🔔 Seguir",
                             key=f"watch_{_exp}_{row.get('bocm_url','')}",
@@ -2081,14 +2119,34 @@ with _tab_leads:
                             use_container_width=True,
                         ):
                             if add_to_watchlist(_u, row.to_dict()):
-                                # Immediately mark as saved in session (green feedback without reload)
-                                st.session_state.setdefault("just_saved", set()).add(_exp)
-                                st.toast(f"🔔 ¡Guardado! Recibirás alertas sobre este proyecto.", icon="✅")
+                                st.session_state["just_saved"].add(_exp)
+                                st.toast("🔔 ¡Guardado! Recibirás alertas cuando avance.", icon="✅")
                                 load_watchlist.clear()
                                 st.rerun()
                             else:
                                 st.toast("❌ Error guardando. Inténtalo de nuevo.")
-                    st.markdown("</div>", unsafe_allow_html=True)
+
+                # Urgency picker — current value from session override or sheet action_window
+                _current_aw = (
+                    st.session_state["urgency_overrides"].get(_exp)
+                    or str(row.get("action_window", "") or "").strip()
+                )
+                for _urg_col, (_label, _val) in zip(_urg_cols, _URGENCY_OPTS.items()):
+                    with _urg_col:
+                        _is_active = _val in _current_aw if _current_aw else False
+                        _btn_type  = "primary" if _is_active else "secondary"
+                        if st.button(
+                            _label,
+                            key=f"urg_{_exp}_{_val}_{row.get('bocm_url','')}",
+                            type=_btn_type,
+                            use_container_width=True,
+                        ):
+                            if _exp:
+                                st.session_state["urgency_overrides"][_exp] = _val
+                                st.rerun()
+
+            # Small gap between cards
+            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
 # ── TAB 2: INTERACTIVE MAP ───────────────────────────────────
 with _tab_mapa:
@@ -2155,7 +2213,7 @@ with _tab_alertas:
               <h3 style="font-family:'Fraunces',Georgia,serif;font-size:18px;
                   color:#0d1a2b;margin:14px 0 8px;">Sin alertas guardadas</h3>
               <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0;">
-                Pulsa <strong>🔖 Seguir</strong> en cualquier proyecto<br>
+                Pulsa <strong>🔔 Seguir</strong> en cualquier proyecto<br>
                 para recibir alertas cuando avance de fase.
               </p>
             </div>""", unsafe_allow_html=True)
