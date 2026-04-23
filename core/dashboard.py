@@ -492,6 +492,17 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
     }
 }
 
+/* Hide Streamlit "Press Enter to apply" hint — it overlaps the placeholder text */
+[data-testid="InputInstructions"] { display: none !important; }
+
+/* Watch/follow button — flush to card bottom, zero gap */
+div[data-testid="stButton"] > button[kind="secondary"] {
+    font-size: 11px !important;
+    padding: 3px 10px !important;
+}
+/* Negative margin trick: attach Seguir button flush to card bottom */
+.watch-btn-wrap { margin-top: -1px !important; margin-bottom: 10px !important; }
+
 /* ── DARK MODE ───────────────────────────────────────────────────────────────
    Fires only when the user's OS/browser is set to dark mode.
    Targets the Streamlit chrome (toolbar, sidebar, app shell) — not the cards,
@@ -757,7 +768,7 @@ def sc_pill(sc):
     s = SSPG if sc >= 65 else SSPO if sc >= 40 else SSPN if sc >= 20 else SSPD
     return f'<span style="{s}">{e} {sc} / 100</span>'
 
-def build_card(row):
+def build_card(row, is_watched=False):
     """
     Build one lead card with ONLY inline styles.
     This guarantees correct rendering regardless of Streamlit's Markdown parser.
@@ -1020,12 +1031,31 @@ def build_card(row):
             + "</div>"
         )
 
-    # 👇 OUTDENTED CORRECTLY
+    # ── Watch state tag — rendered INSIDE the card footer ──────────────────────
+    # is_watched=True  → green "🔔 Siguiendo" tag in footer (always visible)
+    # is_watched=False → bell tag rendered visually BUT actual click uses st.button below card
+    _watch_in_card = ""
+    if expd:
+        if is_watched:
+            _watch_in_card = (
+                f'<span style="{_F};display:inline-flex;align-items:center;gap:4px;'
+                f'font-size:11px;font-weight:600;color:#16a34a;background:#f0fdf4;'
+                f'border:1.5px solid #bbf7d0;padding:4px 11px;border-radius:7px;'
+                f'white-space:nowrap;flex-shrink:0;">🔔 Siguiendo</span>'
+            )
+
+    _src_label = "BOE" if bocm and (bocm.lower().startswith("https://www.boe.es") or bocm.lower().startswith("https://boe.es")) else "BOCM"
+    _mailto = (
+        f'mailto:info@planningscout.com'
+        f'?subject={html_lib.escape("Lead: " + muni + " — " + (expd or ref_str[:30]))}'
+        f'&body={html_lib.escape("Municipio: " + muni + chr(10) + "Dirección: " + addr + chr(10) + "Expediente: " + expd + chr(10) + "URL: " + bocm)}'
+    )
     footer = (
-        f'<div style="{SFO}">'
+        f'<div style="{SFO};">'
         + "".join(links)
-        + f'<span style="{SNO}">Datos públicos · {"BOE" if bocm and (bocm.lower().startswith("https://www.boe.es") or bocm.lower().startswith("https://boe.es")) else "BOCM"}</span>'
-        + f'<a href="mailto:info@planningscout.com?subject={html_lib.escape("Consulta%20lead%3A%20" + muni + "%20%E2%80%94%20" + (expd or ref_str[:40]))}&body={html_lib.escape("Hola,%0A%0AMe%20interesa%20obtener%20más%20información%20sobre%20este%20proyecto%3A%0A%0AMunicipio%3A%20" + muni + "%0ADirección%3A%20" + addr + "%0AExpediente%3A%20" + expd + "%0AURL%3A%20" + bocm + "%0A%0A[Describe%20tu%20consulta%20aquí]")}" style="{_F};display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;color:#64748b;background:#f8fafc;border:1px solid #e2e8f0;padding:4px 10px;border-radius:7px;text-decoration:none;white-space:nowrap;margin-left:4px;" title="Reportar un error o solicitar más información sobre este proyecto">✉️ Reportar error / Más info</a>'
+        + _watch_in_card
+        + f'<span style="{SNO}">{_src_label}</span>'
+        + f'<a href="{_mailto}" style="{_F};display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#94a3b8;background:#f8fafc;border:1px solid #e2e8f0;padding:4px 9px;border-radius:7px;text-decoration:none;white-space:nowrap;" title="Reportar error o pedir más info">✉️ Reportar</a>'
         + '</div>'
     )
 
@@ -1434,23 +1464,27 @@ def build_map(df_map, profile_key="general"):
         link_maps  = f'<a href="{maps_u}" target="_blank" style="color:#1e3a5f;font-weight:600;font-size:12px;text-decoration:none;margin-left:10px;">🗺️ Maps</a>' if maps_u else ""
 
         popup_html = f"""
-<div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;min-width:240px;max-width:300px;">
+<div style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;min-width:260px;max-width:320px;">
   <div style="background:#f7f8fa;border-radius:8px 8px 0 0;padding:10px 12px;border-bottom:1px solid #e2e8f0;">
-    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;">{muni}</div>
+    <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;">{muni}</div>
     <div style="font-weight:700;color:#0d1a2b;font-size:13px;margin-top:2px;line-height:1.3;">{addr[:60] or tipo[:60]}</div>
   </div>
   <div style="padding:10px 12px;">
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
       {prelead_badge}
       <span style="background:{sc_bg};color:{sc_fg};font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;">{score} pts</span>
-      <span style="background:#eff4fb;color:#1e3a5f;font-size:11px;padding:2px 8px;border-radius:100px;">{tipo[:30]}</span>
+      <span style="background:#eff4fb;color:#1e3a5f;font-size:10px;padding:2px 8px;border-radius:100px;">{tipo[:28]}</span>
     </div>
-    <div style="font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:4px;">{pem_s}</div>
-    <div style="font-size:11px;color:#64748b;line-height:1.4;margin-bottom:8px;">{desc[:120]}{'…' if len(desc) > 120 else ''}</div>
-    <div style="font-size:11px;color:#94a3b8;">{fecha}</div>
+    <div style="font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:6px;">{pem_s}</div>
     {prec_note}
-    <div style="margin-top:8px;border-top:1px solid #f1f5f9;padding-top:8px;">{link_bocm}{link_maps}</div>
   </div>
+  {'<details style="border-top:1px solid #f1f5f9;"><summary style="padding:8px 12px;font-size:11px;font-weight:600;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;"><span>📋</span><span>Descripción</span><span style="margin-left:auto;font-size:9px;color:#94a3b8;">▼</span></summary><div style="padding:4px 12px 10px;font-size:11px;color:#64748b;line-height:1.5;">' + desc[:300] + ('…' if len(desc) > 300 else '') + '</div></details>' if desc else ''}
+  {'<details style="border-top:1px solid #f1f5f9;"><summary style="padding:8px 12px;font-size:11px;font-weight:600;color:#334155;cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;"><span>🤖</span><span>Análisis IA</span><span style="margin-left:auto;font-size:9px;color:#94a3b8;">▼</span></summary><div style="padding:4px 12px 10px;font-size:11px;color:#374151;line-height:1.5;background:#f8fafc;margin:0 8px 8px;border-radius:6px;">' + r.get("ai_evaluation","")[:350] + ('…' if len(r.get("ai_evaluation","")) > 350 else '') + '</div></details>' if r.get("ai_evaluation","") and str(r.get("ai_evaluation","")).lower() not in ("nan","none","") else ''}
+  <div style="padding:10px 12px;border-top:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    {link_bocm}{link_maps}
+    <span style="font-size:10px;color:#94a3b8;margin-left:auto;">↩ Vuelve a 📋 Lista para la ficha completa</span>
+  </div>
+  <div style="padding:4px 12px 10px;font-size:10px;color:#94a3b8;">{fecha}</div>
 </div>"""
 
         folium.Marker(
@@ -1670,9 +1704,20 @@ with st.sidebar:
     )
 
     muni_sel  = st.multiselect("Municipio", options=all_munis, placeholder="Todos")
+    st.caption(f"📍 {len(all_munis)} municipios con datos en el período seleccionado")
 
     # ── Keyword search ──
-    kw_search = st.text_input("🔍 Buscar", placeholder="promotor, calle, tipo…", label_visibility="collapsed").strip().lower()
+    st.markdown(
+        '<p style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
+        'color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin:8px 0 4px;">Buscar</p>',
+        unsafe_allow_html=True
+    )
+    kw_search = st.text_input(
+        "Buscar",
+        placeholder="promotor, calle, tipo…",
+        label_visibility="collapsed",
+        key="kw_search_input",
+    ).strip().lower()
 
     st.markdown('<div style="height:1px;background:#e2e8f0;margin:14px 0 16px;"></div>', unsafe_allow_html=True)
 
@@ -1847,12 +1892,7 @@ if _pff and "profile_fit" in df_f.columns:
     if _pff_mask.sum() >= 3:
         df_f = df_f[_pff_mask]
 
-# Action window filter — Alquiler Maquinaria only shows urgent leads
-if prof.get("action_filter") and "action_window" in df_f.columns:
-    _aw_pat = prof["action_filter"]
-    df_f = df_f[df_f["action_window"].astype(str).str.contains(_aw_pat, na=False) | (df_f["action_window"].astype(str) == "")]
-
-# Action window filter — Alquiler Maquinaria only shows urgent leads
+# Action window filter — applies when profile uses action_filter
 if prof.get("action_filter") and "action_window" in df_f.columns:
     _aw_pat = prof["action_filter"]
     df_f = df_f[df_f["action_window"].astype(str).str.contains(_aw_pat, na=False) | (df_f["action_window"].astype(str) == "")]
@@ -2003,41 +2043,52 @@ with _tab_leads:
             f'</div>',
             unsafe_allow_html=True
         )
+        # ── Initialise just_saved set in session once ─────────────────────────
+        if "just_saved" not in st.session_state:
+            st.session_state["just_saved"] = set()
+
         # Load watchlist once before the loop (not inside — avoid 1 Sheets call per card)
         _u = st.session_state.get("user_email", "")
-        _watched_set = set(load_watchlist(_u)) if (_u and not _u.startswith("token:")) else set()
+        _sheet_watched = set(load_watchlist(_u)) if (_u and not _u.startswith("token:")) else set()
+        # Merge sheet + this-session saves for immediate green feedback
+        _watched_set = _sheet_watched | st.session_state.get("just_saved", set())
 
         for _, row in df_f.iterrows():
-            _exp = str(row.get("expediente", "") or "").strip()
-            _already = _exp in _watched_set if _exp else False
+            _exp     = str(row.get("expediente", "") or "").strip()
+            _already = (_exp in _watched_set) if _exp else False
 
-            st.markdown(build_card(row.to_dict()), unsafe_allow_html=True)
+            # Pass is_watched so card footer shows green "Siguiendo" tag when saved
+            st.markdown(build_card(row.to_dict(), is_watched=_already), unsafe_allow_html=True)
 
-            # ── Compact watchlist button — inline with card footer ─────────────
-            if _exp and _u and not _u.startswith("token:"):
-                _btn_lbl = "🔖 Siguiendo" if _already else "🔖 Seguir"
-                _btn_help = "Ya recibirás alertas cuando este proyecto avance." if _already else "Recibe un email cuando este proyecto avance de fase."
-                # Use negative top margin to visually attach to card bottom
-                st.markdown(
-                    "<div style='margin-top:-14px;margin-bottom:8px;'>",
-                    unsafe_allow_html=True
-                )
-                _bcol, _ = st.columns([1, 6])
-                with _bcol:
-                    if st.button(
-                        _btn_lbl,
-                        key=f"watch_{_exp}_{row.get('bocm_url','')}",
-                        disabled=_already,
-                        help=_btn_help,
-                        use_container_width=False,
-                    ):
-                        if add_to_watchlist(_u, row.to_dict()):
-                            _watched_set.add(_exp)
-                            st.toast(f"🔖 Siguiendo expediente {_exp}")
-                            load_watchlist.clear()
-                        else:
-                            st.toast("❌ Error. Inténtalo de nuevo.")
-                st.markdown("</div>", unsafe_allow_html=True)
+            # ── 🔔 Seguir button — visually attached to card bottom ────────────
+            # Only shown when: logged-in email user + expediente exists + not yet saved
+            if _exp and _u and not _u.startswith("token:") and not _already:
+                # Wrap in a zero-gap container to flush against card
+                with st.container():
+                    st.markdown(
+                        '<div class="watch-btn-wrap" style="margin-top:-2px;margin-bottom:10px;'
+                        'background:#fff;border:1.5px solid #e2e8f0;border-top:none;'
+                        'border-radius:0 0 14px 14px;padding:6px 12px 8px 12px;'
+                        'display:flex;align-items:center;gap:8px;">',
+                        unsafe_allow_html=True,
+                    )
+                    _bcol, _spacer = st.columns([1, 7])
+                    with _bcol:
+                        if st.button(
+                            "🔔 Seguir",
+                            key=f"watch_{_exp}_{row.get('bocm_url','')}",
+                            help="Recibe un email cuando este proyecto avance de fase.",
+                            use_container_width=True,
+                        ):
+                            if add_to_watchlist(_u, row.to_dict()):
+                                # Immediately mark as saved in session (green feedback without reload)
+                                st.session_state.setdefault("just_saved", set()).add(_exp)
+                                st.toast(f"🔔 ¡Guardado! Recibirás alertas sobre este proyecto.", icon="✅")
+                                load_watchlist.clear()
+                                st.rerun()
+                            else:
+                                st.toast("❌ Error guardando. Inténtalo de nuevo.")
+                    st.markdown("</div>", unsafe_allow_html=True)
 
 # ── TAB 2: INTERACTIVE MAP ───────────────────────────────────
 with _tab_mapa:
