@@ -2977,8 +2977,7 @@ CRITICAL RULES:
 7. municipality: Specific Madrid town (e.g. "Getafe","Las Rozas"). NOT "Comunidad de Madrid".
 8. description: 2 sentences MAX. Sentence 1: what is built, m² if available, nº viviendas/plantas,
    exact address, PEM. Sentence 2: who benefits and concrete next action.
-   Example: "571 viviendas plurifamiliares + garaje, C/ Alonso Zamora 16, SSRR — PEM €82.2M.
-   Sharing Co / Room00: contactar a AEDAS Homes AHORA para gestión de activo antes de que salga al mercado."
+   Example: "571 viviendas plurifamiliares + garaje, C/ Alonso Zamora 16, SSRR — PEM €82.2M."
 9. lead_score: 0–100. Large PEM + definitivo = 75-90. primera_ocupacion = 85+. licitación activa = 80+.
    cambio de uso definitivo = 70+. No PEM + inicial = 25-40.
 10. phase: "definitivo"|"inicial"|"licitacion"|"adjudicacion"|"en_obra"|"primera_ocupacion"|"en_tramite"
@@ -3004,20 +3003,12 @@ obra_timeline — extract construction timing from document:
   If no timing found: ""
 
 AI_EVALUATION — THE MOST IMPORTANT FIELD. PERSONALIZED, SPECIFIC, ACTIONABLE:
-Write 3-6 sentences. NEVER generic. USE company names from subscriber list above.
+Write 3-6 sentences. NEVER generic.
 Structure:
 1. WHAT + WHERE + PEM: "Proyecto de urbanización definitivo [NAME], [MUNI] — PEM €X.XM."
-2. SCALE/CONTEXT: why this location matters, population/corridor, strategic importance.
+2. SCALE/CONTEXT: why this location matters, population/corridor, strategic importance. Add here if you find anything relevant and importantabout the project.
 3. TIMING: phase, estimated timeline, next milestone.
-4. PERSONALIZED CALLOUTS — use exact company names:
-   FCC/Gran Constructora: "FCC Construcción: pre-calificarse para licitación civil — estimado X meses."
-   Kiloutou: "Kiloutou: excavadoras + compactadores en [mes estimado] — contactar promotor ahora."
-   Sharing Co: "Sharing Co / Room00: contactar al promotor ANTES de comercialización — flexliving opportunity."
-   Molecor: "Molecor: colector DN-X ~Xkm + red abastecimiento DN-X ~Xkm — cotizar YA."
-   Saona/Kinépolis/Malvón: "Saona/Kinépolis: zona [tipo] en [muni] — evaluar superficie disponible."
-   ACTIU: "ACTIU: [edificio/hotel] — contactar promotor en fase de proyecto básico."
-   CBRE/Muppy: "CBRE/Muppy: entrada en JC / adquisición de suelo — evaluar ahora."
-5. QUANTITIES: any m², viviendas, pipes, machinery from document.
+4. QUANTITIES: any m², viviendas, pipes, machinery from document.
 
 GOOD ai_evaluation:
 "Proyecto de urbanización definitivo APE 08.21 Las Tablas Oeste, Fuencarral-El Pardo — PEM €106.7M confirmado. Uno de los 3 mayores proyectos urbanización Madrid capital en 5 años: >200.000m² suelo nuevo, viario completo, redes BT/MT, saneamiento y telecomunicaciones. Etapa 1: 24 meses | Etapa 2: 36 meses desde hoy. FCC Construcción: pre-calificarse para licitación civil — pliego técnico estimado en 6-12 meses. Kiloutou: excavadoras 30t + compactadores para movimiento de tierras — inicio obra Q4 2026 estimado. Molecor: colector saneamiento DN400-500 ~3.5km + red abastecimiento DN200 ~2.4km — cotizar YA. CBRE/Muppy: área residencial futura — evaluar posición en JC."
