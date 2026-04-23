@@ -1821,15 +1821,6 @@ HARD_REJECT = [
     "permuta de bienes", "cesión de uso",
     "servicios de limpieza integral", "servicios de vigilancia",
     "servicios de mantenimiento de jardines",
-    "servicio de limpieza de",
-    "retirada de residuos",
-    "cabinas de almacenamiento",
-    "repuestos de juntas",
-    "anillos tóricos",
-    "contactores para el mantenimiento de",
-    "suministro de repuestos",
-    "radiodiagnóstico",
-    "armarios y puertas antivandálicas",
     # ── SMALL COMMERCIAL LICENCES — always noise, never worth capturing ────────
     # These activity types appear frequently in BOCM Section III as licencia de
     # actividad or apertura de establecimiento. They are NOT construction leads.
@@ -2948,15 +2939,15 @@ def ai_extract(text, url, pub_date, pdf_text=None):
         sys_prompt = """You are an elite construction intelligence analyst for Spain.
 You read BOCM/BOE documents to extract actionable leads for B2B sales teams in construction.
 
-Your subscribers include these specific companies — tailor analysis for them:
-• FCC Construcción: gran constructora, licitaciones públicas, obra civil Madrid. Needs 6-18mo lead time before licitación.
-• Grupo Saona / Malvón / Kinépolis: retail & restauración expansion, new centros comerciales, high-footfall zones.
-• Sharing Co / Room00 (Jaime Bello): flexliving operator. Cambio de uso = holy grail. Primera ocupación = call TODAY.
-• ACTIU (Jonatan Molina): office/contract furniture. Every new edificio de oficinas, hotel, coworking, hospital = sale.
-• Kiloutou (José Luis Aliaga): maquinaria alquiler. Needs demolición/vaciado/excavación ASAP — before obra starts.
-• Molecor (Javier González): PVC pipes, Loeches/Getafe Madrid. Every saneamiento/abastecimiento project = direct sales.
-• CBRE / Muppy / Uvesco: RE investment. Reparcelaciones, plan parcial, suelo urbanizable.
-• MEP instaladores: any obra mayor, rehabilitación integral, edificio plurifamiliar.
+Your subscribers are B2B professionals across these sectors — tailor analysis for their role:
+- Gran Constructora / Gran Infraestructura: licitaciones públicas, obra civil Madrid. Value = 6-18mo lead time before licitación.
+- Expansión Retail / Restauración: new centros comerciales, high-footfall urbanizaciones, plan especial commercial/mixed.
+- Flexliving / Hospedaje operador: cambio de uso residencial = highest value signal. Primera ocupación = contact promotor now.
+- Contract Furniture / Mobiliario oficina: every new edificio de oficinas, hotel, coworking, hospital = fit-out sale.
+- Alquiler de Maquinaria: demolición/vaciado/excavación ASAP — before obra starts = 30-60 day lead.
+- Materiales PVC / Saneamiento: every urbanización = saneamiento + abastecimiento pipes. Colectores = direct product.
+- RE Investment / Promotores: reparcelaciones, plan parcial, suelo urbanizable.
+- MEP / Instalaciones: any obra mayor, rehabilitación integral, edificio plurifamiliar.
 
 CRITICAL RULES:
 1. Return ONLY valid JSON — no markdown, no text outside JSON.
@@ -2977,7 +2968,8 @@ CRITICAL RULES:
 7. municipality: Specific Madrid town (e.g. "Getafe","Las Rozas"). NOT "Comunidad de Madrid".
 8. description: 2 sentences MAX. Sentence 1: what is built, m² if available, nº viviendas/plantas,
    exact address, PEM. Sentence 2: who benefits and concrete next action.
-   Example: "571 viviendas plurifamiliares + garaje, C/ Alonso Zamora 16, SSRR — PEM €82.2M."
+   Example: "571 viviendas plurifamiliares + garaje, C/ Alonso Zamora 16, SSRR — PEM €82.2M.
+   Sharing Co / Room00: contactar a AEDAS Homes AHORA para gestión de activo antes de que salga al mercado."
 9. lead_score: 0–100. Large PEM + definitivo = 75-90. primera_ocupacion = 85+. licitación activa = 80+.
    cambio de uso definitivo = 70+. No PEM + inicial = 25-40.
 10. phase: "definitivo"|"inicial"|"licitacion"|"adjudicacion"|"en_obra"|"primera_ocupacion"|"en_tramite"
@@ -3002,19 +2994,29 @@ obra_timeline — extract construction timing from document:
   phase definitivo + PEM → estimate "Inicio estimado: Q[N] 202X (estimado)"
   If no timing found: ""
 
-AI_EVALUATION — THE MOST IMPORTANT FIELD. PERSONALIZED, SPECIFIC, ACTIONABLE:
-Write 3-6 sentences. NEVER generic.
+AI_EVALUATION — THE MOST IMPORTANT FIELD. SECTOR-SPECIFIC, ACTIONABLE (NO COMPANY NAMES):
+Write 3-6 sentences. NEVER generic. NEVER mention specific company names.
+Use SECTOR ROLE labels instead of company names.
 Structure:
 1. WHAT + WHERE + PEM: "Proyecto de urbanización definitivo [NAME], [MUNI] — PEM €X.XM."
-2. SCALE/CONTEXT: why this location matters, population/corridor, strategic importance. Add here if you find anything relevant and importantabout the project.
+2. SCALE/CONTEXT: why this location matters, population/corridor, strategic importance.
 3. TIMING: phase, estimated timeline, next milestone.
-4. QUANTITIES: any m², viviendas, pipes, machinery from document.
+4. SECTOR CALLOUTS — use ROLE labels, never company names:
+   Gran Constructora / Infraestructura: "Gran Constructora: pre-calificarse para licitación civil — estimado X meses."
+   Alquiler Maquinaria: "Alquiler Maquinaria: excavadoras + compactadores estimado [mes] — contactar promotor ahora."
+   Flexliving / Hospedaje: "Operador Flexliving: contactar al promotor ANTES de comercialización."
+   Materiales Saneamiento: "Materiales PVC: colector DN-X ~Xkm + red abastecimiento DN-X ~Xkm — cotizar YA."
+   Retail / Restauración: "Expansión Retail: zona [tipo] en [muni] — evaluar superficie disponible."
+   Contract Furniture: "Mobiliario Contract: contactar promotor en fase de proyecto básico."
+   RE / Promotores: "Inversión RE: entrada en JC / adquisición de suelo — evaluar ahora."
+5. QUANTITIES: any m², viviendas, pipes, machinery from document.
 
-GOOD ai_evaluation:
-"Proyecto de urbanización definitivo APE 08.21 Las Tablas Oeste, Fuencarral-El Pardo — PEM €106.7M confirmado. Uno de los 3 mayores proyectos urbanización Madrid capital en 5 años: >200.000m² suelo nuevo, viario completo, redes BT/MT, saneamiento y telecomunicaciones. Etapa 1: 24 meses | Etapa 2: 36 meses desde hoy. FCC Construcción: pre-calificarse para licitación civil — pliego técnico estimado en 6-12 meses. Kiloutou: excavadoras 30t + compactadores para movimiento de tierras — inicio obra Q4 2026 estimado. Molecor: colector saneamiento DN400-500 ~3.5km + red abastecimiento DN200 ~2.4km — cotizar YA. CBRE/Muppy: área residencial futura — evaluar posición en JC."
+GOOD ai_evaluation (NO company names — use sector roles):
+"Proyecto de urbanización definitivo APE 08.21 Las Tablas Oeste, Fuencarral-El Pardo — PEM €106.7M confirmado. Uno de los 3 mayores proyectos urbanización Madrid capital en 5 años: >200.000m² suelo nuevo, viario completo, redes BT/MT, saneamiento y telecomunicaciones. Etapa 1: 24 meses | Etapa 2: 36 meses desde hoy. Gran Constructora / Infraestructura: pre-calificarse para licitación civil — pliego técnico estimado en 6-12 meses. Alquiler Maquinaria: excavadoras 30t + compactadores para movimiento de tierras — inicio obra Q4 2026 estimado. Materiales Saneamiento: colector DN400-500 ~3.5km + red abastecimiento DN200 ~2.4km — cotizar YA. Inversión RE: área residencial futura — evaluar posición en JC."
 
-BAD (NEVER):
-"Proyecto de construcción en Getafe — PEM no declarado. Revisar el PDF original."
+BAD (NEVER — do not do either of these):
+"FCC Construcción: pre-calificarse..." ← FORBIDDEN — real company name
+"Proyecto de construcción en Getafe — PEM no declarado." ← FORBIDDEN — too generic
 
 SUPPLIES NEEDED — ULTRA-DETAILED WITH EXACT QUANTITIES from [TABLA_DATOS_FINANCIEROS]:
 Urbanización: "🔧 Red BT 20kV + X CT-630kVA + alumbrado LED Xm | 🛒 Hormigón HA-25 Xm³, tubería PVC DN-X Lkm, zahorra Z-1 Xt | 🚧 Excavadora 30t, compactador 12t, extendedora"
@@ -4280,7 +4282,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v14 (datos-noProbe+21kws+CM14d+Apollo+watchlist+BOCM107+BORME)")
+    log(f"🏗️  PlanningScout Madrid — Engine v14.1 (datos-CSV+ATOM+HTML-fix+noAPIcall)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
@@ -4523,11 +4525,7 @@ def run():
                             log(f"  ❌ datos.madrid future: {ex}"); dm_errors += 1
                 log(f"  datos.madrid: ✅{dm_saved} saved | ⏭️{dm_skipped} skipped | ❌{dm_errors} errors")
             else:
-                log(f"  datos.madrid: 0 licencias — ")
-                if not DATOS_MADRID_PROXY:
-                    log(f"     WAF/IP block. Set DATOS_MADRID_PROXY secret (see engine source for setup).")
-                else:
-                    log(f"     No new licencias in date range via proxy (normal if no new grants).")
+                pass   # datos.madrid logs its own status internally
 
         # ── Remove already-seen from the collected BOCM queue ──────────────────
         all_urls = [u for u in all_urls
@@ -5191,259 +5189,423 @@ def process_cm_contrato(url, title, summary, idx, total):
 
 def search_datos_madrid(date_from, date_to, global_seen):
     """
-    SOURCE 7: datos.madrid.es Open Data API — Licencias Urbanísticas.
+    SOURCE 7: datos.madrid.es — Licencias Urbanísticas Ayuntamiento de Madrid.
 
-    datos.madrid.es publishes EVERY individual licencia urbanística granted by
-    the Ayuntamiento de Madrid since 2015. This data is NOT in BOCM.
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║  ROOT CAUSE FIX (v14.1)                                         ║
+    ║                                                                  ║
+    ║  Previous error: used /api/3/action/datastore_search → HTTP 404 ║
+    ║  datos.madrid.es does NOT run CKAN Datastore. That endpoint      ║
+    ║  simply does not exist on their server.                          ║
+    ║                                                                  ║
+    ║  Correct URL: /egob/catalogo/300193-10-licencias-urbanisticas    ║
+    ║  The portal publishes CSV/ATOM/JSON files at this path.          ║
+    ╚══════════════════════════════════════════════════════════════════╝
 
-    ACCESS STRATEGY (WAF bypass):
-    ──────────────────────────────
-    datos.madrid.es blocks cloud/datacenter IPs at CDN level.
-    We use a layered approach — most reliable first:
+    ACCESS TIERS (tried in order, first success wins):
 
-    TIER 1 (always wins): Cloudflare Worker proxy
-      Set DATOS_MADRID_PROXY = https://your-worker.workers.dev in GitHub Secrets.
-      The Worker runs on Cloudflare edge IPs that datos.madrid.es does not block.
-      Setup: workers.cloudflare.com → new Worker → paste JS from DATOS_MADRID_PROXY
-      constant → Deploy → copy URL → add as GitHub secret.
+    TIER 1 — Proxy (DATOS_MADRID_PROXY secret set):
+      Cloudflare Worker routes request through edge IP → always works
+      Setup: workers.cloudflare.com (5 min, free) — see constant near top
 
-    TIER 2 (fallback, no setup needed): Direct with extended timeout
-      GitHub Actions IPs get TCP connection accepted (not instantly rejected).
-      The server stalls the HTTP response (tarpit behavior).
-      We use 45s timeout, full browser fingerprint, session warmup.
-      Works occasionally depending on CDN edge node assignment.
+    TIER 2 — Direct CSV download:
+      https://datos.madrid.es/egob/catalogo/300193-10-licencias-urbanisticas.csv
+      GitHub Actions IPs reach the origin (proved by 404 on /api/3/).
+      Origin serves /egob/catalogo/ files → should return 200.
 
-    TIER 3 (last resort): Alternative CKAN SQL endpoint
-      Different URL path, sometimes different CDN routing.
+    TIER 3 — Direct ATOM feed:
+      https://datos.madrid.es/egob/catalogo/300193-10-licencias-urbanisticas.atom
+      Same origin path, XML format, smaller than CSV.
 
-    NO FAST-FAIL PROBE — the probe was wrong:
-      Sandbox/AWS IPs → instant 403 (probe detects correctly but exits early)
-      GitHub Actions IPs → TCP connects, HTTP stalls (probe times out but so does GH)
-      Solution: let each keyword try independently; abort after 5 consecutive fails.
+    TIER 4 — HTML search scraping:
+      https://datos.madrid.es/dataset/?q=obra+mayor&sort=issued+desc
+      Scrape search result cards → find dataset download links.
+
+    FIELDS IN CSV (exact column names):
+      EXPEDIENTE, CLASE_LICENCIA, OBJETO, DESCRIPCION, DIRECCION,
+      BARRIO, DISTRITO, FECHA_SOLICITUD, FECHA_OTORGAMIENTO,
+      RESULTADO, PEM, COORDINADA_X, COORDINADA_Y
     """
-    DATOS_API   = "https://datos.madrid.es/api/3/action/datastore_search"
-    DATOS_SQL   = "https://datos.madrid.es/api/3/action/datastore_search_sql"
-    RESOURCE_ID = "300193-10-licencias-urbanisticas"
+    # ── Constants ─────────────────────────────────────────────────────────────
+    BASE        = "https://datos.madrid.es"
+    # Auto-discover the real download URL from the dataset landing page.
+    # datos.madrid changes the resource suffix (300193-0-, 300193-10-, 300193-11-, etc.)
+    # so we fetch the dataset page and scrape the actual CSV/ATOM href from it.
+    _DATASET_PAGE = f"{BASE}/portal/site/egob/menuitem.400a817358ce98c34e937436a8a409a0/?vgnextoid=300193&vgnextchannel=374512b9ace9f310VgnVCM100000171f5a0aRCRD"
+    _DATASET_PAGE_ALT = f"{BASE}/egob/catalogo/300193-0-licencias-urbanisticas"
 
-    # ── 21 keywords — ordered by commercial value ─────────────────────────────
-    # Based on DoubleTrade data coverage: cambio de uso, obra mayor, rehabilitación
-    # are the three highest-yield types for Madrid capital licencias.
+    # Candidate URLs tried in order — first 200 wins
+    _CSV_CANDIDATES = [
+        f"{BASE}/egob/catalogo/300193-0-licencias-urbanisticas.csv",
+        f"{BASE}/egob/catalogo/300193-10-licencias-urbanisticas.csv",
+        f"{BASE}/egob/catalogo/300193-11-licencias-urbanisticas.csv",
+        f"{BASE}/egob/catalogo/licencias-urbanisticas.csv",
+    ]
+    _ATOM_CANDIDATES = [
+        f"{BASE}/egob/catalogo/300193-0-licencias-urbanisticas.atom",
+        f"{BASE}/egob/catalogo/300193-10-licencias-urbanisticas.atom",
+        f"{BASE}/egob/catalogo/300193-11-licencias-urbanisticas.atom",
+    ]
+    HTML_SEARCH = f"{BASE}/egob/catalogo/300193-0-licencias-urbanisticas"
+
+    def _discover_download_urls():
+        """Fetch the dataset landing page and extract actual CSV/ATOM hrefs."""
+        discovered_csv  = None
+        discovered_atom = None
+        for page_url in [_DATASET_PAGE_ALT, _DATASET_PAGE, HTML_SEARCH]:
+            r, err = _fetch(page_url, accept="text/html,*/*", timeout=20)
+            if not r: continue
+            soup = BeautifulSoup(r.text, "html.parser")
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                full = (f"{BASE}{href}" if href.startswith("/") else href)
+                if ".csv" in href.lower() and "licencias" in href.lower() and not discovered_csv:
+                    discovered_csv = full
+                if ".atom" in href.lower() and "licencias" in href.lower() and not discovered_atom:
+                    discovered_atom = full
+            if discovered_csv:
+                log(f"  🏛️ datos.madrid: found CSV href → {discovered_csv[-60:]}")
+                break
+        return discovered_csv, discovered_atom
+
+    # Try auto-discovery, then fall back to candidates
+    discovered_csv, discovered_atom = _discover_download_urls()
+    CSV_URL  = discovered_csv  or _CSV_CANDIDATES[0]
+    ATOM_URL = discovered_atom or _ATOM_CANDIDATES[0]
+
+    # Build candidate lists (discovered URL first)
+    _csv_urls_to_try = ([discovered_csv] if discovered_csv else []) + [
+        u for u in _CSV_CANDIDATES if u != discovered_csv
+    ]
+    _atom_urls_to_try = ([discovered_atom] if discovered_atom else []) + [
+        u for u in _ATOM_CANDIDATES if u != discovered_atom
+    ]
+
+    # CF Worker proxy URL for this resource (if set)
+    PROXY_CSV   = (f"{DATOS_MADRID_PROXY}?url={quote(CSV_URL, safe='')}"
+                   if DATOS_MADRID_PROXY else None)
+    PROXY_ATOM  = (f"{DATOS_MADRID_PROXY}?url={quote(ATOM_URL, safe='')}"
+                   if DATOS_MADRID_PROXY else None)
+
+    # ── Fixed PEM parser ──────────────────────────────────────────────────────
+    def _parse_pem_es(raw):
+        s = str(raw or "").strip()
+        if not s or s in ("None","nan",""): return 0.0
+        try:
+            if "," in s and "." in s: return float(s.replace(".","").replace(",","."))
+            if "," in s:              return float(s.replace(",","."))
+            return float(s)
+        except Exception:             return 0.0
+
+    from dateutil import parser as _dp
+
+    # ── Shared browser-fingerprinted session ──────────────────────────────────
+    _dm_sess = requests.Session()
+    _dm_sess.verify = False
+    _dm_sess.headers.update({
+        "User-Agent":               ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                     "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                     "Chrome/124.0.0.0 Safari/537.36"),
+        "Accept":                   "text/html,application/xhtml+xml,*/*;q=0.8",
+        "Accept-Language":          "es-ES,es;q=0.9,en;q=0.8",
+        "Accept-Encoding":          "gzip, deflate, br",
+        "Referer":                  f"{BASE}/dataset/300193-0-licencias-urbanisticas",
+        "Sec-Fetch-Dest":           "document",
+        "Sec-Fetch-Mode":           "navigate",
+        "Sec-Fetch-Site":           "same-origin",
+        "Cache-Control":            "no-cache",
+        "Connection":               "keep-alive",
+        "Upgrade-Insecure-Requests":"1",
+    })
+
+    # ── Generic fetch helper ──────────────────────────────────────────────────
+    def _fetch(url, accept="text/csv,text/plain,*/*", timeout=60):
+        """Returns (response, error_str). Tries proxy first if configured."""
+        # Proxy path
+        if DATOS_MADRID_PROXY and "egob/catalogo" in url:
+            proxy_url = f"{DATOS_MADRID_PROXY}?url={quote(url, safe='')}"
+            try:
+                r = requests.get(proxy_url, timeout=30, verify=False,
+                                 headers={"User-Agent":"PlanningScout/1.0",
+                                          "Accept": accept})
+                if r.status_code == 200: return r, None
+                return None, f"proxy-{r.status_code}"
+            except Exception as e:
+                return None, f"proxy-error"
+
+        # Direct path
+        s = _dm_sess
+        s.headers["Accept"] = accept
+        try:
+            r = s.get(url, timeout=timeout, allow_redirects=True)
+            if r.status_code == 200: return r, None
+            return None, f"http-{r.status_code}"
+        except requests.Timeout:
+            return None, "timeout"
+        except Exception as e:
+            return None, f"error-{type(e).__name__}"
+
+    # ── Keyword filter ────────────────────────────────────────────────────────
     DATOS_KEYWORDS = [
-        # Hospe / Sharing Co — cambio de uso is the holy grail for flexliving
+        # (search_term, profile_hint) — matched against OBJETO + DESCRIPCION
         ("cambio de uso",              "hospe+mep+retail"),
         ("cambio de destino",          "hospe+mep+retail"),
         ("modificación de uso",        "hospe+mep+retail"),
-        ("cambio de actividad",        "hospe+retail"),
-        # Primera ocupación — building done, operator needed TODAY
         ("primera ocupación",          "hospe+mep"),
-        ("licencia de primera",        "hospe+mep"),
-        # Obra mayor — Gran Constructora + MEP + Kiloutou
         ("obra mayor",                 "constructora+mep+alquiler+materiales"),
         ("nueva construcción",         "constructora+mep+alquiler+materiales"),
         ("nueva planta",               "constructora+mep+alquiler+materiales"),
-        # Rehabilitación — MEP + hospe
         ("rehabilitación",             "hospe+mep+materiales"),
         ("reforma integral",           "hospe+mep+materiales"),
         ("gran rehabilitación",        "hospe+mep+materiales"),
-        # Declaración responsable — fast-track licencias
         ("declaración responsable",    "mep+constructora"),
-        # ACTIU targets — offices, hotels, coworking
         ("oficinas",                   "actiu+mep"),
         ("hotel",                      "actiu+mep+hospe"),
         ("coworking",                  "actiu+mep"),
         ("residencia de estudiantes",  "actiu+con+mep"),
-        # Retail
         ("local comercial",            "retail+mep"),
-        ("apertura de",                "retail"),
-        # Industrial / logístico
         ("nave industrial",            "industrial+alquiler+materiales"),
         ("almacén",                    "industrial+materiales"),
     ]
+    KW_SET   = {kw for kw,_ in DATOS_KEYWORDS}
+    KW_MAP   = {kw: hint for kw,hint in DATOS_KEYWORDS}
 
-    # ── Fixed PEM parser ──────────────────────────────────────────────────────
-    def _parse_pem_es(raw):
-        """Parse Spanish number '150.000,00' → 150000.0"""
-        s = str(raw or "").strip()
-        if not s or s in ("None", "nan", ""): return 0.0
-        try:
-            if "," in s and "." in s:  return float(s.replace(".", "").replace(",", "."))
-            if "," in s:               return float(s.replace(",", "."))
-            return float(s)
-        except Exception:              return 0.0
+    # ── Noise filter ──────────────────────────────────────────────────────────
+    _DM_NOISE = [
+        "cambio de escaparate", "cambio de rótulo", "instalación de rótulo",
+        "velador", "terraza desmontable", "antena de telefonía",
+        "cata de terreno", "ensayo geotécnico",
+    ]
 
-    from dateutil import parser as _dp
+    # ── Record filter + append ────────────────────────────────────────────────
+    results  = []
+    seen_exp = set()
 
-    # ── Session builder — full browser fingerprint ────────────────────────────
-    def _make_dm_session():
-        s = requests.Session()
-        s.verify = False
-        s.headers.update({
-            "User-Agent":      ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                "Chrome/124.0.0.0 Safari/537.36"),
-            "Accept":          "application/json, text/plain, */*",
-            "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Origin":          "https://datos.madrid.es",
-            "Referer":         "https://datos.madrid.es/dataset/300193-0-licencias-urbanisticas",
-            "DNT":             "1",
-            "Connection":      "keep-alive",
-            "Sec-Fetch-Dest":  "empty",
-            "Sec-Fetch-Mode":  "cors",
-            "Sec-Fetch-Site":  "same-origin",
-        })
-        return s
+    def _process_record(rec: dict):
+        """Accept/reject one licence record. Appends to results if good."""
+        exp = str(rec.get("EXPEDIENTE","") or "").strip()
+        if not exp or exp in seen_exp: return
 
-    # ── Proxy-aware request ───────────────────────────────────────────────────
-    def _dm_get(api_url, sess=None):
-        """
-        Returns (response_or_None, fail_reason_str).
-        fail_reason: 'blocked' | 'timeout' | 'error' | None (success)
-        """
-        if DATOS_MADRID_PROXY:
-            # TIER 1: Cloudflare Worker proxy — always bypasses WAF
-            proxy_url = f"{DATOS_MADRID_PROXY}?url={quote(api_url, safe='')}"
+        # Date filter
+        fecha = (str(rec.get("FECHA_OTORGAMIENTO","") or "")
+                 or str(rec.get("FECHA_SOLICITUD","")  or "")).strip()
+        if fecha:
             try:
-                r = requests.get(proxy_url, timeout=25, verify=False,
-                                 headers={"User-Agent": "PlanningScout/1.0",
-                                          "Accept":     "application/json"})
-                if r.status_code == 200: return r, None
-                return None, f"proxy-{r.status_code}"
-            except requests.Timeout:
-                return None, "proxy-timeout"
-            except Exception as e:
-                return None, f"proxy-error"
+                rec_date = _dp.parse(fecha[:10]).date()
+                if rec_date < date_from.date() or rec_date > date_to.date():
+                    return
+            except Exception:
+                pass   # keep if parse fails
 
-        # TIER 2: Direct with full session + 45s timeout
-        s = sess or _make_dm_session()
-        try:
-            r = s.get(api_url, timeout=45, allow_redirects=True)
-            if r.status_code == 200:
-                return r, None
-            if r.status_code == 403:
-                return None, "blocked"    # definitive CDN block for this IP
-            return None, f"http-{r.status_code}"
-        except requests.Timeout:
-            return None, "timeout"        # GH Actions tarpit — try next keyword
-        except Exception:
-            return None, "error"
+        # Status filter
+        resultado = str(rec.get("RESULTADO","") or "").strip().lower()
+        if resultado in ("inadmitida","desistida","caducada","denegada","archivada"):
+            return
 
-    # ── Shared session for all direct requests (avoids repeated TLS handshakes) ─
-    _dm_sess = _make_dm_session()
+        obj      = str(rec.get("OBJETO","")      or "").lower()
+        desc_l   = str(rec.get("DESCRIPCION","") or "").lower()
+        barrio   = str(rec.get("BARRIO","")      or "").lower()
+        combined = f"{obj} {desc_l} {barrio}"
 
-    # ── Source status log ─────────────────────────────────────────────────────
-    if DATOS_MADRID_PROXY:
-        log(f"  🔀 datos.madrid: via proxy {DATOS_MADRID_PROXY[:50]}")
-    else:
-        log(f"  🌐 datos.madrid: direct (45s timeout per keyword — may work from GH Actions)")
-
-    # ── Query loop ────────────────────────────────────────────────────────────
-    results   = []
-    seen_exp  = set()
-    consec_fail = 0   # consecutive keyword failures
-    blocked_at  = None
-
-    for kw, _profile_hint in DATOS_KEYWORDS:
-        if not time_ok(need_s=30): break
-        if consec_fail >= 5:
-            log(f"  ⚠️ datos.madrid: 5 consecutive failures — aborting remaining keywords")
-            break
-        if blocked_at:
-            # Definitive 403 block detected — no point trying more keywords
-            break
-
-        api_url = (f"{DATOS_API}?resource_id={quote(RESOURCE_ID)}"
-                   f"&q={quote(kw)}&limit=100&offset=0")
-
-        r, fail_reason = _dm_get(api_url, _dm_sess)
-
-        if r is None:
-            if fail_reason == "blocked":
-                blocked_at = kw
-                log(f"  ❌ datos.madrid: WAF/IP block (HTTP 403) — this IP is blocked.")
-                log(f"     Fix: deploy Cloudflare Worker proxy (5 min, free)")
-                log(f"     Setup instructions in engine source at DATOS_MADRID_PROXY constant")
+        # Keyword match
+        matched_hint = ""
+        for kw, hint in DATOS_KEYWORDS:
+            if kw in combined:
+                matched_hint = hint
                 break
-            consec_fail += 1
-            log(f"  ⚠️ datos.madrid [{kw}]: {fail_reason} ({consec_fail}/5)")
-            time.sleep(1.5)
-            continue
+        if not matched_hint: return
 
-        consec_fail = 0   # reset on any success
+        # Exclusion + noise
+        if any(exc in combined for exc in KEYWORDS_EXCLUDE): return
+        if any(n   in combined for n   in _DM_NOISE):        return
 
-        try:
-            data = r.json()
-        except Exception:
-            continue
+        # PEM filter
+        pem_val = _parse_pem_es(rec.get("PEM"))
+        if 0 < pem_val < 30_000: return
 
-        if not data.get("success"):
-            continue
+        seen_exp.add(exp)
+        addr       = str(rec.get("DIRECCION","") or "").strip()
+        dist       = str(rec.get("DISTRITO","")  or "").strip()
+        barrio_raw = str(rec.get("BARRIO","")    or "").strip()
+        if dist and barrio_raw: addr = f"{addr}, {barrio_raw} ({dist})"
+        elif dist:              addr = f"{addr} ({dist})"
 
-        records = data.get("result", {}).get("records", [])
-        kw_hits = 0
+        exp_enc    = exp.replace("/","%2F").replace(" ","%20")
+        source_url = (f"https://sede.madrid.es/portal/site/tramites/"
+                      f"menuitem.62876cb64654a55e2dbd7003a8a409a0/"
+                      f"?expediente={exp_enc}")
+        results.append((exp, rec, source_url, matched_hint))
 
-        for rec in records:
-            exp = str(rec.get("EXPEDIENTE", "")).strip()
-            if not exp or exp in seen_exp:
-                continue
+    # ══════════════════════════════════════════════════════════════════════════
+    # TIER 1 + 2: Try CSV download — try all candidate URLs until one works
+    # ══════════════════════════════════════════════════════════════════════════
+    if time_ok(need_s=60):
+        r_csv = None; err_csv = "no_candidates"
+        for _csv_try in _csv_urls_to_try:
+            log(f"  🏛️ datos.madrid: CSV → {_csv_try[-70:]}")
+            r_csv, err_csv = _fetch(_csv_try,
+                                    accept="text/csv,application/octet-stream,*/*",
+                                    timeout=90)
+            if r_csv and len(r_csv.content) > 1000:
+                log(f"  🏛️ datos.madrid: CSV received ({len(r_csv.content)//1024}KB)")
+                break
+            log(f"  ⚠️ datos.madrid CSV [{_csv_try[-40:]}]: {err_csv}")
 
-            # Date filter — use FECHA_OTORGAMIENTO or FECHA_SOLICITUD fallback
-            fecha = (str(rec.get("FECHA_OTORGAMIENTO","") or "")
-                     or str(rec.get("FECHA_SOLICITUD","")  or "")).strip()
-            if fecha:
+        if r_csv and len(r_csv.content) > 1000:
+            log(f"  🏛️ datos.madrid: CSV received ({len(r_csv.content)//1024}KB) — parsing")
+            try:
+                import csv as _csv, io as _io
+                # Detect encoding
+                raw = r_csv.content
+                enc = "utf-8-sig"
+                for _enc in ("utf-8-sig","utf-8","latin-1","cp1252","iso-8859-1"):
+                    try: raw.decode(_enc); enc = _enc; break
+                    except: pass
+
+                text    = raw.decode(enc, errors="replace")
+                reader  = _csv.DictReader(_io.StringIO(text), delimiter=";")
+                # Normalise header names (strip spaces, uppercase)
+                _rows_scanned = 0
+                for row in reader:
+                    # Normalise keys to uppercase stripped
+                    rec_norm = {k.strip().upper(): v.strip() for k,v in row.items()}
+                    # Map common alternate column names
+                    for _alias, _canon in [
+                        ("DESCRIPCION_OBRA","DESCRIPCION"),
+                        ("TIPO_LICENCIA","CLASE_LICENCIA"),
+                        ("TIPO","OBJETO"),
+                        ("FECHA_CONCESION","FECHA_OTORGAMIENTO"),
+                        ("IMPORTE","PEM"),
+                        ("NUMERO_EXPEDIENTE","EXPEDIENTE"),
+                        ("IMPORTE_OBRA","PEM"),
+                    ]:
+                        if _alias in rec_norm and _canon not in rec_norm:
+                            rec_norm[_canon] = rec_norm[_alias]
+                    _process_record(rec_norm)
+                    _rows_scanned += 1
+                log(f"  🏛️ datos.madrid: scanned {_rows_scanned} rows → {len(results)} hits")
+            except Exception as e:
+                log(f"  ⚠️ datos.madrid CSV parse error: {e}")
+        else:
+            log(f"  ⚠️ datos.madrid CSV: {err_csv} — trying ATOM feed")
+
+            # ══════════════════════════════════════════════════════════════════
+            # TIER 3: ATOM feed — try all candidates
+            # ══════════════════════════════════════════════════════════════════
+            r_atom = None; err_atom = "no_candidates"
+            for _atom_try in _atom_urls_to_try:
+                log(f"  🏛️ datos.madrid: ATOM → {_atom_try[-70:]}")
+                r_atom, err_atom = _fetch(_atom_try,
+                                          accept="application/atom+xml,application/xml,*/*",
+                                          timeout=60)
+                if r_atom and len(r_atom.content) > 500:
+                    log(f"  🏛️ datos.madrid: ATOM received ({len(r_atom.content)//1024}KB)")
+                    break
+                log(f"  ⚠️ datos.madrid ATOM [{_atom_try[-40:]}]: {err_atom}")
+            if r_atom and len(r_atom.content) > 500:
+                log(f"  🏛️ datos.madrid: ATOM received ({len(r_atom.content)//1024}KB)")
                 try:
-                    rec_date = _dp.parse(fecha[:10]).date()
-                    if rec_date < date_from.date() or rec_date > date_to.date():
-                        continue
-                except Exception:
-                    pass   # keep if parse fails
+                    from xml.etree import ElementTree as _ET
+                    root = _ET.fromstring(r_atom.content)
+                    _NS  = {"a":"http://www.w3.org/2005/Atom",
+                            "dc":"http://purl.org/dc/elements/1.1/"}
+                    entries = (root.findall(".//a:entry", _NS)
+                               or root.findall(".//entry"))
+                    for entry in entries:
+                        def _t(tag):
+                            for ns in ["a:",""]:
+                                el = entry.find(f"{ns}{tag}", _NS) if ns=="a:" else entry.find(tag)
+                                if el is not None and el.text: return el.text.strip()
+                            return ""
+                        # Parse content/summary as key:value pairs
+                        content_raw = _t("content") or _t("summary") or ""
+                        rec_atom: dict = {}
+                        for line in content_raw.replace("<br/>","\n").split("\n"):
+                            if ":" in line:
+                                k, _, v = line.partition(":")
+                                rec_atom[k.strip().upper()] = v.strip()
+                        # Fill from standard ATOM fields
+                        if not rec_atom.get("EXPEDIENTE"):
+                            id_el = entry.find("a:id",_NS) or entry.find("id")
+                            if id_el is not None and id_el.text:
+                                # Extract expediente from URL or id
+                                m_exp = re.search(r'expediente=([^&"]+)', id_el.text)
+                                if m_exp: rec_atom["EXPEDIENTE"] = m_exp.group(1)
+                        # Use ATOM updated/published as date
+                        for tag in ["updated","published"]:
+                            dt_el = entry.find(f"a:{tag}",_NS) or entry.find(tag)
+                            if dt_el is not None and dt_el.text:
+                                if not rec_atom.get("FECHA_OTORGAMIENTO"):
+                                    rec_atom["FECHA_OTORGAMIENTO"] = dt_el.text[:10]
+                                break
+                        # Title as OBJETO if missing
+                        if not rec_atom.get("OBJETO"):
+                            rec_atom["OBJETO"] = _t("title")
+                        _process_record(rec_atom)
+                    log(f"  🏛️ datos.madrid ATOM: {len(entries)} entries → {len(results)} hits")
+                except Exception as e:
+                    log(f"  ⚠️ datos.madrid ATOM parse error: {e}")
+            else:
+                log(f"  ⚠️ datos.madrid ATOM: {err_atom}")
 
-            # Skip failed/withdrawn results
-            resultado = str(rec.get("RESULTADO","") or "").strip().lower()
-            if resultado in ("inadmitida","desistida","caducada","denegada","archivada"):
-                continue
+                # ════════════════════════════════════════════════════════════
+                # TIER 4: HTML search scraping
+                # ════════════════════════════════════════════════════════════
+                log(f"  🌐 datos.madrid: trying HTML search scrape...")
+                _scraped = 0
+                for kw_raw, _hint in DATOS_KEYWORDS[:8]:   # top 8 by value
+                    if not time_ok(need_s=20): break
+                    html_url = (f"{BASE}/dataset/?q={quote(kw_raw)}"
+                                f"&sort=issued+desc&rows=50")
+                    r_html, _ = _fetch(html_url, accept="text/html,*/*", timeout=30)
+                    if not r_html: continue
+                    soup = BeautifulSoup(r_html.text, "html.parser")
+                    # Each result card has class "dataset-item" or similar
+                    cards = (soup.select(".dataset-item") or
+                             soup.select("[data-search-item]") or
+                             soup.select("article.package-item") or
+                             soup.select(".module-resource"))
+                    for card in cards:
+                        title_el = (card.select_one("h3 a") or
+                                    card.select_one(".heading a") or
+                                    card.select_one("a[href*='dataset']"))
+                        if not title_el: continue
+                        title_txt = title_el.get_text(strip=True)
+                        href      = title_el.get("href","")
+                        full_href = (f"{BASE}{href}" if href.startswith("/") else href)
+                        if not any(kw in title_txt.lower() for kw in KW_SET): continue
+                        # Build minimal rec from card text
+                        desc_el = card.select_one(".notes") or card.select_one("p")
+                        desc_txt = desc_el.get_text(strip=True) if desc_el else ""
+                        rec_html = {
+                            "OBJETO":      title_txt,
+                            "DESCRIPCION": desc_txt,
+                            "EXPEDIENTE":  re.sub(r"[^A-Za-z0-9/\-]","",
+                                                   title_txt[:30].replace(" ","-")),
+                        }
+                        _process_record(rec_html)
+                    _scraped += len(cards)
+                    time.sleep(0.5)
 
-            # Build combined text for filtering
-            obj      = str(rec.get("OBJETO","")      or "").lower()
-            desc_l   = str(rec.get("DESCRIPCION","") or "").lower()
-            barrio   = str(rec.get("BARRIO","")      or "").lower()
-            distrito = str(rec.get("DISTRITO","")    or "").lower()
-            combined = f"{obj} {desc_l} {barrio} {distrito}"
+                if _scraped:
+                    log(f"  🌐 datos.madrid HTML: {_scraped} cards scraped → {len(results)} hits")
+                else:
+                    # All tiers failed — diagnose precisely
+                    all_errors = f"csv={err_csv}, atom={err_atom}"
+                    if "403" in all_errors or "429" in all_errors:
+                        log(f"  ❌ datos.madrid: IP/WAF block — set DATOS_MADRID_PROXY (Cloudflare Worker)")
+                        log(f"     Setup: workers.cloudflare.com → free → see engine source lines 80-93")
+                    elif "404" in all_errors:
+                        log(f"  ❌ datos.madrid: HTTP 404 — URL path changed on their server.")
+                        log(f"     Auto-discovery tried but found no valid link.")
+                        log(f"     ACTION: go to https://datos.madrid.es and search 'licencias urbanisticas'")
+                        log(f"     Find the CSV download link and update _CSV_CANDIDATES in engine source.")
+                    elif "timeout" in all_errors:
+                        log(f"  ⚠️ datos.madrid: timeout — server slow. Set DATOS_MADRID_PROXY for reliability.")
+                    else:
+                        log(f"  ⚠️ datos.madrid: all tiers failed ({all_errors})")
 
-            if any(exc in combined for exc in KEYWORDS_EXCLUDE):
-                continue
-
-            # Noise filter — very specific minor works
-            _DM_NOISE = [
-                "cambio de escaparate", "cambio de rótulo", "instalación de rótulo",
-                "velador", "terraza desmontable", "cata de terreno", "ensayo geotécnico",
-                "antena de telefonía",
-            ]
-            if any(n in combined for n in _DM_NOISE):
-                continue
-
-            # Skip micro works (<€30K PEM)
-            pem_val = _parse_pem_es(rec.get("PEM"))
-            if 0 < pem_val < 30_000:
-                continue
-
-            seen_exp.add(exp)
-            exp_enc    = exp.replace("/","%2F").replace(" ","%20")
-            source_url = (f"https://sede.madrid.es/portal/site/tramites/"
-                          f"menuitem.62876cb64654a55e2dbd7003a8a409a0/"
-                          f"?expediente={exp_enc}")
-            results.append((exp, rec, source_url, _profile_hint))
-            kw_hits += 1
-
-        if kw_hits > 0:
-            log(f"  🏛️ datos.madrid [{kw}]: +{kw_hits}")
-        time.sleep(0.5)
-
-    if not results and not blocked_at:
-        log(f"  🏛️ datos.madrid: 0 licencias in date range "
-            f"({'via proxy' if DATOS_MADRID_PROXY else 'direct — if consistently 0, set DATOS_MADRID_PROXY'})")
-    elif results:
-        log(f"  🏛️ datos.madrid: {len(results)} licencias found total")
+    log(f"  🏛️ datos.madrid: {len(results)} licencias total")
     return results
 
 
