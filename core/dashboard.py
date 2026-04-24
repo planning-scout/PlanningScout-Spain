@@ -1014,8 +1014,6 @@ def build_compact_row(row: dict, full_card_html: str) -> str:
     )
 
 def build_card(row, is_watched=False, inside_details=False):
-    # NOTE: Seguir + priority buttons are native st.button() in the render loop.
-    # No <a href> action links — those caused new-tab navigation in Streamlit.
     """
     Build one lead card with ONLY inline styles.
     This guarantees correct rendering regardless of Streamlit's Markdown parser.
@@ -1264,9 +1262,7 @@ def build_card(row, is_watched=False, inside_details=False):
         f'&body={html_lib.escape("Municipio: " + muni + chr(10) + "Dirección: " + addr + chr(10) + "Expediente: " + expd + chr(10) + "URL: " + bocm)}'
     )
 
-    # Seguir / priority buttons are now native st.button() calls in the render
-    # loop — outside the HTML card. This prevents Streamlit's <a href> new-tab bug.
-    _seguir_el  = ""
+    _seguir_el = ""
     _prio_group = ""
 
     _reportar_el = (
@@ -1318,6 +1314,8 @@ def build_card(row, is_watched=False, inside_details=False):
         "primera_ocupacion": ("⚪", "1ª Ocupación",           "#f8fafc", "#64748b", "#e2e8f0"),
         "en_tramite":        ("🟠", "En trámite",             "#fff7ed", "#c2410c", "#fed7aa"),
         "solicitud":         ("⚡", "Pre-lead · En solicitud","#fffbeb", "#b45309", "#fde68a"),
+        "adjudicacion":      ("🏆", "Adjudicación",           "#f0f9ff", "#0369a1", "#bae6fd"),
+        "en_obra":           ("🏗️", "En obra",               "#eff4fb", "#1e3a5f", "#bfdbfe"),
     }
     if fase_val and fase_val in _FASE_LABELS:
         fi, ft, fb, fc, fbd = _FASE_LABELS[fase_val]
@@ -1439,43 +1437,42 @@ def _geocode_nominatim(query):
 # Madrid municipality centroids — instant fallback when address geocoding fails.
 # Covers the most common BOCM municipalities for retail/expansion profiles.
 _MUNI_CENTROIDS = {
-    "madrid":              (40.4168, -3.7038),
-    "alcalá de henares":   (40.4818, -3.3647),
-    "alcobendas":          (40.5499, -3.6414),
-    "alcorcón":            (40.3490, -3.8242),
-    "algete":              (40.5956, -3.4965),
-    "arganda del rey":     (40.3015, -3.4422),
-    "aranjuez":            (40.0332, -3.6019),
-    "boadilla del monte":  (40.4071, -3.8759),
-    "brunete":             (40.4014, -3.9976),
-    "collado villalba":    (40.6330, -4.0046),
-    "coslada":             (40.4227, -3.5650),
-    "fuenlabrada":         (40.2839, -3.7982),
-    "galapagar":           (40.5761, -4.0048),
-    "getafe":              (40.3053, -3.7326),
-    "humanes de madrid":   (40.2593, -3.8270),
+    "madrid": (40.4168, -3.7038),
+    "alcalá de henares": (40.4818, -3.3647),
+    "alcobendas": (40.5499, -3.6414),
+    "alcorcón": (40.3490, -3.8242),
+    "algete": (40.5956, -3.4965),
+    "arganda del rey": (40.3015, -3.4422),
+    "aranjuez": (40.0332, -3.6019),
+    "boadilla del monte": (40.4071, -3.8759),
+    "brunete": (40.4014, -3.9976),
+    "collado villalba": (40.6330, -4.0046),
+    "coslada": (40.4227, -3.5650),
+    "fuenlabrada": (40.2839, -3.7982),
+    "galapagar": (40.5761, -4.0048),
+    "getafe": (40.3053, -3.7326),
+    "humanes de madrid": (40.2593, -3.8270),
     "las rozas de madrid": (40.4933, -3.8728),
-    "leganés":             (40.3283, -3.7640),
-    "majadahonda":         (40.4734, -3.8718),
-    "mejorada del campo":  (40.3961, -3.4920),
-    "móstoles":            (40.3220, -3.8642),
-    "navalcarnero":        (40.2851, -4.0127),
+    "leganés": (40.3283, -3.7640),
+    "majadahonda": (40.4734, -3.8718),
+    "mejorada del campo": (40.3961, -3.4920),
+    "móstoles": (40.3220, -3.8642),
+    "navalcarnero": (40.2851, -4.0127),
     "paracuellos de jarama": (40.5065, -3.5271),
-    "parla":               (40.2381, -3.7760),
-    "pinto":               (40.2427, -3.6974),
-    "pozuelo de alarcón":  (40.4349, -3.8131),
-    "rivas-vaciamadrid":   (40.3556, -3.5218),
+    "parla": (40.2381, -3.7760),
+    "pinto": (40.2427, -3.6974),
+    "pozuelo de alarcón": (40.4349, -3.8131),
+    "rivas-vaciamadrid": (40.3556, -3.5218),
     "san fernando de henares": (40.4245, -3.5368),
     "san sebastián de los reyes": (40.5534, -3.6281),
-    "torrejón de ardoz":   (40.4586, -3.4795),
-    "tres cantos":         (40.5951, -3.7078),
-    "valdemoro":           (40.1910, -3.6747),
+    "torrejón de ardoz": (40.4586, -3.4795),
+    "tres cantos": (40.5951, -3.7078),
+    "valdemoro": (40.1910, -3.6747),
     "velilla de san antonio": (40.3774, -3.5115),
     "villanueva de la cañada": (40.4521, -3.9849),
     "villanueva del pardillo": (40.4748, -3.9354),
     "ajalvir": (40.5415, -3.4632),
     "becerril de la sierra": (40.7188, -3.8906),
-    "brunete": (40.4014, -3.9976),
     "buitrago del lozoya": (40.9988, -3.6352),
     "casarrubuelos": (40.2020, -3.8890),
     "ciempozuelos": (40.1600, -3.6215),
@@ -1485,10 +1482,7 @@ _MUNI_CENTROIDS = {
     "el molar": (40.7158, -3.5879),
     "fuente el saz de jarama": (40.6235, -3.4856),
     "griñón": (40.2125, -3.8684),
-    "humanes de madrid": (40.2593, -3.8270),
     "meco": (40.5530, -3.3350),
-    "mejorada del campo": (40.3961, -3.4920),
-    "paracuellos de jarama": (40.5065, -3.5271),
     "quijorna": (40.4168, -3.9900),
     "robledo de chavela": (40.5068, -4.2424),
     "san agustín del guadalix": (40.7107, -3.6171),
@@ -1500,6 +1494,7 @@ _MUNI_CENTROIDS = {
     "villa del prado": (40.2762, -4.2777),
     "villalbilla": (40.4284, -3.3017),
     "villaviciosa de odón": (40.3556, -3.9003),
+
 }
 
 def _get_coords(row):
@@ -2372,7 +2367,7 @@ with _tab_leads:
         _watched_set   = (_sheet_watched | st.session_state["just_saved"]) - st.session_state["just_removed"]
 
         for _, row in df_f.iterrows():
-            # ── Stable unique key ─────────────────────────────────────────────
+            # ── Stable unique key ──────────────────────────────────────────
             _exp = str(row.get("expediente","") or "").strip()
             if not _exp or _exp.lower() in ("nan","none"):
                 _bocm_raw = str(row.get("bocm_url","") or "")
@@ -2383,85 +2378,33 @@ with _tab_leads:
                     _exp = f"BOCM-{abs(hash(_bocm_raw)) % 10**10}"
             _already = (_exp in _watched_set) if _exp else False
 
-            # Current priority (only fetched once per card if already watched)
-            _pv_now = "0"
-            if _already and _is_real_user:
-                try:
-                    for _wrt in load_watchlist_full(_u):
-                        if str(_wrt.get("expediente","")).strip() == _exp:
-                            _pv_now = str(_wrt.get("priority","0") or "0").strip() or "0"
-                            break
-                except Exception:
-                    pass
-
-            # ── Card HTML (pure display — no action links) ────────────────────
+            # ── Card HTML (pure display, no action links) ───────────────────
             _full_html = build_card(row.to_dict(), is_watched=_already, inside_details=True)
             st.markdown(build_compact_row(row.to_dict(), _full_html), unsafe_allow_html=True)
 
-            # ── Native action buttons — RIGHT below each card ─────────────────
-            # st.button() triggers a Python rerun (never opens a new tab).
-            # Displayed as a compact flush-right bar: [P1][P2][P3]  🔔 Seguir
+            # ── Seguir / Siguiendo — small native button, right-aligned ─────
+            # st.button() = Python rerun only. Never opens new tab. Never loses state.
+            # Key prefix "sv_" — unique to main list (Mis alertas uses "al_" prefix).
             if _exp and _is_real_user:
                 _safe_k = re.sub(r'[^a-zA-Z0-9_]', '_', _exp)
-
-                # Priority buttons (only shown when already watching)
-                _prio_colors_btn = {
-                    "1": ("#dc2626","#fef2f2"),
-                    "2": ("#d97706","#fffbeb"),
-                    "3": ("#2563eb","#eff6ff"),
-                }
-
-                # Build compact action bar using columns
-                # Layout: [spacer(6)] [P1(1)] [P2(1)] [P3(1)] [Seguir(2)]
-                _c_sp, _c1, _c2, _c3, _c_f = st.columns([6, 1, 1, 1, 2])
-
-                if _already:
-                    # Priority pills — P1/P2/P3 toggle active state
-                    for _pnum, _col in [("1",_c1),("2",_c2),("3",_c3)]:
-                        with _col:
-                            _fc, _fb = _prio_colors_btn[_pnum]
-                            _is_active = _pv_now == _pnum
-                            _btn_type  = "primary" if _is_active else "secondary"
-                            if st.button(
-                                f"P{_pnum}",
-                                key=f"prio_{_pnum}_{_safe_k}",
-                                help=f"Prioridad {_pnum}",
-                                use_container_width=True,
-                                type=_btn_type,
-                            ):
-                                # Toggle: clicking active priority resets to 0
-                                _new_pv = "0" if _is_active else _pnum
-                                update_watchlist_row(_u, _exp, priority=int(_new_pv))
-                                st.session_state["_prio_cache"] = {
-                                    **st.session_state.get("_prio_cache",{}),
-                                    _exp: _new_pv
-                                }
-                                load_watchlist.clear()
-                                st.rerun()
-                    with _c_f:
-                        if st.button(
-                            "🔔 Siguiendo ✕",
-                            key=f"rm_{_safe_k}",
-                            help="Dejar de seguir",
-                            use_container_width=True,
-                        ):
+                _pad, _btn_col = st.columns([8, 2])
+                with _btn_col:
+                    if _already:
+                        if st.button("🔔 Siguiendo ✕", key=f"sv_{_safe_k}",
+                                     help="Dejar de seguir",
+                                     use_container_width=True):
                             remove_from_watchlist(_u, _exp)
-                            st.session_state.setdefault("just_removed",set()).add(_exp)
-                            st.session_state.get("just_saved",set()).discard(_exp)
+                            st.session_state.setdefault("just_removed", set()).add(_exp)
+                            st.session_state.get("just_saved", set()).discard(_exp)
                             load_watchlist.clear()
                             st.rerun()
-                else:
-                    # Not watching — only show Seguir (no priority pills yet)
-                    with _c_f:
-                        if st.button(
-                            "🔔 Seguir",
-                            key=f"sv_{_safe_k}",
-                            help="Seguir este proyecto y recibir alertas de cambio de fase",
-                            use_container_width=True,
-                        ):
+                    else:
+                        if st.button("🔔 Seguir", key=f"sv_{_safe_k}",
+                                     help="Guardar en Mis alertas",
+                                     use_container_width=True):
                             add_to_watchlist(_u, row.to_dict())
-                            st.session_state.setdefault("just_saved",set()).add(_exp)
-                            st.session_state.get("just_removed",set()).discard(_exp)
+                            st.session_state.setdefault("just_saved", set()).add(_exp)
+                            st.session_state.get("just_removed", set()).discard(_exp)
                             load_watchlist.clear()
                             st.rerun()
 
@@ -2611,38 +2554,35 @@ with _tab_alertas:
                         "fase": _wr.get("phase_at_add",""),
                         "tipo": "",
                     }
-                # ── Card (pure display — no action links) ─────────────────
-                st.markdown(build_card(
-                    _card_row, is_watched=True, inside_details=False,
-                ), unsafe_allow_html=True)
+                # ── Card (pure display) ──────────────────────────────────────
+                st.markdown(build_card(_card_row, is_watched=True, inside_details=False),
+                            unsafe_allow_html=True)
 
-                # ── Action bar: notes + priority + Dejar de seguir ────────────
-                # Layout: [📝 notes expander (fills width)] [P1][P2][P3] [✕ Dejar]
-                # All native st.button() — zero <a href> navigation.
-                _prio_colors_al = {
-                    "1": ("#dc2626","#fef2f2"),
-                    "2": ("#d97706","#fffbeb"),
-                    "3": ("#2563eb","#eff6ff"),
-                }
-                _note_label = (
-                    f"📝 {_note_display[:40]}{'…' if len(_note_display) > 40 else ''}"
-                    if _note_display else "📝 Nota privada…"
-                )
+                # ── Action row below each alert card ─────────────────────────
+                # Notes expander · Priority dropdown · Dejar de seguir
+                # All keys have "al_" prefix — NEVER collides with main list "sv_" keys
+                _PRIO_OPTS = ["—", "🔴 P1", "🟡 P2", "🔵 P3"]
+                _PRIO_VAL  = {"—":"0","🔴 P1":"1","🟡 P2":"2","🔵 P3":"3"}
+                _PRIO_BACK = {"0":"—","1":"🔴 P1","2":"🟡 P2","3":"🔵 P3"}
+                _cur_label = _PRIO_BACK.get(_pv, "—")
 
-                # Row: [note expander(5)] [P1(1)][P2(1)][P3(1)] [Dejar(2)]
-                _ac1, _ac2, _ac3, _ac4, _ac5 = st.columns([5, 1, 1, 1, 2])
+                _ac_notes, _ac_prio, _ac_rm = st.columns([6, 2, 2])
 
-                with _ac1:
-                    with st.expander(_note_label, expanded=False):
+                with _ac_notes:
+                    _note_lbl = (
+                        f"📝 {_note_display[:40]}{'…' if len(_note_display)>40 else ''}"
+                        if _note_display else "📝 Nota privada…"
+                    )
+                    with st.expander(_note_lbl, expanded=False):
                         _typed = st.text_area(
                             "Nota", value=_note_display,
-                            placeholder="Añade contexto, contactos, próximos pasos…",
-                            key=f"note_{_safe_k}", label_visibility="collapsed",
+                            placeholder="Contactos, próximos pasos, contexto…",
+                            key=f"al_note_{_safe_k}", label_visibility="collapsed",
                             height=80,
                         )
-                        _s1, _s2 = st.columns([5,1])
-                        with _s2:
-                            if st.button("💾 Guardar", key=f"savenote_{_safe_k}",
+                        _sn1, _sn2 = st.columns([5, 2])
+                        with _sn2:
+                            if st.button("💾 Guardar", key=f"al_save_{_safe_k}",
                                          use_container_width=True):
                                 st.session_state["alert_notes_local"][_exp_s] = _typed
                                 ok = update_watchlist_row(_ua, _exp_s, notes=_typed)
@@ -2652,38 +2592,33 @@ with _tab_alertas:
                                 else:
                                     st.toast("⚠️ No se pudo guardar.")
                                 st.rerun()
-                        with _s1:
+                        with _sn1:
                             if _note_saved_ok and _note_display:
                                 st.caption("✓ Guardada")
 
-                # Priority toggles (P1/P2/P3)
-                for _pnum_al, _col_al in [("1",_ac2),("2",_ac3),("3",_ac4)]:
-                    with _col_al:
-                        _is_active_al = _pv == _pnum_al
-                        if st.button(
-                            f"P{_pnum_al}",
-                            key=f"prio_{_pnum_al}_{_safe_k}",
-                            help=f"Prioridad {_pnum_al}",
-                            use_container_width=True,
-                            type="primary" if _is_active_al else "secondary",
-                        ):
-                            _new_pv_al = "0" if _is_active_al else _pnum_al
-                            update_watchlist_row(_ua, _exp_s, priority=int(_new_pv_al))
-                            load_watchlist.clear()
-                            st.rerun()
+                with _ac_prio:
+                    # Priority: compact selectbox — "—" = grey/none, P1/P2/P3 = colour
+                    _sel = st.selectbox(
+                        "Prioridad",
+                        options=_PRIO_OPTS,
+                        index=_PRIO_OPTS.index(_cur_label) if _cur_label in _PRIO_OPTS else 0,
+                        key=f"al_prio_{_safe_k}",
+                        label_visibility="collapsed",
+                        help="Asignar prioridad",
+                    )
+                    if _PRIO_VAL[_sel] != _pv:
+                        update_watchlist_row(_ua, _exp_s, priority=int(_PRIO_VAL[_sel]))
+                        load_watchlist.clear()
+                        st.rerun()
 
-                with _ac5:
-                    # Small vertical spacer so button aligns with expander
-                    st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
-                    if st.button(
-                        "✕ Dejar de seguir",
-                        key=f"rm_al_{_safe_k}",
-                        help="Eliminar de Mis alertas",
-                        use_container_width=True,
-                    ):
+                with _ac_rm:
+                    st.markdown("<div style='margin-top:3px'></div>", unsafe_allow_html=True)
+                    if st.button("✕ Dejar de seguir", key=f"al_rm_{_safe_k}",
+                                 help="Eliminar de Mis alertas",
+                                 use_container_width=True):
                         remove_from_watchlist(_ua, _exp_s)
-                        st.session_state.setdefault("just_removed",set()).add(_exp_s)
-                        st.session_state.get("just_saved",set()).discard(_exp_s)
+                        st.session_state.setdefault("just_removed", set()).add(_exp_s)
+                        st.session_state.get("just_saved", set()).discard(_exp_s)
                         load_watchlist.clear()
                         st.rerun()
 
