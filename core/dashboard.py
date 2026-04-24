@@ -495,6 +495,16 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
 /* Hide Streamlit "Press Enter to apply" hint */
 [data-testid="InputInstructions"] { display: none !important; }
 
+/* Seguir / Siguiendo button — sits flush below each card */
+[data-testid="stHorizontalBlock"] [data-testid="stColumn"]:first-child button {
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    padding: 5px 14px !important;
+    border-radius: 0 0 10px 10px !important;
+    margin-top: -2px !important;
+    border-top: none !important;
+}
+
 /* ── DARK MODE ───────────────────────────────────────────────────────────────
    Fires only when the user's OS/browser is set to dark mode.
    Targets the Streamlit chrome (toolbar, sidebar, app shell) — not the cards,
@@ -1032,21 +1042,11 @@ def build_card(row, is_watched=False):
         f'&body={html_lib.escape("Municipio: " + muni + chr(10) + "Dirección: " + addr + chr(10) + "Expediente: " + expd + chr(10) + "URL: " + bocm)}'
     )
 
-    # ── Seguir state in footer — purely visual, no href ──────────────────────
-    # The actual clickable Seguir/Dejar de seguir buttons render via st.button()
-    # immediately after st.markdown(build_card(...)).  This avoids the logout bug
-    # caused by <a href="?..."> triggering full browser navigation (new session).
-    _SBT_SIGUIENDO = (
-        f"{_F};display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;"
-        f"padding:5px 12px;border-radius:7px;white-space:nowrap;"
-    )
-    if is_watched:
-        _seguir_el = (
-            f'<span style="{_SBT_SIGUIENDO}color:#16a34a;background:#f0fdf4;'
-            f'border:1.5px solid #bbf7d0;cursor:default;">🔔 Siguiendo</span>'
-        )
-    else:
-        _seguir_el = ""  # the st.button "🔔 Seguir" renders below the card
+    # ── Seguir state — NO visual in card HTML for is_watched.
+    # The st.button("🔔 Siguiendo") rendered after the card IS the indicator.
+    # Having both the green span AND the button = the "duplicate" users saw.
+    # Card footer shows nothing for seguir state — button below card handles it.
+    _seguir_el = ""  # intentionally empty — st.button handles all seguir UI
 
     _reportar_el = (
         f'<a href="{_mailto}" style="{_F};display:inline-flex;align-items:center;gap:3px;'
@@ -1796,100 +1796,132 @@ def _get_sheet_connection():
 
 @st.cache_data(ttl=60)
 def load_watchlist(user_email: str) -> list:
-    """Load current watchlist for this user. Returns deduplicated list of expediente strings."""
+    """Load deduplicated watchlist expediente list for this user."""
     try:
         ss = _get_sheet_connection()
-        if not ss:
-            return []
-        try:
-            ws = ss.worksheet("Watchlist")
-        except Exception:
-            return []
+        if not ss: return []
+        try: ws = ss.worksheet("Watchlist")
+        except Exception: return []
         rows = ws.get_all_records()
-        seen = set()
-        result = []
+        seen, result = set(), []
         for r in rows:
-            if r.get("email", "").lower() != user_email.lower():
-                continue
-            exp = str(r.get("expediente", "") or "").strip()
+            if r.get("email","").lower() != user_email.lower(): continue
+            exp = str(r.get("expediente","") or "").strip()
             if exp and exp not in seen:
-                seen.add(exp)
-                result.append(exp)
+                seen.add(exp); result.append(exp)
+        return result
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=60)
+def load_watchlist_full(user_email: str) -> list:
+    """Load full watchlist rows (including notes, priority) for Mis Alertas tab."""
+    try:
+        ss = _get_sheet_connection()
+        if not ss: return []
+        try: ws = ss.worksheet("Watchlist")
+        except Exception: return []
+        rows = ws.get_all_records()
+        seen, result = set(), []
+        for r in rows:
+            if r.get("email","").lower() != user_email.lower(): continue
+            exp = str(r.get("expediente","") or "").strip()
+            if exp and exp not in seen:
+                seen.add(exp); result.append(r)
         return result
     except Exception:
         return []
 
 
 def add_to_watchlist(user_email: str, row: dict) -> bool:
-    """Add a project to the user's watchlist. Skips silently if already present."""
+    """Add a project to watchlist. Skips silently if already present."""
     try:
         ss = _get_sheet_connection()
-        if not ss:
-            return False
-        try:
-            ws = ss.worksheet("Watchlist")
+        if not ss: return False
+        try: ws = ss.worksheet("Watchlist")
         except Exception:
-            ws = ss.add_worksheet("Watchlist", rows=500, cols=8)
-            ws.append_row(["email", "source_url", "expediente", "fecha_added",
-                           "phase_at_add", "last_alerted", "muni", "description"])
-
-        exp   = str(row.get("expediente", "") or "").strip()
-        bocm  = str(row.get("bocm_url", "") or "").strip()
-        fase  = str(row.get("fase", "") or "").strip()
-        muni  = str(row.get("municipio", "") or "").strip()
-        desc  = str(row.get("descripcion", "") or "")[:150]
+            ws = ss.add_worksheet("Watchlist", rows=500, cols=10)
+            ws.append_row(["email","source_url","expediente","fecha_added",
+                           "phase_at_add","last_alerted","muni","description","notes","priority"])
+        exp   = str(row.get("expediente","") or "").strip()
+        bocm  = str(row.get("bocm_url","") or "").strip()
+        fase  = str(row.get("fase","") or "").strip()
+        muni  = str(row.get("municipio","") or "").strip()
+        desc  = str(row.get("descripcion","") or "")[:150]
         today = datetime.now().strftime("%Y-%m-%d")
-
-        # Idempotency check: don't add the same expediente twice for the same user
+        # Idempotency — don't add same user+exp twice
         existing = ws.get_all_records()
         for r in existing:
-            if (r.get("email", "").lower() == user_email.lower() and
-                    str(r.get("expediente", "")).strip() == exp):
-                load_watchlist.clear()
-                return True  # already there — treat as success
-
-        ws.append_row([user_email, bocm, exp, today, fase, "", muni, desc])
-        load_watchlist.clear()
+            if (r.get("email","").lower() == user_email.lower() and
+                    str(r.get("expediente","")).strip() == exp):
+                load_watchlist.clear(); load_watchlist_full.clear(); return True
+        ws.append_row([user_email, bocm, exp, today, fase, "", muni, desc, "", "0"])
+        load_watchlist.clear(); load_watchlist_full.clear()
         return True
+    except Exception:
+        return False
+
+
+def update_watchlist_row(user_email: str, expediente: str,
+                         notes: str = None, priority: int = None) -> bool:
+    """Persist notes and/or priority to the Watchlist sheet row."""
+    try:
+        ss = _get_sheet_connection()
+        if not ss: return False
+        try: ws = ss.worksheet("Watchlist")
+        except Exception: return False
+        headers = ws.row_values(1)
+        try:
+            ecol = headers.index("email")      + 1
+            xcol = headers.index("expediente") + 1
+        except ValueError: return False
+        # Ensure notes/priority columns exist
+        try: ncol = headers.index("notes")    + 1
+        except ValueError:
+            ws.update_cell(1, len(headers)+1, "notes"); ncol = len(headers)+1
+        try: pcol = headers.index("priority") + 1
+        except ValueError:
+            ws.update_cell(1, len(headers)+2, "priority"); pcol = len(headers)+2
+        all_rows = ws.get_all_values()
+        for i, row in enumerate(all_rows[1:], start=2):
+            if (len(row) >= max(ecol,xcol) and
+                    row[ecol-1].lower() == user_email.lower() and
+                    row[xcol-1].strip() == expediente.strip()):
+                if notes    is not None: ws.update_cell(i, ncol, notes)
+                if priority is not None: ws.update_cell(i, pcol, str(priority))
+                load_watchlist_full.clear(); return True
+        return False
     except Exception:
         return False
 
 
 def remove_from_watchlist(user_email: str, expediente: str) -> bool:
-    """Remove all rows for this user+expediente from the Watchlist sheet."""
+    """Remove all rows for this user+expediente."""
     try:
         ss = _get_sheet_connection()
         if not ss: return False
-        try:
-            ws = ss.worksheet("Watchlist")
-        except Exception:
-            return False
-        rows    = ws.get_all_values()
+        try: ws = ss.worksheet("Watchlist")
+        except Exception: return False
+        rows = ws.get_all_values()
         if len(rows) < 2: return True
         headers = rows[0]
-        try:
-            ecol = headers.index("email")       + 1
-            xcol = headers.index("expediente")  + 1
-        except ValueError:
-            return False
-        to_del = [
-            i for i, row in enumerate(rows[1:], start=2)
-            if len(row) >= max(ecol, xcol)
-            and row[ecol-1].lower() == user_email.lower()
-            and row[xcol-1].strip() == expediente.strip()
-        ]
-        for idx in reversed(to_del):
-            ws.delete_rows(idx)
-        load_watchlist.clear()
+        try: ecol = headers.index("email")+1; xcol = headers.index("expediente")+1
+        except ValueError: return False
+        to_del = [i for i, row in enumerate(rows[1:], start=2)
+                  if len(row) >= max(ecol,xcol)
+                  and row[ecol-1].lower() == user_email.lower()
+                  and row[xcol-1].strip() == expediente.strip()]
+        for idx in reversed(to_del): ws.delete_rows(idx)
+        load_watchlist.clear(); load_watchlist_full.clear()
         return True
     except Exception:
         return False
 
 # ════════════════════════════════════════════════════════════
-# SEGUIR/REMOVE — handled via st.button() in the render loop.
-# NO query-param approach: <a href="?..."> causes full browser
-# navigation = new Streamlit session = session_state wiped = logout.
-# st.button() triggers a server-side rerun, session_state intact.
+# NOTE: Seguir/Remove use st.button() only — no query params.
+# <a href="?..."> in st.markdown causes full browser navigation
+# = new Streamlit session = session_state wiped = logout bug.
 # ════════════════════════════════════════════════════════════
 
 # ════════════════════════════════════════════════════════════
@@ -2087,68 +2119,43 @@ with _tab_leads:
             f'</div>',
             unsafe_allow_html=True
         )
-        # ── Session state init ─────────────────────────────────────────────────
+        # ── Session state ─────────────────────────────────────────────────────
         for _sk in ("just_saved", "just_removed"):
-            if _sk not in st.session_state:
-                st.session_state[_sk] = set()
+            if _sk not in st.session_state: st.session_state[_sk] = set()
 
-        _u = st.session_state.get("user_email", "")
+        _u = st.session_state.get("user_email","")
         _is_real_user  = bool(_u and not _u.startswith("token:"))
         _sheet_watched = set(load_watchlist(_u)) if _is_real_user else set()
         _watched_set   = (_sheet_watched | st.session_state["just_saved"]) - st.session_state["just_removed"]
 
-        # CSS: make the Seguir/Siguiendo st.button look flush with the card footer
-        st.markdown("""
-<style>
-/* Seguir / Siguiendo buttons — appear as card-footer elements, not floating Streamlit buttons */
-div[data-testid="stHorizontalBlock"] .seguir-row button {
-    font-size: 12px !important;
-    font-weight: 600 !important;
-    padding: 5px 14px !important;
-    border-radius: 7px !important;
-    min-height: 34px !important;
-    margin-top: -6px !important;
-}
-</style>""", unsafe_allow_html=True)
-
         for _, row in df_f.iterrows():
-            _exp     = str(row.get("expediente", "") or "").strip()
-            _bocm_u  = str(row.get("bocm_url", "") or "").strip()
+            _exp     = str(row.get("expediente","") or "").strip()
             _already = (_exp in _watched_set) if _exp else False
 
-            # Render the card (Siguiendo green pill shows inside footer when watched)
-            st.markdown(build_card(row.to_dict(), is_watched=_already), unsafe_allow_html=True)
+            # Card has no seguir element — is_watched=False always; button below handles it
+            st.markdown(build_card(row.to_dict(), is_watched=False), unsafe_allow_html=True)
 
-            # ── Seguir / Dejar de seguir — st.button ONLY (never <a href>) ────
-            # st.button triggers a server-side rerun → session_state preserved → no logout
+            # ── Seguir / Siguiendo st.button — never <a href> ────────────────
+            # st.button → server-side rerun → session_state intact → no logout
             if _exp and _is_real_user:
-                # Unique key: sanitize expediente (slashes/dots break Streamlit key registry)
-                _safe_key = re.sub(r'[^a-zA-Z0-9_]', '_', _exp)
-                _btn_col, _spacer = st.columns([1, 6])
-                with _btn_col:
+                _safe_k = re.sub(r'[^a-zA-Z0-9_]', '_', _exp)
+                _sc, _sp = st.columns([1, 7])
+                with _sc:
                     if _already:
-                        if st.button(
-                            "🔔 Siguiendo ✕",
-                            key=f"rm_{_safe_key}",
-                            help="Clic para dejar de seguir este proyecto",
-                            use_container_width=True,
-                        ):
+                        if st.button("🔔 Siguiendo ✕", key=f"rm_{_safe_k}",
+                                     help="Clic para dejar de seguir",
+                                     use_container_width=True):
                             remove_from_watchlist(_u, _exp)
                             st.session_state["just_removed"].add(_exp)
                             st.session_state["just_saved"].discard(_exp)
-                            load_watchlist.clear()
                             st.rerun()
                     else:
-                        if st.button(
-                            "🔔 Seguir",
-                            key=f"sv_{_safe_key}",
-                            help="Recibir alertas cuando este proyecto avance de fase",
-                            use_container_width=True,
-                        ):
+                        if st.button("🔔 Seguir", key=f"sv_{_safe_k}",
+                                     help="Alertas cuando este proyecto avance de fase",
+                                     use_container_width=True):
                             add_to_watchlist(_u, row.to_dict())
                             st.session_state["just_saved"].add(_exp)
                             st.session_state["just_removed"].discard(_exp)
-                            load_watchlist.clear()
                             st.rerun()
 
 # ── TAB 2: INTERACTIVE MAP ───────────────────────────────────
@@ -2203,183 +2210,147 @@ with _tab_mapa:
 
 # ── TAB 3: MIS ALERTAS ───────────────────────────────────────
 with _tab_alertas:
-    _ua = st.session_state.get("user_email", "")
+    _ua = st.session_state.get("user_email","")
     if not _ua or _ua.startswith("token:"):
         st.info("Inicia sesión con tu email para ver y gestionar tus alertas guardadas.")
     else:
-        # Session dicts for priority and comments
-        if "alert_priorities" not in st.session_state: st.session_state["alert_priorities"] = {}
-        if "alert_comments"   not in st.session_state: st.session_state["alert_comments"]   = {}
-
-        # Load and deduplicate watchlist (also apply session-level removes/adds)
-        _wl_raw = load_watchlist(_ua)
-        _wl = []
-        _seen_wl = set()
-        for _we in _wl_raw:
-            _we = str(_we).strip()
-            if _we and _we not in _seen_wl and _we not in st.session_state.get("just_removed", set()):
-                _seen_wl.add(_we)
-                _wl.append(_we)
+        # ── Load full watchlist rows (notes + priority from sheet) ──────────────
+        _wl_full = load_watchlist_full(_ua)
+        # Apply session-level removes/adds for instant feedback
+        _wl_full = [r for r in _wl_full
+                    if str(r.get("expediente","")).strip()
+                    not in st.session_state.get("just_removed", set())]
+        _seen_in_full = {str(r.get("expediente","")).strip() for r in _wl_full}
         for _je in st.session_state.get("just_saved", set()):
-            if _je and _je not in _seen_wl:
-                _seen_wl.add(_je); _wl.append(_je)
+            if _je and _je not in _seen_in_full:
+                _wl_full.append({"expediente": _je, "notes":"", "priority":"0"})
 
-        if not _wl:
+        _PRIO = {
+            "1": ("🔴", "Prioridad 1", "#fef2f2", "#dc2626", "#fecaca"),
+            "2": ("🟠", "Prioridad 2", "#fff7ed", "#c2410c", "#fed7aa"),
+            "3": ("🟡", "Prioridad 3", "#fefce8", "#a16207", "#fde68a"),
+            "0": ("",   "Sin prioridad","#fff",   "#94a3b8", "#e2e8f0"),
+        }
+        def _get_prio(r): return str(r.get("priority","0") or "0").strip() or "0"
+
+        # Sort by priority (1 first, then 2, then 3, then 0)
+        _wl_full.sort(key=lambda r: (0 if _get_prio(r) == "0" else -int(_get_prio(r))))
+
+        if not _wl_full:
             st.markdown("""
-<div style="text-align:center;padding:64px 24px;background:#fff;
-     border:1.5px solid #e2e8f0;border-radius:14px;margin-top:8px;">
+<div style="text-align:center;padding:64px 24px;background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;margin-top:8px;">
   <div style="font-size:40px;margin-bottom:12px;">🔔</div>
-  <h3 style="font-family:'Fraunces',Georgia,serif;font-size:18px;
-      color:#0d1a2b;margin:0 0 8px;">Sin alertas guardadas</h3>
+  <h3 style="font-family:'Fraunces',Georgia,serif;font-size:18px;color:#0d1a2b;margin:0 0 8px;">Sin alertas guardadas</h3>
   <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0;">
-    Pulsa <strong>🔔 Seguir</strong> en cualquier proyecto<br>
-    para recibir alertas cuando avance de fase.
+    Pulsa <strong>🔔 Seguir</strong> en cualquier proyecto para recibir alertas cuando avance de fase.
   </p>
 </div>""", unsafe_allow_html=True)
         else:
-            _PRIO_CONFIG = {
-                1: ("🔴 Prioridad 1", "#fef2f2", "#dc2626", "#fecaca"),
-                2: ("🟠 Prioridad 2", "#fff7ed", "#c2410c", "#fed7aa"),
-                3: ("🟡 Prioridad 3", "#fefce8", "#a16207", "#fde68a"),
-                0: ("⚪ Sin prioridad", "#f8fafc", "#94a3b8", "#e2e8f0"),
-            }
-            def _prio(e): return st.session_state["alert_priorities"].get(str(e), 0)
-            _wl_sorted = sorted(_wl, key=lambda e: 0 if _prio(e) == 0 else -_prio(e))
-
-            # Summary
-            _pc = {p: sum(1 for e in _wl if _prio(e) == p) for p in [1, 2, 3, 0]}
-            _badges = "".join(
-                f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;'
-                f'background:{_PRIO_CONFIG[p][1]};color:{_PRIO_CONFIG[p][2]};border:1px solid {_PRIO_CONFIG[p][3]};">'
-                f'{_PRIO_CONFIG[p][0].split()[0]} {_pc[p]}</span> '
-                for p in [1, 2, 3] if _pc.get(p, 0) > 0
-            )
             st.markdown(
-                f'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">'
-                f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#94a3b8;'
-                f'text-transform:uppercase;letter-spacing:.08em;">{len(_wl)} en seguimiento</span>'
-                f'{_badges}</div>',
-                unsafe_allow_html=True
-            )
+                f'<p style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#94a3b8;'
+                f'text-transform:uppercase;letter-spacing:.08em;margin:0 0 16px;">'
+                f'{len(_wl_full)} proyecto{"s" if len(_wl_full)!=1 else ""} en seguimiento</p>',
+                unsafe_allow_html=True)
 
+            # Match to current sheet data
             _df_idx = {}
             if "expediente" in df.columns:
-                for _, _r in df[df["expediente"].astype(str).str.strip().isin(set(_wl))].iterrows():
+                for _, _r in df[df["expediente"].astype(str).str.strip().isin(
+                        {str(r.get("expediente","")).strip() for r in _wl_full})].iterrows():
                     _k = str(_r.get("expediente","")).strip()
                     if _k: _df_idx[_k] = _r
 
-            for _exp_id in _wl_sorted:
-                _exp_s   = str(_exp_id).strip()
-                # Sanitize for use as Streamlit widget key (slashes etc break key registry)
-                _safe_k  = re.sub(r'[^a-zA-Z0-9_]', '_', _exp_s)
-                _pv      = _prio(_exp_s)
-                _, _pbg, _pfc, _pbd = _PRIO_CONFIG.get(_pv, _PRIO_CONFIG[0])
-                _comment = st.session_state["alert_comments"].get(_exp_s, "")
-                _row     = _df_idx.get(_exp_s)
-                _muni    = (_row.get("municipio", "—")  if _row is not None else "—") or "—"
-                _tipo    = (_row.get("tipo", "—")        if _row is not None else "—") or "—"
-                _pem_v   = (_row.get("pem_combined", 0)  if _row is not None else 0) or 0
-                _desc    = (str(_row.get("descripcion","") or "")[:160] if _row is not None else "")
-                _bocm_l  = (str(_row.get("bocm_url","") or "")  if _row is not None else "")
-                _fase_v  = (str(_row.get("fase","") or "")       if _row is not None else "")
-                _pem_s   = (f"€{_pem_v/1_000_000:.1f}M" if _pem_v >= 1_000_000
-                            else f"€{int(_pem_v/1000)}K" if _pem_v >= 1000 else "")
-                _fl = {"definitivo":"🟢 Definitivo","inicial":"🟡 Inicial",
-                       "licitacion":"🔵 Licitación","primera_ocupacion":"⚪ 1ª Ocup."}.get(_fase_v, _fase_v)
+            for _wr in _wl_full:
+                _exp_s  = str(_wr.get("expediente","") or "").strip()
+                if not _exp_s: continue
+                _safe_k = re.sub(r'[^a-zA-Z0-9_]', '_', _exp_s)
+                _pv     = _get_prio(_wr)
+                _, _pl, _pbg, _pfc, _pbd = _PRIO.get(_pv, _PRIO["0"])
+                # Notes: prefer what's in the sheet row; fall back to session state
+                _note_from_sheet = str(_wr.get("notes","") or "")
+                _note_default    = _note_from_sheet  # sheet is truth after save
+
+                _row  = _df_idx.get(_exp_s)
+                _muni = (str(_row.get("municipio","") or "") if _row is not None else "") or "—"
+                _tipo = (str(_row.get("tipo","") or "")      if _row is not None else "") or "—"
+                _pem_v= (_row.get("pem_combined",0)          if _row is not None else 0) or 0
+                _desc = (str(_row.get("descripcion","") or "")[:140] if _row is not None else "")
+                _bocm = (str(_row.get("bocm_url","") or "")   if _row is not None else "")
+                _fase = (str(_row.get("fase","") or "")        if _row is not None else "")
+                _pem_s= (f"€{_pem_v/1_000_000:.1f}M" if _pem_v>=1_000_000
+                         else f"€{int(_pem_v/1000)}K" if _pem_v>=1000 else "")
+                _fl   = {"definitivo":"🟢 Definitivo","inicial":"🟡 Inicial",
+                         "licitacion":"🔵 Licitación","primera_ocupacion":"⚪ 1ª Ocup."}.get(_fase,"")
 
                 # ── Card ──────────────────────────────────────────────────────
+                _bc = f"4px solid {_pfc}" if _pv != "0" else "1.5px solid #e2e8f0"
                 st.markdown(
                     f'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;'
-                    f'border-left:4px solid {_pfc};margin-bottom:4px;overflow:hidden;">',
-                    unsafe_allow_html=True
-                )
+                    f'border-left:{_bc};margin-bottom:6px;overflow:hidden;'
+                    f'box-shadow:0 2px 8px rgba(0,0,0,.05);">',
+                    unsafe_allow_html=True)
 
-                # Header row: info left, priority picker right
-                _hc1, _hc2 = st.columns([6, 2])
-                with _hc1:
+                # Top row: info + priority picker
+                _c1, _c2 = st.columns([6, 2])
+                with _c1:
                     st.markdown(
                         f'<div style="padding:14px 0 8px 16px;">'
-                        f'<div style="font-size:11px;color:#64748b;font-family:\'JetBrains Mono\',monospace;'
-                        f'letter-spacing:.04em;margin-bottom:4px;">{html_lib.escape(_muni)} · Exp. {html_lib.escape(_exp_s)}</div>'
+                        f'<div style="font-size:11px;color:#94a3b8;font-family:\'JetBrains Mono\',monospace;margin-bottom:4px;">'
+                        f'{html_lib.escape(_muni)} · Exp. {html_lib.escape(_exp_s)}</div>'
                         f'<div style="font-size:14px;font-weight:600;color:#0d1a2b;'
-                        f'font-family:\'Fraunces\',Georgia,serif;line-height:1.35;margin-bottom:6px;">'
+                        f'font-family:\'Fraunces\',Georgia,serif;line-height:1.35;margin-bottom:8px;">'
                         f'{html_lib.escape(_desc or _tipo)}</div>'
-                        + (f'<span style="font-size:11px;font-weight:700;color:#1e3a5f;background:#eff4fb;'
-                           f'border:1px solid #bfdbfe;padding:2px 8px;border-radius:20px;margin-right:6px;">'
-                           f'{html_lib.escape(_tipo)}</span>' if _tipo and _tipo != "—" else "")
-                        + (f'<span style="font-size:12px;font-weight:700;color:#1e3a5f;">{_pem_s}</span>' if _pem_s else "")
-                        + '</div>',
-                        unsafe_allow_html=True
-                    )
-                with _hc2:
-                    st.markdown('<div style="padding:14px 16px 0 0;">', unsafe_allow_html=True)
-                    _new_pv = st.selectbox(
-                        "Prioridad",
-                        options=[0, 1, 2, 3],
-                        format_func=lambda p: _PRIO_CONFIG[p][0],
-                        index=[0, 1, 2, 3].index(_pv),
-                        key=f"prio_{_safe_k}",   # sanitized key — no slashes/dots
-                        label_visibility="collapsed",
-                    )
+                        + (f'<span style="font-size:11px;padding:2px 9px;border-radius:20px;'
+                           f'background:#eff4fb;color:#1e3a5f;border:1px solid #bfdbfe;'
+                           f'margin-right:6px;">{html_lib.escape(_tipo)}</span>' if _tipo != "—" else "")
+                        + (f'<span style="font-size:13px;font-weight:700;color:#1e3a5f;">{_pem_s}</span>' if _pem_s else "")
+                        + '</div>', unsafe_allow_html=True)
+                with _c2:
+                    _new_pv = st.selectbox("P", options=["0","1","2","3"],
+                        format_func=lambda p: _PRIO[p][1],
+                        index=["0","1","2","3"].index(_pv),
+                        key=f"prio_{_safe_k}", label_visibility="collapsed")
                     if _new_pv != _pv:
-                        st.session_state["alert_priorities"][_exp_s] = _new_pv
-                        st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
+                        update_watchlist_row(_ua, _exp_s, priority=int(_new_pv))
+                        load_watchlist_full.clear(); st.rerun()
 
-                # Notes
+                # Notes (persistent to sheet on change)
                 st.markdown(
                     '<div style="padding:0 16px 4px;">'
                     '<div style="font-size:10px;font-weight:600;color:#94a3b8;'
-                    'text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;">Mis notas (privadas)</div>',
-                    unsafe_allow_html=True
-                )
-                _new_comment = st.text_area(
-                    "Notas",
-                    value=_comment,
+                    'text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">'
+                    'Mis notas (privadas)</div>', unsafe_allow_html=True)
+                _new_note = st.text_area("", value=_note_default,
                     placeholder="Añade contexto, contactos, próximos pasos…",
-                    key=f"note_{_safe_k}",   # sanitized key
-                    label_visibility="collapsed",
-                    height=68,
-                )
-                if _new_comment != _comment:
-                    st.session_state["alert_comments"][_exp_s] = _new_comment
+                    key=f"note_{_safe_k}", label_visibility="collapsed", height=68)
+                if _new_note != _note_default and _new_note.strip() != _note_from_sheet.strip():
+                    update_watchlist_row(_ua, _exp_s, notes=_new_note)
+                    load_watchlist_full.clear()
                 st.markdown('</div>', unsafe_allow_html=True)
 
-                # Footer: BOCM link | fase | remove button
-                _fc1, _fc2, _fc3 = st.columns([2, 2, 2])
-                with _fc1:
-                    if _bocm_l:
-                        st.markdown(
-                            f'<div style="padding:8px 0 10px 16px;">'
-                            f'<a href="{_bocm_l}" target="_blank" '
-                            f'style="font-size:12px;font-weight:600;color:#1e3a5f;text-decoration:none;">↗ Ver BOCM</a>'
-                            f'</div>',
-                            unsafe_allow_html=True
-                        )
-                with _fc2:
-                    if _fl:
-                        st.markdown(
-                            f'<div style="padding:10px 0;">'
-                            f'<span style="font-size:11px;color:#64748b;">{html_lib.escape(_fl)}</span>'
-                            f'</div>',
-                            unsafe_allow_html=True
-                        )
-                with _fc3:
-                    # st.button for remove — NO <a href>, preserves session state
-                    if st.button(
-                        "✕ Dejar de seguir",
-                        key=f"rm_alert_{_safe_k}",
-                        help="Eliminar esta alerta",
-                        use_container_width=True,
-                    ):
+                # Footer: BOCM link | fase | remove
+                _fa, _fb, _fc = st.columns([2, 2, 2])
+                with _fa:
+                    if _bocm: st.markdown(
+                        f'<div style="padding:8px 0 12px 16px;">'
+                        f'<a href="{_bocm}" target="_blank" '
+                        f'style="font-size:12px;font-weight:600;color:#1e3a5f;text-decoration:none;">↗ Ver BOCM</a>'
+                        f'</div>', unsafe_allow_html=True)
+                with _fb:
+                    if _fl: st.markdown(
+                        f'<div style="padding:10px 0;">'
+                        f'<span style="font-size:11px;color:#64748b;">{html_lib.escape(_fl)}</span>'
+                        f'</div>', unsafe_allow_html=True)
+                with _fc:
+                    if st.button("✕ Dejar de seguir", key=f"rm_al_{_safe_k}",
+                                 use_container_width=True):
                         remove_from_watchlist(_ua, _exp_s)
-                        st.session_state["just_removed"].add(_exp_s)
-                        st.session_state["just_saved"].discard(_exp_s)
-                        load_watchlist.clear()
+                        st.session_state.setdefault("just_removed", set()).add(_exp_s)
+                        st.session_state.get("just_saved", set()).discard(_exp_s)
                         st.rerun()
 
-                st.markdown('</div>', unsafe_allow_html=True)  # close card
-                st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
 # ── Footer ──
 st.markdown(f"""
