@@ -832,6 +832,125 @@ def sc_pill(sc):
     s = SSPG if sc >= 65 else SSPO if sc >= 40 else SSPN if sc >= 20 else SSPD
     return f'<span style="{s}">{e} {sc} / 100</span>'
 
+
+# ── Compact score circle for list rows ───────────────────────
+_SC_COL = {True: "#15803d", False: "#b45309"}   # high / mid
+def _score_circle(sc: int) -> str:
+    """Small filled circle with score — matches website mini-card look."""
+    if sc >= 65:   bg, txt = "#15803d", "#fff"
+    elif sc >= 40: bg, txt = "#b45309", "#fff"
+    elif sc >= 20: bg, txt = "#1e3a5f", "#fff"
+    else:          bg, txt = "#e2e8f0", "#94a3b8"
+    return (
+        f'<div style="min-width:46px;width:46px;height:46px;border-radius:50%;'
+        f'background:{bg};display:flex;flex-direction:column;align-items:center;'
+        f'justify-content:center;flex-shrink:0;">'
+        f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;'
+        f'font-weight:700;color:{txt};line-height:1;">{sc}</span>'
+        f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:8px;'
+        f'font-weight:400;color:{txt};opacity:.75;line-height:1;">pts</span>'
+        f'</div>'
+    )
+
+
+def build_compact_row(row: dict, full_card_html: str) -> str:
+    """
+    Compact clickable summary row (like the website screenshot) wrapping the full card.
+    Uses native HTML <details>/<summary> — zero JS, works in all browsers,
+    safe within Streamlit's markdown renderer.
+
+    Visual: [score circle] [BOCM ref · Municipality] [title] [tipo / fase / PEM tags]
+    Click anywhere on the row → expands to show full card below.
+    """
+    sc    = parse_sc(row.get("score_raw", 0))
+    muni  = html_lib.escape(str(row.get("municipio","") or "Madrid").strip())
+    addr  = html_lib.escape(str(row.get("direccion","") or "").strip())
+    desc  = html_lib.escape(str(row.get("descripcion","") or "").strip())
+    tipo  = html_lib.escape(str(row.get("tipo","") or "").strip())
+    bocm  = str(row.get("bocm_url","") or "").strip()
+    fnd   = str(row.get("fecha_encontrado","") or "").strip()
+    fecha = str(row.get("fecha","") or "").strip()
+    pem_est_text = str(row.get("pem_est_raw","") or "").strip()
+    pem_raw_v    = parse_val(row.get("pem_raw",""))
+    pem_est_v    = parse_est_pem_numeric(pem_est_text)
+    pem_display  = pem_raw_v if pem_raw_v > 0 else pem_est_v
+
+    # BOCM ref
+    ref = ""
+    m_bocm = re.search(r'BOCM[-_](\d{8})', bocm, re.I)
+    if m_bocm: ref = f"BOCM-{m_bocm.group(1)}"
+    pub = fnd[:10] if fnd else fecha
+    if pub:
+        try:
+            dt = datetime.strptime(pub, "%Y-%m-%d")
+            ref += f" · {dt.strftime('%-d %b %Y')}" if ref else dt.strftime("%-d %b %Y")
+        except Exception:
+            pass
+    if muni: ref += f" · {muni}" if ref else muni
+
+    title = addr or desc[:80] or tipo or "Proyecto"
+    if len(title) > 72: title = title[:72] + "…"
+
+    # Tags
+    tl_lower = tipo.lower() + " " + desc.lower()
+    tags = []
+    if tipo:
+        tags.append(f'<span style="{SSBN}">{tipo[:24]}</span>')
+    if "definitiv" in tl_lower:
+        tags.append(f'<span style="{SSBG}">Aprobación definitiva</span>')
+    elif "inicial" in tl_lower:
+        tags.append(f'<span style="{SSBA}">Aprobación inicial</span>')
+    if pem_display > 0:
+        pem_s = fmt(pem_display)
+        is_est = pem_raw_v == 0
+        _pem_style = (f"{_FM};font-size:10px;font-weight:600;padding:4px 10px;border-radius:100px;"
+                      f"white-space:nowrap;background:#fffbeb;color:#b45309;border:1px solid #fde68a;")
+        _pem_suffix = " Est." if is_est else ""
+        tags.append(f'<span style="{_pem_style}">{pem_s}{_pem_suffix}</span>')
+
+    tags_html = "".join(tags)
+
+    circle_html = _score_circle(sc)
+
+    # Summary row — styled to match website mini-card
+    _sum_style = (
+        "list-style:none;display:flex;align-items:center;gap:12px;padding:12px 16px;"
+        "cursor:pointer;background:#fff;user-select:none;-webkit-user-select:none;"
+        "outline:none;"
+    )
+    _ref_s = (
+        f"font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8;"
+        f"letter-spacing:.03em;margin-bottom:3px;"
+    )
+    _title_s = (
+        f"font-family:'Fraunces',Georgia,serif;font-size:14px;font-weight:600;"
+        f"color:#0d1a2b;line-height:1.35;margin-bottom:5px;"
+    )
+
+    summary_html = (
+        f'<summary style="{_sum_style}">'
+        f'{circle_html}'
+        f'<div style="flex:1;min-width:0;">'
+        f'<div style="{_ref_s}">{ref}</div>'
+        f'<div style="{_title_s}">{title}</div>'
+        f'<div style="display:flex;gap:5px;flex-wrap:wrap;">{tags_html}</div>'
+        f'</div>'
+        f'<span style="font-size:11px;color:#94a3b8;flex-shrink:0;transition:transform .15s;" '
+        f'class="toggle-arrow">▼</span>'
+        f'</summary>'
+    )
+
+    # Wrapper: card border, subtle hover, open state highlights border
+    return (
+        f'<details style="background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;'
+        f'margin-bottom:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04);">'
+        f'{summary_html}'
+        f'<div style="border-top:1px solid #f1f5f9;">'
+        f'{full_card_html}'
+        f'</div>'
+        f'</details>'
+    )
+
 def build_card(row, is_watched=False):
     """
     Build one lead card with ONLY inline styles.
@@ -2190,9 +2309,6 @@ with _tab_leads:
 
         for _, row in df_f.iterrows():
             # Stable unique key: expediente (ideal) → BOCM slug → URL hash.
-            # Expediente is empty for ~70% of BOCM documents (plans especiales,
-            # urbanizaciones, etc. don't always reference one). Without a fallback,
-            # the Seguir button would not render for those cards.
             _exp = str(row.get("expediente","") or "").strip()
             if not _exp or _exp.lower() in ("nan","none"):
                 _bocm_raw = str(row.get("bocm_url","") or "")
@@ -2203,11 +2319,16 @@ with _tab_leads:
                     _exp = f"BOCM-{abs(hash(_bocm_raw)) % 10**10}"
             _already = (_exp in _watched_set) if _exp else False
 
-            # Card has no seguir element — is_watched=False always; button below handles it
-            st.markdown(build_card(row.to_dict(), is_watched=False), unsafe_allow_html=True)
+            # ── Compact clickable row (click to expand full card) ─────────────
+            # <details>/<summary> pure HTML — zero JS, no Streamlit workarounds.
+            # The full card renders only when expanded (faster list loading).
+            _full_html = build_card(row.to_dict(), is_watched=False)
+            st.markdown(
+                build_compact_row(row.to_dict(), _full_html),
+                unsafe_allow_html=True,
+            )
 
-            # ── Seguir / Siguiendo st.button — never <a href> ────────────────
-            # st.button → server-side rerun → session_state intact → no logout
+            # ── Seguir / Siguiendo button ─────────────────────────────────────
             if _exp and _is_real_user:
                 _safe_k = re.sub(r'[^a-zA-Z0-9_]', '_', _exp)
                 _sc, _sp = st.columns([1, 7])
@@ -2228,7 +2349,7 @@ with _tab_leads:
                             if _ok:
                                 st.session_state["just_saved"].add(_exp)
                                 st.session_state["just_removed"].discard(_exp)
-                                st.toast("🔔 Guardado. Aparecerá en Mis alertas.", icon="✅")
+                                st.toast("🔔 Guardado en Mis alertas.", icon="✅")
                             else:
                                 st.toast("❌ Error guardando. Inténtalo de nuevo.")
                             st.rerun()
@@ -2381,43 +2502,42 @@ with _tab_alertas:
                     }
                 st.markdown(build_card(_card_row, is_watched=False), unsafe_allow_html=True)
 
-                # ── Priority picker + Notes + Remove row (tight, below card) ─
-                _pc1, _pc2, _pc3 = st.columns([2, 3, 2])
-                with _pc1:
+                # ── Controls row: [Priority pill] [Notes input  💾] [✕ Remove] ─
+                # All on one tight line, visually attached to the card bottom.
+                # Priority → compact selectbox (no label, auto-width)
+                # Notes    → single-line text input + small inline save button
+                # Remove   → muted secondary button, right-aligned
+                _ctl1, _ctl2, _ctl3, _ctl4 = st.columns([2, 4, 1, 2])
+                with _ctl1:
+                    _PRIO_OPTS = {"0":"— Sin prioridad","1":"🔴 Prioridad 1",
+                                  "2":"🟠 Prioridad 2","3":"🟡 Prioridad 3"}
                     _new_pv = st.selectbox(
-                        "Prioridad",
-                        options=["0","1","2","3"],
-                        format_func=lambda p: _PRIO[p][1],
+                        "Prioridad", options=["0","1","2","3"],
+                        format_func=lambda p: _PRIO_OPTS[p],
                         index=["0","1","2","3"].index(_pv),
-                        key=f"prio_{_safe_k}",
-                        label_visibility="collapsed",
+                        key=f"prio_{_safe_k}", label_visibility="collapsed",
                     )
                     if _new_pv != _pv:
                         update_watchlist_row(_ua, _exp_s, priority=int(_new_pv))
                         load_watchlist.clear(); st.rerun()
-                with _pc2:
+                with _ctl2:
                     _typed = st.text_input(
-                        "Notas",
-                        value=_note_display,
-                        placeholder="✏️ Mis notas privadas…",
-                        key=f"note_{_safe_k}",
-                        label_visibility="collapsed",
+                        "Nota", value=_note_display,
+                        placeholder="Mis notas privadas…",
+                        key=f"note_{_safe_k}", label_visibility="collapsed",
                     )
-                    if st.button("💾 Guardar", key=f"savenote_{_safe_k}",
-                                 use_container_width=True):
+                with _ctl3:
+                    if st.button("💾", key=f"savenote_{_safe_k}",
+                                 help="Guardar nota", use_container_width=True):
                         st.session_state["alert_notes_local"][_exp_s] = _typed
                         ok = update_watchlist_row(_ua, _exp_s, notes=_typed)
                         if ok:
                             st.session_state["alert_notes_saved_ok"].add(_exp_s)
                             st.toast("✅ Nota guardada", icon="💾")
                         else:
-                            st.toast("⚠️ No se pudo guardar. Inténtalo de nuevo.")
+                            st.toast("⚠️ No se pudo guardar.")
                         st.rerun()
-                with _pc3:
-                    if _note_saved_ok and _note_display:
-                        st.markdown(
-                            '<p style="font-size:11px;color:#16a34a;margin:4px 0;">✓ Guardado</p>',
-                            unsafe_allow_html=True)
+                with _ctl4:
                     if st.button("✕ Dejar de seguir", key=f"rm_al_{_safe_k}",
                                  use_container_width=True):
                         remove_from_watchlist(_ua, _exp_s)
@@ -2426,6 +2546,13 @@ with _tab_alertas:
                         st.session_state["alert_notes_local"].pop(_exp_s, None)
                         st.session_state["alert_notes_saved_ok"].discard(_exp_s)
                         load_watchlist.clear(); st.rerun()
+
+                # Saved confirmation (shows inline, fades into small caption)
+                if _note_saved_ok and _note_display:
+                    st.markdown(
+                        '<p style="font-size:10px;color:#16a34a;margin:-4px 0 4px;'
+                        'font-family:\'JetBrains Mono\',monospace;">✓ Nota guardada</p>',
+                        unsafe_allow_html=True)
 
                 st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
