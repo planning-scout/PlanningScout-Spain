@@ -297,6 +297,15 @@ if st.session_state.get("_transitioning"):
 .block-container {{ background: transparent !important; border: none !important;
     box-shadow: none !important; padding: 0 !important; max-width: 100% !important; }}
 @keyframes _spin {{ to {{ transform: rotate(360deg); }} }}
+
+/* Seguir / Siguiendo — compact pill-style */
+[data-testid="stButton"] button[kind="secondary"] {
+    font-size: 11px !important;
+    padding: 2px 10px !important;
+    height: 28px !important;
+    line-height: 1 !important;
+    border-radius: 100px !important;
+}
 </style>
 <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
      background:#f0f2f5;">
@@ -866,7 +875,7 @@ def parse_est_pem_numeric(text):
     return 0.0
 
 def fmt(v):
-    if v == 0:    return "Prioridad"
+    if v == 0:    return "—"
     if v >= 1e6:  return f"€{v/1e6:.1f}M"
     if v >= 1000: return f"€{int(v/1000)}K"
     return f"€{int(v):,}"
@@ -1972,26 +1981,6 @@ with st.sidebar:
             st.query_params.pop("s", None)
             st.rerun()
 
-        # ── Password change ──
-        with st.expander("\U0001f511 Cambiar contrase\u00f1a"):
-            _cp_cur = st.text_input("Contraseña actual",    type="password", key="cp_cur", placeholder="••••••••")
-            _cp_new = st.text_input("Nueva contraseña",     type="password", key="cp_new", placeholder="••••••••")
-            _cp_cnf = st.text_input("Confirmar contraseña", type="password", key="cp_cnf", placeholder="••••••••")
-            if st.button("Guardar nueva contraseña", key="cp_save"):
-                _cur_ok = _all_pw.get(_umail) == _cp_cur
-                if not _cp_cur or not _cur_ok:
-                    st.error("Contraseña actual incorrecta.")
-                elif len(_cp_new) < 6:
-                    st.error("La nueva contraseña debe tener al menos 6 caracteres.")
-                elif _cp_new != _cp_cnf:
-                    st.error("Las contraseñas nuevas no coinciden.")
-                else:
-                    if update_password_in_sheet(_umail, _cp_new):
-                        load_users_from_sheet.clear()
-                        st.success("\u2713 Contrase\u00f1a actualizada correctamente.")
-                    else:
-                        st.warning("No se encontr\u00f3 tu cuenta. Contacta con soporte.")
-            st.caption("La nueva contrase\u00f1a se activa de inmediato.")
 
 
 # ════════════════════════════════════════════════════════════
@@ -2387,7 +2376,7 @@ with _tab_leads:
             # Key prefix "sv_" — unique to main list (Mis alertas uses "al_" prefix).
             if _exp and _is_real_user:
                 _safe_k = re.sub(r'[^a-zA-Z0-9_]', '_', _exp)
-                _pad, _btn_col = st.columns([8, 2])
+                _pad, _btn_col = st.columns([10, 2])
                 with _btn_col:
                     if _already:
                         if st.button("🔔 Siguiendo ✕", key=f"sv_{_safe_k}",
@@ -2558,61 +2547,64 @@ with _tab_alertas:
                 st.markdown(build_card(_card_row, is_watched=True, inside_details=False),
                             unsafe_allow_html=True)
 
-                # ── Action row below each alert card ─────────────────────────
-                # Notes expander · Priority dropdown · Dejar de seguir
-                # All keys have "al_" prefix — NEVER collides with main list "sv_" keys
+                # ── Notes + actions below each alert card ─────────────────
+                # Layout (two rows):
+                #   Row 1: full-width notes expander
+                #   Row 2: [spacer] [priority selectbox] [Dejar de seguir]
+                # Full-width expander avoids column height mismatch.
+                # All keys prefixed "al_" — never collide with main list "sv_" keys.
                 _PRIO_OPTS = ["—", "🔴 P1", "🟡 P2", "🔵 P3"]
                 _PRIO_VAL  = {"—":"0","🔴 P1":"1","🟡 P2":"2","🔵 P3":"3"}
                 _PRIO_BACK = {"0":"—","1":"🔴 P1","2":"🟡 P2","3":"🔵 P3"}
                 _cur_label = _PRIO_BACK.get(_pv, "—")
 
-                _ac_notes, _ac_prio, _ac_rm = st.columns([6, 2, 2])
-
-                with _ac_notes:
-                    _note_lbl = (
-                        f"📝 {_note_display[:40]}{'…' if len(_note_display)>40 else ''}"
-                        if _note_display else "📝 Nota privada…"
+                # ── Row 1: Full-width notes expander ─────────────────────────
+                _note_lbl = (
+                    f"📝 {_note_display[:50]}{'…' if len(_note_display)>50 else ''}"
+                    if _note_display else "📝 Añadir nota privada…"
+                )
+                with st.expander(_note_lbl, expanded=False):
+                    _typed = st.text_area(
+                        "Nota", value=_note_display,
+                        placeholder="Contactos, próximos pasos, contexto…",
+                        key=f"al_note_{_safe_k}", label_visibility="collapsed",
+                        height=80,
                     )
-                    with st.expander(_note_lbl, expanded=False):
-                        _typed = st.text_area(
-                            "Nota", value=_note_display,
-                            placeholder="Contactos, próximos pasos, contexto…",
-                            key=f"al_note_{_safe_k}", label_visibility="collapsed",
-                            height=80,
-                        )
-                        _sn1, _sn2 = st.columns([5, 2])
-                        with _sn2:
-                            if st.button("💾 Guardar", key=f"al_save_{_safe_k}",
-                                         use_container_width=True):
-                                st.session_state["alert_notes_local"][_exp_s] = _typed
-                                ok = update_watchlist_row(_ua, _exp_s, notes=_typed)
-                                if ok:
-                                    st.session_state["alert_notes_saved_ok"].add(_exp_s)
-                                    st.toast("✅ Nota guardada", icon="💾")
-                                else:
-                                    st.toast("⚠️ No se pudo guardar.")
-                                st.rerun()
-                        with _sn1:
-                            if _note_saved_ok and _note_display:
-                                st.caption("✓ Guardada")
+                    _sn_l, _sn_r = st.columns([7, 2])
+                    with _sn_r:
+                        if st.button("💾 Guardar nota", key=f"al_save_{_safe_k}",
+                                     use_container_width=True):
+                            st.session_state["alert_notes_local"][_exp_s] = _typed
+                            ok = update_watchlist_row(_ua, _exp_s, notes=_typed)
+                            if ok:
+                                st.session_state["alert_notes_saved_ok"].add(_exp_s)
+                                st.toast("✅ Nota guardada", icon="💾")
+                            else:
+                                st.toast("⚠️ No se pudo guardar.")
+                            st.rerun()
+                    with _sn_l:
+                        if _note_saved_ok and _note_display:
+                            st.caption("✓ Guardada")
 
-                with _ac_prio:
-                    # Priority: compact selectbox — "—" = grey/none, P1/P2/P3 = colour
+                # ── Row 2: Priority selectbox + Dejar de seguir ───────────────
+                # Spacer pushes both controls flush-right, perfectly aligned.
+                _r2_sp, _r2_prio, _r2_rm = st.columns([6, 2, 2])
+
+                with _r2_prio:
                     _sel = st.selectbox(
                         "Prioridad",
                         options=_PRIO_OPTS,
                         index=_PRIO_OPTS.index(_cur_label) if _cur_label in _PRIO_OPTS else 0,
                         key=f"al_prio_{_safe_k}",
                         label_visibility="collapsed",
-                        help="Asignar prioridad",
+                        help="Asignar prioridad a este proyecto",
                     )
                     if _PRIO_VAL[_sel] != _pv:
                         update_watchlist_row(_ua, _exp_s, priority=int(_PRIO_VAL[_sel]))
                         load_watchlist.clear()
                         st.rerun()
 
-                with _ac_rm:
-                    st.markdown("<div style='margin-top:3px'></div>", unsafe_allow_html=True)
+                with _r2_rm:
                     if st.button("✕ Dejar de seguir", key=f"al_rm_{_safe_k}",
                                  help="Eliminar de Mis alertas",
                                  use_container_width=True):
@@ -2622,7 +2614,7 @@ with _tab_alertas:
                         load_watchlist.clear()
                         st.rerun()
 
-                st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
 # ── Footer ──
 st.markdown(f"""
