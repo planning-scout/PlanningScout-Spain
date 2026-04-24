@@ -1032,24 +1032,33 @@ def build_card(row, is_watched=False):
         f'&body={html_lib.escape("Municipio: " + muni + chr(10) + "Dirección: " + addr + chr(10) + "Expediente: " + expd + chr(10) + "URL: " + bocm)}'
     )
 
-    # Seguir button — state is passed in via is_watched parameter
+    # Seguir / Siguiendo — both use ?ps_action= params, never ?token= / ?perfil=
+    # This avoids the logout bug (those params are not cleared on seguir click)
     _SBT_SEGUIR = (
         f"{_F};display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;"
         f"padding:5px 12px;border-radius:7px;text-decoration:none;white-space:nowrap;"
     )
-    if is_watched:
+    if is_watched and row.get("_remove_href"):
+        # Already following — clicking removes. Tooltip explains the action.
+        _seguir_el = (
+            f'<a href="{row["_remove_href"]}" title="Haz clic para dejar de seguir este proyecto" '
+            f'style="{_SBT_SEGUIR}color:#16a34a;background:#f0fdf4;border:1.5px solid #bbf7d0;">'
+            f'🔔 Siguiendo ✕</a>'
+        )
+    elif is_watched:
+        # Watched but no remove href (token user) — show static green pill
         _seguir_el = (
             f'<span style="{_SBT_SEGUIR}color:#16a34a;background:#f0fdf4;border:1.5px solid #bbf7d0;cursor:default;">'
             f'🔔 Siguiendo</span>'
         )
     elif expd and row.get("_seguir_href"):
-        # URL-based click (no outside st.button needed)
         _seguir_el = (
-            f'<a href="{row["_seguir_href"]}" style="{_SBT_SEGUIR}color:#1e3a5f;background:#fff;border:1.5px solid #1e3a5f;">'
+            f'<a href="{row["_seguir_href"]}" title="Recibir alertas cuando avance" '
+            f'style="{_SBT_SEGUIR}color:#1e3a5f;background:#fff;border:1.5px solid #1e3a5f;">'
             f'🔔 Seguir</a>'
         )
     else:
-        _seguir_el = ""  # not logged in, or no expediente — hide gracefully
+        _seguir_el = ""
 
     _reportar_el = (
         f'<a href="{_mailto}" style="{_F};display:inline-flex;align-items:center;gap:3px;'
@@ -1352,13 +1361,21 @@ def _score_colour(score):
 def _make_pin_icon(score, fase=""):
     """Create a styled DivIcon for the folium marker."""
     colour = _score_colour(score)
+def _make_pin_icon(score, fase="", is_saved=False):
+    colour = "#16a34a" if score >= 65 else ("#c8860a" if score >= 40 else "#64748b")
     # Special icon for pre-leads (solicitud)
     symbol = "⚡" if fase == "solicitud" else ("★" if score >= 65 else "●")
+    # Saved pins get a white outer ring to stand out on the map
+    outer_ring = (
+        "box-shadow:0 0 0 3px #fff,0 0 0 5px #1e3a5f,0 2px 8px rgba(0,0,0,.4);"
+        if is_saved else
+        "box-shadow:0 2px 6px rgba(0,0,0,.3);"
+    )
     return folium.DivIcon(
         html=f"""<div style="
             width:28px;height:28px;border-radius:50%;
             background:{colour};border:2px solid #fff;
-            box-shadow:0 2px 6px rgba(0,0,0,.3);
+            {outer_ring}
             display:flex;align-items:center;justify-content:center;
             font-size:12px;color:#fff;font-weight:700;
             cursor:pointer;">
@@ -1369,7 +1386,7 @@ def _make_pin_icon(score, fase=""):
     )
 
 
-def build_map(df_map, profile_key="general"):
+def build_map(df_map, profile_key="general", watched_exps=None):
     """
     Build and return a Folium map for the given filtered dataframe.
     Each lead becomes a marker with a popup showing key info and a link.
@@ -1426,6 +1443,9 @@ def build_map(df_map, profile_key="general"):
         max_zoom=19,
     ).add_to(m)
 
+    if watched_exps is None:
+        watched_exps = set()
+
     # Add markers
     for row, lat, lon, prec in rows_with_loc:
         r = row.to_dict()
@@ -1439,7 +1459,9 @@ def build_map(df_map, profile_key="general"):
         maps_u  = r.get("maps", "") or ""
         desc    = r.get("descripcion", "") or ""
         fecha   = r.get("fecha", "") or ""
-        pz      = r.get("pem_est_raw", "") or ""   # Estimated PEM text
+        pz      = r.get("pem_est_raw", "") or ""
+        expd    = str(r.get("expediente", "") or "").strip()
+        is_saved = expd in watched_exps if expd else False
 
         # PEM display
         if pem >= 1_000_000:
@@ -1498,8 +1520,8 @@ def build_map(df_map, profile_key="general"):
         folium.Marker(
             location=[lat, lon],
             popup=folium.Popup(popup_html, max_width=310),
-            tooltip=f"{muni} · {pem_s} · {score}pts",
-            icon=_make_pin_icon(score, fase),
+            tooltip=f"{'🔔 ' if is_saved else ''}{muni} · {pem_s} · {score}pts",
+            icon=_make_pin_icon(score, fase, is_saved=is_saved),
         ).add_to(m)
 
     return m, len(rows_with_loc)
@@ -1698,7 +1720,6 @@ with st.sidebar:
     )
 
     muni_sel  = st.multiselect("Municipio", options=all_munis, placeholder="Todos")
-    st.caption(f"📍 {len(all_munis)} municipios con datos en el período seleccionado")
     aw_sel = []  # Urgencia removed — field data not reliable enough yet
 
     # ── Keyword search ──
@@ -1843,38 +1864,89 @@ def add_to_watchlist(user_email: str, row: dict) -> bool:
     except Exception as e:
         return False
 
+
+def remove_from_watchlist(user_email: str, expediente: str) -> bool:
+    """Remove a project from the user's watchlist by expediente. Returns True on success."""
+    try:
+        ss = _get_sheet_connection()
+        if not ss:
+            return False
+        try:
+            ws = ss.worksheet("Watchlist")
+        except Exception:
+            return False
+        rows = ws.get_all_values()
+        if len(rows) < 2:
+            return True
+        headers = rows[0]
+        try:
+            email_col = headers.index("email") + 1
+            exp_col   = headers.index("expediente") + 1
+        except ValueError:
+            return False
+        # Find rows matching this user + expediente (iterate in reverse to avoid index shift)
+        to_delete = []
+        for i, row in enumerate(rows[1:], start=2):
+            if (len(row) >= max(email_col, exp_col) and
+                    row[email_col-1].lower() == user_email.lower() and
+                    row[exp_col-1].strip() == expediente.strip()):
+                to_delete.append(i)
+        for row_idx in reversed(to_delete):
+            ws.delete_rows(row_idx)
+        load_watchlist.clear()
+        return True
+    except Exception:
+        return False
+
 # ════════════════════════════════════════════════════════════
 # HANDLE IN-CARD SEGUIR CLICK
 # The "🔔 Seguir" inside the card is an <a href="?save_exp=...&ue=...&tok=...">
 # When the user clicks it, Streamlit reloads with those params.
 # We validate the HMAC, save to Watchlist sheet, clear params, and rerun cleanly.
 # ════════════════════════════════════════════════════════════
-def _process_seguir_param():
-    import hashlib, base64 as _b64
-    _qp_exp = st.query_params.get("save_exp", "")
-    _qp_ue  = st.query_params.get("ue",       "")
-    _qp_tok = st.query_params.get("tok",      "")
-    if not (_qp_exp and _qp_ue and _qp_tok):
-        return
-    try:
-        _email  = _b64.urlsafe_b64decode(_qp_ue.encode()).decode()
-        _secret = "ps-seguir-2026"
-        try: _secret = str(st.secrets.get("SEGUIR_SECRET", "ps-seguir-2026"))
-        except: pass
-        _expected = hashlib.sha256(f"{_email}:{_qp_exp}:{_secret}".encode()).hexdigest()[:20]
-        if _expected != _qp_tok:
-            st.query_params.clear(); return
-        # Valid — save to Watchlist
-        add_to_watchlist(_email, {"expediente": _qp_exp, "bocm_url": ""})
-        load_watchlist.clear()
-        # Mark in session for immediate green feedback
-        st.session_state.setdefault("just_saved", set()).add(_qp_exp)
-    except Exception:
-        pass
-    st.query_params.clear()
-    st.rerun()
+    # ── LOGOUT BUG FIX ─────────────────────────────────────────────────────────
+    # ROOT CAUSE: The seguir link was <a href="?save_exp=..."> which REPLACES all
+    # query params on click. This wipes ?token= and ?perfil= params, causing the
+    # auth gate to fail and show the login screen on the reload.
+    #
+    # FIX: Use a dedicated ?ps_action= param that the handler clears AFTER saving
+    # auth state to session_state. The auth block runs before _process_seguir_param
+    # so session["authenticated"] is already True when we arrive here.
+    # We simply don't clear auth state — the rerun after clearing ps_action params
+    # re-enters the already-authenticated branch.
+    # ─────────────────────────────────────────────────────────────────────────────
+    import hashlib, base64 as _b64_mod
+    _qp_action = st.query_params.get("ps_action", "")
+    _qp_exp    = st.query_params.get("save_exp",  "")
+    _qp_ue     = st.query_params.get("ue",        "")
+    _qp_tok    = st.query_params.get("tok",       "")
+    _qp_rm_exp = st.query_params.get("rm_exp",    "")
 
-_process_seguir_param()
+    if _qp_action in ("save", "remove") and _qp_ue and _qp_tok:
+        _exp_target = _qp_exp if _qp_action == "save" else _qp_rm_exp
+        try:
+            _email  = _b64_mod.urlsafe_b64decode(_qp_ue.encode()).decode()
+            _secret = "ps-seguir-2026"
+            try: _secret = str(st.secrets.get("SEGUIR_SECRET", "ps-seguir-2026"))
+            except: pass
+            _expected = hashlib.sha256(f"{_email}:{_exp_target}:{_secret}".encode()).hexdigest()[:20]
+            if _expected == _qp_tok:
+                if _qp_action == "save":
+                    add_to_watchlist(_email, {"expediente": _exp_target, "bocm_url": ""})
+                    st.session_state.setdefault("just_saved", set()).add(_exp_target)
+                else:
+                    remove_from_watchlist(_email, _exp_target)
+                    st.session_state.setdefault("just_removed", set()).add(_exp_target)
+                load_watchlist.clear()
+        except Exception:
+            pass
+        # Clear ONLY the ps_action params — preserving everything else
+        st.query_params.pop("ps_action", None)
+        st.query_params.pop("save_exp",  None)
+        st.query_params.pop("rm_exp",    None)
+        st.query_params.pop("ue",        None)
+        st.query_params.pop("tok",       None)
+        st.rerun()
 
 # ════════════════════════════════════════════════════════════
 # MAIN CONTENT
@@ -2072,30 +2144,37 @@ with _tab_leads:
             unsafe_allow_html=True
         )
         # ── Session state init ─────────────────────────────────────────────────
-        if "just_saved" not in st.session_state:
-            st.session_state["just_saved"] = set()
+        if "just_saved"   not in st.session_state: st.session_state["just_saved"]   = set()
+        if "just_removed" not in st.session_state: st.session_state["just_removed"] = set()
 
         _u = st.session_state.get("user_email", "")
-        _is_real_user = _u and not _u.startswith("token:")
+        _is_real_user  = _u and not _u.startswith("token:")
         _sheet_watched = set(load_watchlist(_u)) if _is_real_user else set()
-        _watched_set   = _sheet_watched | st.session_state.get("just_saved", set())
+        # Apply session-level add/remove for instant visual feedback without cache wait
+        _watched_set   = (_sheet_watched | st.session_state.get("just_saved", set())) \
+                       - st.session_state.get("just_removed", set())
 
         for _, row in df_f.iterrows():
             _exp     = str(row.get("expediente", "") or "").strip()
             _already = (_exp in _watched_set) if _exp else False
 
-            # Build row dict with pre-computed seguir href so build_card can render it
             _row_dict = row.to_dict()
-            if _exp and _is_real_user and not _already:
-                # Generate a signed URL for the in-card Seguir anchor
-                import hashlib, base64 as _b64, urllib.parse as _up
+            if _exp and _is_real_user:
+                import hashlib as _hl, base64 as _b64, urllib.parse as _up
                 _secret = "ps-seguir-2026"
                 try: _secret = str(st.secrets.get("SEGUIR_SECRET", "ps-seguir-2026"))
                 except: pass
-                _tok = hashlib.sha256(f"{_u}:{_exp}:{_secret}".encode()).hexdigest()[:20]
-                _ue  = _b64.urlsafe_b64encode(_u.encode()).decode()
-                _row_dict["_seguir_href"] = (
-                    f"?save_exp={_up.quote(_exp)}&ue={_ue}&tok={_tok}"
+                _ue = _b64.urlsafe_b64encode(_u.encode()).decode()
+                # Seguir link
+                if not _already:
+                    _tok_save = _hl.sha256(f"{_u}:{_exp}:{_secret}".encode()).hexdigest()[:20]
+                    _row_dict["_seguir_href"] = (
+                        f"?ps_action=save&save_exp={_up.quote(_exp)}&ue={_ue}&tok={_tok_save}"
+                    )
+                # Remove link (shown on green "Siguiendo ✕" button)
+                _tok_rm = _hl.sha256(f"{_u}:{_exp}:{_secret}".encode()).hexdigest()[:20]
+                _row_dict["_remove_href"] = (
+                    f"?ps_action=remove&rm_exp={_up.quote(_exp)}&ue={_ue}&tok={_tok_rm}"
                 )
 
             st.markdown(
@@ -2119,7 +2198,8 @@ with _tab_mapa:
   <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#16a34a;margin-right:4px;vertical-align:middle;"></span>Alta prioridad (≥65 pts)</span>
   <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#c8860a;margin-right:4px;vertical-align:middle;"></span>Media (40–64 pts)</span>
   <span><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#64748b;margin-right:4px;vertical-align:middle;"></span>Baja (&lt;40 pts)</span>
-  <span>⚡ = Pre-lead (solicitud)</span>
+  <span><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#16a34a;border:2px solid #fff;outline:2px solid #1e3a5f;margin-right:4px;vertical-align:middle;"></span>Siguiendo 🔔</span>
+  <span>⚡ = Pre-lead · ★ = Alta prioridad</span>
   <span style="color:#94a3b8;font-size:11px;">📍 Ubicación aprox. para proyectos sin dirección exacta</span>
 </div>""", unsafe_allow_html=True)
 
@@ -2131,7 +2211,9 @@ with _tab_mapa:
         df_map = df_f.head(_map_rows)
         if len(df_f) > _map_rows:
             st.caption(f"ℹ️ Mapa muestra los {_map_rows} proyectos con mayor puntuación. Usa filtros para ver zonas concretas.")
-        result = build_map(df_map, profile_key=prof["key"])
+        # Pass watched set so saved pins get a distinct ring on the map
+        _map_watched = _watched_set if _is_real_user else set()
+        result = build_map(df_map, profile_key=prof["key"], watched_exps=_map_watched)
         if result:
             folium_map, n_plotted = result
             st_folium(
@@ -2159,44 +2241,189 @@ with _tab_alertas:
     if not _ua or _ua.startswith("token:"):
         st.info("Inicia sesión con tu email para ver y gestionar tus alertas guardadas.")
     else:
+        # Session-level dicts for priorities and comments (survive page rerun, not browser reload)
+        if "alert_priorities" not in st.session_state: st.session_state["alert_priorities"] = {}
+        if "alert_comments"   not in st.session_state: st.session_state["alert_comments"]   = {}
+
         _wl = load_watchlist(_ua)
+        # Apply session-level removes
+        _wl = [e for e in _wl if e not in st.session_state.get("just_removed", set())]
+        # Add session-level saves
+        for _je in st.session_state.get("just_saved", set()):
+            if _je and _je not in _wl:
+                _wl.append(_je)
+
         if not _wl:
             st.markdown("""
-            <div style="text-align:center;padding:56px 24px;background:#fff;
-                 border:1.5px solid #e2e8f0;border-radius:14px;">
-              <div style="font-size:36px;">🔖</div>
-              <h3 style="font-family:'Fraunces',Georgia,serif;font-size:18px;
-                  color:#0d1a2b;margin:14px 0 8px;">Sin alertas guardadas</h3>
-              <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0;">
-                Pulsa <strong>🔖 Seguir</strong> en cualquier proyecto<br>
-                para recibir alertas cuando avance de fase.
-              </p>
-            </div>""", unsafe_allow_html=True)
+<div style="text-align:center;padding:64px 24px;background:#fff;
+     border:1.5px solid #e2e8f0;border-radius:14px;margin-top:8px;">
+  <div style="font-size:40px;margin-bottom:12px;">🔔</div>
+  <h3 style="font-family:'Fraunces',Georgia,serif;font-size:18px;
+      color:#0d1a2b;margin:0 0 8px;">Sin alertas guardadas</h3>
+  <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0;">
+    Pulsa <strong>🔔 Seguir</strong> en cualquier proyecto<br>
+    para recibir alertas cuando avance de fase.
+  </p>
+</div>""", unsafe_allow_html=True)
         else:
+            # ── Header ──────────────────────────────────────────────────────────
+            _PRIO_CONFIG = {
+                1: ("🔴 Prioridad 1", "#fef2f2", "#dc2626", "#fecaca"),
+                2: ("🟠 Prioridad 2", "#fff7ed", "#c2410c", "#fed7aa"),
+                3: ("🟡 Prioridad 3", "#fefce8", "#a16207", "#fde68a"),
+                0: ("⚪ Sin prioridad", "#f8fafc", "#94a3b8", "#e2e8f0"),
+            }
+
+            # Sort by priority
+            def _get_prio(exp): return st.session_state["alert_priorities"].get(str(exp), 0)
+            _wl_sorted = sorted(_wl, key=lambda e: (0 if _get_prio(e) == 0 else -_get_prio(e)))
+
+            # Summary row
+            _prio_counts = {p: sum(1 for e in _wl if _get_prio(e) == p) for p in [1,2,3,0]}
             st.markdown(
-                f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;'
-                f'color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;">'
-                f'{len(_wl)} proyecto{"s" if len(_wl)!=1 else ""} en seguimiento</div>',
+                f'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">'
+                f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#94a3b8;'
+                f'text-transform:uppercase;letter-spacing:.08em;">{len(_wl)} proyecto{"s" if len(_wl)!=1 else ""} en seguimiento</span>'
+                + "".join(
+                    f'<span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;'
+                    f'background:{_PRIO_CONFIG[p][1]};color:{_PRIO_CONFIG[p][2]};border:1px solid {_PRIO_CONFIG[p][3]};">'
+                    f'{_PRIO_CONFIG[p][0].split()[0]} {_prio_counts[p]}</span>'
+                    for p in [1,2,3] if _prio_counts.get(p, 0) > 0
+                )
+                + '</div>',
                 unsafe_allow_html=True
             )
-            # Match watchlist expedientes to current sheet data
-            _wl_set = set(_wl)
-            _wl_rows = df[
-                df.get("expediente", pd.Series(dtype=str)).astype(str).str.strip().isin(_wl_set)
-            ] if "expediente" in df.columns else pd.DataFrame()
 
-            if not _wl_rows.empty:
-                for _, row in _wl_rows.iterrows():
-                    st.markdown(build_card(row.to_dict()), unsafe_allow_html=True)
-            else:
-                # Show expediente list even if not in current sheet
-                for exp_id in _wl:
+            # Match to sheet data
+            _wl_set  = set(_wl_sorted)
+            _df_base = df[df.get("expediente", pd.Series(dtype=str)).astype(str).str.strip().isin(_wl_set)] \
+                       if "expediente" in df.columns else pd.DataFrame()
+            _df_idx  = {str(r.get("expediente","")).strip(): r for _, r in _df_base.iterrows()} \
+                       if not _df_base.empty else {}
+
+            for _exp_id in _wl_sorted:
+                _exp_s  = str(_exp_id).strip()
+                _prio   = _get_prio(_exp_s)
+                _pb, _pbg, _pfc, _pbd = _PRIO_CONFIG.get(_prio, _PRIO_CONFIG[0])
+                _comment = st.session_state["alert_comments"].get(_exp_s, "")
+
+                # ── Card wrapper with priority left-border colour ──────────────
+                st.markdown(
+                    f'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;'
+                    f'border-left:4px solid {_pfc};margin-bottom:4px;overflow:hidden;">',
+                    unsafe_allow_html=True
+                )
+
+                # ── Card header with priority dropdown (top-right) ─────────────
+                _row = _df_idx.get(_exp_s)
+                _muni  = _row.get("municipio","—") if _row is not None else "—"
+                _tipo  = _row.get("tipo","—")      if _row is not None else "—"
+                _score = _row.get("score", 0)      if _row is not None else 0
+                _pem_v = _row.get("pem_combined",0) if _row is not None else 0
+                _pem_s = (f"€{_pem_v/1_000_000:.1f}M" if _pem_v >= 1_000_000
+                          else f"€{int(_pem_v/1000)}K" if _pem_v >= 1000 else "")
+                _desc  = (_row.get("descripcion","") or "")[:160] if _row is not None else ""
+                _bocm  = (_row.get("bocm_url","") or "")           if _row is not None else ""
+                _fase  = (_row.get("fase","") or "")               if _row is not None else ""
+
+                _col_info, _col_prio = st.columns([5, 2])
+                with _col_info:
                     st.markdown(
-                        f'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;'
-                        f'padding:12px 16px;margin-bottom:8px;font-family:\'JetBrains Mono\',monospace;'
-                        f'font-size:12px;color:#64748b;">🔖 Expediente: {html_lib.escape(str(exp_id))}</div>',
+                        f'<div style="padding:14px 16px 8px;">'
+                        f'<div style="font-size:11px;color:#64748b;font-family:\'JetBrains Mono\',monospace;'
+                        f'letter-spacing:.04em;margin-bottom:4px;">'
+                        f'{_muni} · Exp. {_exp_s}</div>'
+                        f'<div style="font-size:14px;font-weight:600;color:#0d1a2b;'
+                        f'font-family:\'Fraunces\',Georgia,serif;line-height:1.35;margin-bottom:6px;">'
+                        f'{_desc or _tipo}</div>'
+                        + (f'<span style="font-size:11px;font-weight:700;color:#1e3a5f;'
+                           f'background:#eff4fb;border:1px solid #bfdbfe;'
+                           f'padding:2px 8px;border-radius:20px;margin-right:6px;">{_tipo}</span>'
+                           if _tipo and _tipo != "—" else "")
+                        + (f'<span style="font-size:12px;font-weight:700;color:#1e3a5f;">{_pem_s}</span>'
+                           if _pem_s else "")
+                        + '</div>',
                         unsafe_allow_html=True
                     )
+                with _col_prio:
+                    st.markdown('<div style="padding:14px 16px 0 0;text-align:right;">', unsafe_allow_html=True)
+                    _new_prio = st.selectbox(
+                        "Prioridad",
+                        options=[0, 1, 2, 3],
+                        format_func=lambda p: _PRIO_CONFIG[p][0],
+                        index=[0,1,2,3].index(_prio),
+                        key=f"prio_{_exp_s}",
+                        label_visibility="collapsed",
+                    )
+                    if _new_prio != _prio:
+                        st.session_state["alert_priorities"][_exp_s] = _new_prio
+                        st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                # ── Comment box ────────────────────────────────────────────────
+                st.markdown(
+                    '<div style="padding:0 16px 4px;">'
+                    '<div style="font-size:10px;font-weight:600;color:#94a3b8;'
+                    'text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;">Mis notas (privadas)</div>',
+                    unsafe_allow_html=True
+                )
+                _new_comment = st.text_area(
+                    "Notas privadas",
+                    value=_comment,
+                    placeholder="Añade contexto, contactos, próximos pasos…",
+                    key=f"comment_{_exp_s}",
+                    label_visibility="collapsed",
+                    height=68,
+                )
+                if _new_comment != _comment:
+                    st.session_state["alert_comments"][_exp_s] = _new_comment
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                # ── Footer: BOCM link + Remove ────────────────────────────────
+                st.markdown(
+                    '<div style="padding:8px 16px 12px;display:flex;align-items:center;gap:8px;'
+                    'border-top:1px solid #f1f5f9;margin-top:4px;">',
+                    unsafe_allow_html=True
+                )
+                _fc1, _fc2, _fc3 = st.columns([2, 2, 3])
+                with _fc1:
+                    if _bocm:
+                        st.markdown(
+                            f'<a href="{_bocm}" target="_blank" '
+                            f'style="font-size:12px;font-weight:600;color:#1e3a5f;'
+                            f'text-decoration:none;">↗ Ver BOCM</a>',
+                            unsafe_allow_html=True
+                        )
+                with _fc2:
+                    if _fase:
+                        _fl = {"definitivo":"🟢 Definitivo","inicial":"🟡 Inicial",
+                               "licitacion":"🔵 Licitación","primera_ocupacion":"⚪ 1ª Ocup."}.get(_fase, _fase)
+                        st.markdown(
+                            f'<span style="font-size:11px;color:#64748b;">{_fl}</span>',
+                            unsafe_allow_html=True
+                        )
+                with _fc3:
+                    # Remove button — uses signed URL same as seguir
+                    if _is_real_user:
+                        import hashlib as _hl2, base64 as _b64_2, urllib.parse as _up2
+                        _secret2 = "ps-seguir-2026"
+                        try: _secret2 = str(st.secrets.get("SEGUIR_SECRET","ps-seguir-2026"))
+                        except: pass
+                        _ue2  = _b64_2.urlsafe_b64encode(_ua.encode()).decode()
+                        _tok2 = _hl2.sha256(f"{_ua}:{_exp_s}:{_secret2}".encode()).hexdigest()[:20]
+                        _rm_url = f"?ps_action=remove&rm_exp={_up2.quote(_exp_s)}&ue={_ue2}&tok={_tok2}"
+                        st.markdown(
+                            f'<div style="text-align:right;">'
+                            f'<a href="{_rm_url}" '
+                            f'style="font-size:11px;color:#94a3b8;text-decoration:none;'
+                            f'background:#f8fafc;border:1px solid #e2e8f0;padding:3px 10px;'
+                            f'border-radius:6px;" title="Dejar de seguir este proyecto">'
+                            f'✕ Dejar de seguir</a></div>',
+                            unsafe_allow_html=True
+                        )
+                st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)  # close card wrapper
+                st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
 
 # ── Footer ──
 st.markdown(f"""
