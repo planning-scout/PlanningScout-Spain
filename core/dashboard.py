@@ -492,16 +492,8 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
     }
 }
 
-/* Hide Streamlit "Press Enter to apply" hint — it overlaps the placeholder text */
+/* Hide Streamlit "Press Enter to apply" hint */
 [data-testid="InputInstructions"] { display: none !important; }
-
-/* Watch/follow button — flush to card bottom, zero gap */
-div[data-testid="stButton"] > button[kind="secondary"] {
-    font-size: 11px !important;
-    padding: 3px 10px !important;
-}
-/* Negative margin trick: attach Seguir button flush to card bottom */
-.watch-btn-wrap { margin-top: -1px !important; margin-bottom: 10px !important; }
 
 /* ── DARK MODE ───────────────────────────────────────────────────────────────
    Fires only when the user's OS/browser is set to dark mode.
@@ -622,17 +614,24 @@ SNO  = f"{_FM};font-size:10px;color:#94a3b8;margin-left:auto;"
 # PROFILES
 # ════════════════════════════════════════════════════════════
 PROFILES = {
-    "🔧 Instaladores MEP": {
-        "key": "instaladores",
-        "tip": "💡 <strong>Contacta al promotor 6-12 meses antes</strong> de que empiece la obra — antes de que cierre los contratos de instalaciones. La licencia concedida es tu señal de arranque.",
-        "min_score": 0, "min_value": 80_000, "days": 365,
-        "types": ["obra mayor", "obra mayor nueva construcción", "obra mayor rehabilitación",
-                  "cambio de uso", "declaración responsable", "licencia primera ocupación",
-                  "urbanización", "demolición y nueva planta"],
+    "🏗️ Gran Infraestructura": {
+        "key": "infrastructura",
+        "tip": "💡 <strong>Aprobación definitiva = licitación en 12-18 meses.</strong> Las Tablas Oeste €106M, Los Cerros, Tres Cantos UE.5 — las Juntas de Compensación activas son tu señal de máxima prioridad.",
+        "min_score": 35, "min_value": 0, "days": 365,
+        "types": ["urbanización", "plan especial", "plan especial / parcial", "plan parcial",
+                  "licitación de obras", "contribuciones especiales"],
+    },
+    "🏢 Gran Constructora": {
+        "key": "constructora",
+        "tip": "💡 <strong>Aprobación definitiva = licitación en 12-18 meses.</strong> Prepara dossier técnico y alianzas antes que la competencia.",
+        "min_score": 30, "min_value": 0, "days": 365,
+        "types": ["urbanización", "plan especial", "plan especial / parcial", "plan parcial",
+                  "obra mayor industrial", "obra mayor nueva construcción", "licitación de obras",
+                  "contribuciones especiales", "demolición y nueva planta"],
     },
     "🏪 Expansión Retail": {
         "key": "expansion",
-        "tip": "💡 <strong>Una urbanización aprobada = nuevo barrio en 2-3 años.</strong> Identifica la ubicación de tu próxima apertura antes de que suba el precio del suelo.",
+        "tip": "💡 <strong>Una urbanización aprobada = nuevo barrio en 2-3 años.</strong> Identifica tu próxima apertura antes de que suba el precio del suelo y la competencia ocupe los locales.",
         "min_score": 0, "min_value": 0, "days": 365,
         "types": ["urbanización", "plan especial", "plan especial / parcial", "plan parcial",
                   "cambio de uso", "licencia de actividad", "obra mayor nueva construcción",
@@ -640,69 +639,62 @@ PROFILES = {
     },
     "📐 Promotores / RE": {
         "key": "promotores",
-        "tip": "💡 <strong>Reparcelación aprobada = suelo urbanizable.</strong> Contacta a la Junta de Compensación antes de que la operación salga al mercado.",
-        "min_score": 20, "min_value": 0, "days": 365,
+        "tip": "💡 <strong>Reparcelación aprobada = suelo a precio de coste.</strong> Contacta a la Junta de Compensación antes de que la operación salga al mercado.",
+        "min_score": 15, "min_value": 0, "days": 365,
         "types": ["urbanización", "plan parcial", "plan especial", "plan especial / parcial",
                   "obra mayor nueva construcción", "cambio de uso"],
     },
-    "🏢 Gran Constructora": {
-        "key": "constructora",
-        "tip": "💡 <strong>Aprobación definitiva = licitación en 12-18 meses.</strong> Prepara el dossier técnico y las alianzas antes que la competencia.",
-        "min_score": 35, "min_value": 0, "days": 365,
-        "types": ["urbanización", "plan especial", "plan especial / parcial", "plan parcial",
-                  "obra mayor industrial", "obra mayor nueva construcción", "licitación de obras",
-                  "contribuciones especiales", "demolición y nueva planta"],
-    },
-    "🏗️ Gran Infraestructura": {
-        "key": "infrastructura",
-        "tip": "💡 <strong>Las Tablas Oeste €106M, Los Cerros, Tres Cantos UE.5 €17M.</strong> Anticipación de 12-18 meses antes de licitación. Las Juntas de Compensación activas son tu señal.",
-        "min_score": 40, "min_value": 0, "days": 365,
-        "types": ["urbanización", "plan especial", "plan especial / parcial", "plan parcial", "licitación de obras", "contribuciones especiales"],
+    "🔧 Instaladores MEP": {
+        "key": "instaladores",
+        "tip": "💡 <strong>Obra mayor = instalaciones eléctricas, HVAC, PCI y ascensores.</strong> Contacta al promotor en fase definitiva antes de que el constructor adjudique instalaciones.",
+        "min_score": 0, "min_value": 80_000, "days": 365,
+        "types": ["obra mayor nueva construcción", "obra mayor rehabilitación",
+                  "declaración responsable", "declaración responsable obra mayor",
+                  "licencia primera ocupación", "urbanización", "demolición y nueva planta"],
     },
     "🏭 Industrial / Log.": {
         "key": "industrial",
-        "tip": "💡 <strong>Licencia de nave = obra en 3-6 meses.</strong> Contacta al promotor para demolición previa o ejecución completa.",
+        "tip": "💡 <strong>Corredor logístico sur (Valdemoro, Getafe) y este (Coslada, Alcalá).</strong> Licencia de nave = obra en 3-6 meses. Sé el primero en llamar al promotor.",
         "min_score": 0, "min_value": 200_000, "days": 365,
         "types": ["obra mayor industrial", "urbanización", "obra mayor nueva construcción",
                   "cambio de uso", "licitación de obras"],
     },
     "🚧 Alquiler Maquinaria": {
         "key": "alquiler",
-        "tip": "💡 <strong>Llega al constructor ANTES de que empiece la obra.</strong> Cualquier proyecto >€200K = excavadoras, plataformas elevadoras, robots de demolición.",
+        "tip": "💡 <strong>Llega al constructor 30-60 días antes que tu competencia.</strong> Licitación adjudicada = llama al ganador hoy para excavadoras y plataformas.",
         "min_score": 0, "min_value": 200_000, "days": 60,
         "types": ["urbanización", "obra mayor nueva construcción", "obra mayor industrial",
                   "licitación de obras", "demolición y nueva planta", "obra mayor rehabilitación",
-                  "declaración responsable", "plan especial / parcial", "plan especial",
-                  "contribuciones especiales"],
-        # Any obra = machinery needed. No action_filter — don't depend on AI field being populated.
+                  "declaración responsable", "declaración responsable obra mayor",
+                  "plan especial / parcial", "plan especial", "contribuciones especiales"],
     },
-    
     "🛒 Compras / Materiales": {
         "key": "compras",
-        "tip": "💡 <strong>Todos los proyectos grandes = oportunidad de suministro.</strong> Preséntate antes de que la constructora adjudique materiales.",
+        "tip": "💡 <strong>Cada urbanización = kilómetros de tubería, hormigón y áridos.</strong> Preséntate al promotor antes de que la constructora adjudique suministros.",
         "min_score": 0, "min_value": 150_000, "days": 365,
         "types": [],
     },
     "💼 Contract & Oficinas": {
         "key": "actiu",
-        "tip": "💡 <strong>Cada edificio de oficinas o hotel = oportunidad de venta.</strong> Contacta al promotor en fase de proyecto básico — antes de que cierre el contrato de mobiliario y equipamiento.",
+        "tip": "💡 <strong>Primera ocupación = el edificio está terminado.</strong> Contacta al promotor antes de que cierre el contrato de mobiliario y equipamiento.",
         "min_score": 0, "min_value": 200_000, "days": 365,
         "types": ["obra mayor nueva construcción", "obra mayor rehabilitación",
-                  "cambio de uso", "declaración responsable", "licencia primera ocupación",
-                  "urbanización"],
-        "profile_fit_filter": "actiu",   # also filter by profile_fit column
+                  "cambio de uso", "declaración responsable", "declaración responsable obra mayor",
+                  "licencia primera ocupación", "urbanización"],
+        "profile_fit_filter": "actiu",
     },
-    "🏠 Flexliving & Hosteleria": {
+    "🏠 Flexliving & Hostelería": {
         "key": "hospe",
-        "tip": "💡 <strong>Cambio de uso = tu señal más valiosa.</strong> Primera ocupación = llama al promotor HOY. El edificio está terminado y necesita un operador antes de comercializarlo.",
+        "tip": "💡 <strong>Cambio de uso = señal de máxima prioridad.</strong> Primera ocupación = llama al promotor HOY — el edificio está listo y necesita operador.",
         "min_score": 0, "min_value": 0, "days": 365,
         "types": ["cambio de uso", "licencia primera ocupación", "declaración responsable",
-                  "obra mayor rehabilitación", "obra mayor nueva construcción"],
+                  "declaración responsable obra mayor", "obra mayor rehabilitación",
+                  "obra mayor nueva construcción"],
         "profile_fit_filter": "hospe",
     },
     "🏙️ Vista General": {
         "key": "general",
-        "tip": "Vista completa de todos los proyectos. Selecciona un perfil en el panel izquierdo para ver solo los leads relevantes para tu sector.",
+        "tip": "Vista completa de todos los proyectos del BOCM. Selecciona un perfil para filtrar por sector.",
         "min_score": 0, "min_value": 0, "days": 365,
         "types": [],
     },
@@ -1031,31 +1023,47 @@ def build_card(row, is_watched=False):
             + "</div>"
         )
 
-    # ── Watch state tag — rendered INSIDE the card footer ──────────────────────
-    # is_watched=True  → green "🔔 Siguiendo" tag in footer (always visible)
-    # is_watched=False → bell tag rendered visually BUT actual click uses st.button below card
-    _watch_in_card = ""
-    if expd:
-        if is_watched:
-            _watch_in_card = (
-                f'<span style="{_F};display:inline-flex;align-items:center;gap:4px;'
-                f'font-size:11px;font-weight:600;color:#16a34a;background:#f0fdf4;'
-                f'border:1.5px solid #bbf7d0;padding:4px 11px;border-radius:7px;'
-                f'white-space:nowrap;flex-shrink:0;">🔔 Siguiendo</span>'
-            )
-
+    # ── Footer buttons: BOCM · Mapa · PDF · Promotor · [Seguir/Siguiendo] · source · Reportar
+    # Seguir and Reportar live exclusively here — nothing outside the card.
     _src_label = "BOE" if bocm and (bocm.lower().startswith("https://www.boe.es") or bocm.lower().startswith("https://boe.es")) else "BOCM"
     _mailto = (
         f'mailto:info@planningscout.com'
         f'?subject={html_lib.escape("Lead: " + muni + " — " + (expd or ref_str[:30]))}'
         f'&body={html_lib.escape("Municipio: " + muni + chr(10) + "Dirección: " + addr + chr(10) + "Expediente: " + expd + chr(10) + "URL: " + bocm)}'
     )
+
+    # Seguir button — state is passed in via is_watched parameter
+    _SBT_SEGUIR = (
+        f"{_F};display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;"
+        f"padding:5px 12px;border-radius:7px;text-decoration:none;white-space:nowrap;"
+    )
+    if is_watched:
+        _seguir_el = (
+            f'<span style="{_SBT_SEGUIR}color:#16a34a;background:#f0fdf4;border:1.5px solid #bbf7d0;cursor:default;">'
+            f'🔔 Siguiendo</span>'
+        )
+    elif expd and row.get("_seguir_href"):
+        # URL-based click (no outside st.button needed)
+        _seguir_el = (
+            f'<a href="{row["_seguir_href"]}" style="{_SBT_SEGUIR}color:#1e3a5f;background:#fff;border:1.5px solid #1e3a5f;">'
+            f'🔔 Seguir</a>'
+        )
+    else:
+        _seguir_el = ""  # not logged in, or no expediente — hide gracefully
+
+    _reportar_el = (
+        f'<a href="{_mailto}" style="{_F};display:inline-flex;align-items:center;gap:3px;'
+        f'font-size:11px;font-weight:500;color:#94a3b8;background:#f8fafc;border:1px solid #e2e8f0;'
+        f'padding:4px 9px;border-radius:7px;text-decoration:none;white-space:nowrap;" '
+        f'title="Reportar error o pedir más info">✉️ Reportar</a>'
+    )
+
     footer = (
-        f'<div style="{SFO};">'
+        f'<div style="{SFO}">'
         + "".join(links)
-        + _watch_in_card
+        + _seguir_el
         + f'<span style="{SNO}">{_src_label}</span>'
-        + f'<a href="{_mailto}" style="{_F};display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:500;color:#94a3b8;background:#f8fafc;border:1px solid #e2e8f0;padding:4px 9px;border-radius:7px;text-decoration:none;white-space:nowrap;" title="Reportar error o pedir más info">✉️ Reportar</a>'
+        + _reportar_el
         + '</div>'
     )
 
@@ -1689,22 +1697,9 @@ with st.sidebar:
         placeholder="Todas las fases",
     )
 
-    # ── Action Window quick filter ──
-    _AW_OPTIONS = {
-        "ACTUAR": "⚡ Actuar esta semana",
-        "30 DÍAS": "📞 Contactar en 30 días",
-        "MONITORIZAR": "📅 Monitorizar",
-        "PIPELINE": "🔮 Pipeline largo",
-    }
-    aw_sel = st.multiselect(
-        "Urgencia",
-        options=list(_AW_OPTIONS.keys()),
-        format_func=lambda k: _AW_OPTIONS[k],
-        placeholder="Toda urgencia",
-    )
-
     muni_sel  = st.multiselect("Municipio", options=all_munis, placeholder="Todos")
     st.caption(f"📍 {len(all_munis)} municipios con datos en el período seleccionado")
+    aw_sel = []  # Urgencia removed — field data not reliable enough yet
 
     # ── Keyword search ──
     st.markdown(
@@ -1847,6 +1842,39 @@ def add_to_watchlist(user_email: str, row: dict) -> bool:
         return True
     except Exception as e:
         return False
+
+# ════════════════════════════════════════════════════════════
+# HANDLE IN-CARD SEGUIR CLICK
+# The "🔔 Seguir" inside the card is an <a href="?save_exp=...&ue=...&tok=...">
+# When the user clicks it, Streamlit reloads with those params.
+# We validate the HMAC, save to Watchlist sheet, clear params, and rerun cleanly.
+# ════════════════════════════════════════════════════════════
+def _process_seguir_param():
+    import hashlib, base64 as _b64
+    _qp_exp = st.query_params.get("save_exp", "")
+    _qp_ue  = st.query_params.get("ue",       "")
+    _qp_tok = st.query_params.get("tok",      "")
+    if not (_qp_exp and _qp_ue and _qp_tok):
+        return
+    try:
+        _email  = _b64.urlsafe_b64decode(_qp_ue.encode()).decode()
+        _secret = "ps-seguir-2026"
+        try: _secret = str(st.secrets.get("SEGUIR_SECRET", "ps-seguir-2026"))
+        except: pass
+        _expected = hashlib.sha256(f"{_email}:{_qp_exp}:{_secret}".encode()).hexdigest()[:20]
+        if _expected != _qp_tok:
+            st.query_params.clear(); return
+        # Valid — save to Watchlist
+        add_to_watchlist(_email, {"expediente": _qp_exp, "bocm_url": ""})
+        load_watchlist.clear()
+        # Mark in session for immediate green feedback
+        st.session_state.setdefault("just_saved", set()).add(_qp_exp)
+    except Exception:
+        pass
+    st.query_params.clear()
+    st.rerun()
+
+_process_seguir_param()
 
 # ════════════════════════════════════════════════════════════
 # MAIN CONTENT
@@ -2043,52 +2071,37 @@ with _tab_leads:
             f'</div>',
             unsafe_allow_html=True
         )
-        # ── Initialise just_saved set in session once ─────────────────────────
+        # ── Session state init ─────────────────────────────────────────────────
         if "just_saved" not in st.session_state:
             st.session_state["just_saved"] = set()
 
-        # Load watchlist once before the loop (not inside — avoid 1 Sheets call per card)
         _u = st.session_state.get("user_email", "")
-        _sheet_watched = set(load_watchlist(_u)) if (_u and not _u.startswith("token:")) else set()
-        # Merge sheet + this-session saves for immediate green feedback
-        _watched_set = _sheet_watched | st.session_state.get("just_saved", set())
+        _is_real_user = _u and not _u.startswith("token:")
+        _sheet_watched = set(load_watchlist(_u)) if _is_real_user else set()
+        _watched_set   = _sheet_watched | st.session_state.get("just_saved", set())
 
         for _, row in df_f.iterrows():
             _exp     = str(row.get("expediente", "") or "").strip()
             _already = (_exp in _watched_set) if _exp else False
 
-            # Pass is_watched so card footer shows green "Siguiendo" tag when saved
-            st.markdown(build_card(row.to_dict(), is_watched=_already), unsafe_allow_html=True)
+            # Build row dict with pre-computed seguir href so build_card can render it
+            _row_dict = row.to_dict()
+            if _exp and _is_real_user and not _already:
+                # Generate a signed URL for the in-card Seguir anchor
+                import hashlib, base64 as _b64, urllib.parse as _up
+                _secret = "ps-seguir-2026"
+                try: _secret = str(st.secrets.get("SEGUIR_SECRET", "ps-seguir-2026"))
+                except: pass
+                _tok = hashlib.sha256(f"{_u}:{_exp}:{_secret}".encode()).hexdigest()[:20]
+                _ue  = _b64.urlsafe_b64encode(_u.encode()).decode()
+                _row_dict["_seguir_href"] = (
+                    f"?save_exp={_up.quote(_exp)}&ue={_ue}&tok={_tok}"
+                )
 
-            # ── 🔔 Seguir button — visually attached to card bottom ────────────
-            # Only shown when: logged-in email user + expediente exists + not yet saved
-            if _exp and _u and not _u.startswith("token:") and not _already:
-                # Wrap in a zero-gap container to flush against card
-                with st.container():
-                    st.markdown(
-                        '<div class="watch-btn-wrap" style="margin-top:-2px;margin-bottom:10px;'
-                        'background:#fff;border:1.5px solid #e2e8f0;border-top:none;'
-                        'border-radius:0 0 14px 14px;padding:6px 12px 8px 12px;'
-                        'display:flex;align-items:center;gap:8px;">',
-                        unsafe_allow_html=True,
-                    )
-                    _bcol, _spacer = st.columns([1, 7])
-                    with _bcol:
-                        if st.button(
-                            "🔔 Seguir",
-                            key=f"watch_{_exp}_{row.get('bocm_url','')}",
-                            help="Recibe un email cuando este proyecto avance de fase.",
-                            use_container_width=True,
-                        ):
-                            if add_to_watchlist(_u, row.to_dict()):
-                                # Immediately mark as saved in session (green feedback without reload)
-                                st.session_state.setdefault("just_saved", set()).add(_exp)
-                                st.toast(f"🔔 ¡Guardado! Recibirás alertas sobre este proyecto.", icon="✅")
-                                load_watchlist.clear()
-                                st.rerun()
-                            else:
-                                st.toast("❌ Error guardando. Inténtalo de nuevo.")
-                    st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(
+                build_card(_row_dict, is_watched=_already),
+                unsafe_allow_html=True,
+            )
 
 # ── TAB 2: INTERACTIVE MAP ───────────────────────────────────
 with _tab_mapa:
