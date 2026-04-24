@@ -4,6 +4,8 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime, timedelta
 import re
+import hashlib
+import hmac as _hmac_mod
 import secrets as _secrets_mod
 from urllib.parse import unquote
 import html as html_lib
@@ -13,16 +15,50 @@ import base64
 import urllib.parse   # used in geocoding
 
 # ════════════════════════════════════════════════════════════
-# SESSION PERSISTENCE — 12-hour tokens stored in process memory
+# SESSION PERSISTENCE — stateless signed tokens (12 hours)
 #
-# When the user refreshes the browser, the Streamlit WebSocket
-# reconnects to the SAME server process on Streamlit Cloud.
-# The URL is preserved, so ?s=TOKEN is still present.
-# This module-level dict survives between reruns of the same process.
-# On server restart (Streamlit Cloud weekly), users re-login once.
+# Token format:  base64(email|perfil|expires_unix).HMAC_SHA256
+# Verified with a secret key stored in st.secrets["SESSION_SECRET"].
+# Works across process restarts (no in-memory dict needed).
 # ════════════════════════════════════════════════════════════
-_AUTH_TOKENS: dict = {}   # token → (email, perfil, expires_at)
 _SESSION_HOURS = 12
+
+
+def _session_secret() -> str:
+    try: return str(st.secrets.get("SESSION_SECRET", "ps-session-2026-default"))
+    except Exception: return "ps-session-2026-default"
+
+
+def _make_session_token(email: str, perfil: str) -> str:
+    """Create a signed session token valid for SESSION_HOURS hours."""
+    expires = int((datetime.now() + timedelta(hours=_SESSION_HOURS)).timestamp())
+    payload = f"{email}|{perfil}|{expires}"
+    sig = _hmac_mod.new(
+        _session_secret().encode(), payload.encode(), hashlib.sha256
+    ).hexdigest()[:32]
+    raw = f"{payload}.{sig}"
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def _verify_session_token(token: str):
+    """Verify token. Returns (email, perfil) or (None, None)."""
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode()).decode()
+        payload, sig = raw.rsplit(".", 1)
+        expected = _hmac_mod.new(
+            _session_secret().encode(), payload.encode(), hashlib.sha256
+        ).hexdigest()[:32]
+        if not _hmac_mod.compare_digest(sig, expected):
+            return None, None
+        parts = payload.split("|")
+        if len(parts) != 3: return None, None
+        email, perfil, expires_str = parts
+        if datetime.now().timestamp() > float(expires_str):
+            return None, None   # expired
+        return email, perfil
+    except Exception:
+        return None, None
 
 # ── Auto-install folium if not present ──────────────────────
 try:
@@ -177,8 +213,8 @@ def log_activity(email, action="login"):
 # ════════════════════════════════════════════════════════════
 qp          = st.query_params
 url_token   = qp.get("token", "")
-url_profile = unquote(qp.get("perfil", ""))   # decode %20, %2F, emoji encoding etc.
-url_session = qp.get("s", "")                 # 12-hour session persistence token
+url_profile = unquote(qp.get("perfil", ""))
+url_session = qp.get("s", "")   # 12-hour signed session token
 
 client_tokens = {}
 try:
@@ -188,19 +224,19 @@ except Exception:
     pass
 
 # ── Initialise session state ──
-for _k, _v in [("authenticated", False), ("user_email", ""), ("login_error", ""), ("user_perfil", ""), ("_transitioning", False)]:
+for _k, _v in [("authenticated", False), ("user_email", ""), ("login_error", ""),
+               ("user_perfil", ""), ("_transitioning", False), ("_session_tok", "")]:
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
-# ── Restore from 12-hour session token (survives browser page refresh) ────────
+# ── Restore session from signed URL token (survives page refresh + process restart) ──
 if not st.session_state["authenticated"] and url_session:
-    _stored = _AUTH_TOKENS.get(url_session)
-    if _stored:
-        _tok_email, _tok_perfil, _tok_expires = _stored
-        if datetime.now() < _tok_expires:
-            st.session_state["authenticated"] = True
-            st.session_state["user_email"]    = _tok_email
-            st.session_state["user_perfil"]   = _tok_perfil
+    _tok_email, _tok_perfil = _verify_session_token(url_session)
+    if _tok_email:
+        st.session_state["authenticated"] = True
+        st.session_state["user_email"]    = _tok_email
+        st.session_state["user_perfil"]   = _tok_perfil
+        st.session_state["_session_tok"]  = url_session
 
 # ── Transition intercept ── Must be FIRST content check after state init.
 # When _transitioning=True the previous cycle just authenticated the user.
@@ -353,19 +389,15 @@ header[data-testid="stHeader"] { display: none !important; }
         _p = _pass_in.strip()
         if _e in _users and _users[_e] == _p:
             _assigned = _secret_profiles.get(_e, "general")
-            # Create a 12-hour session token so page refresh doesn't log out
-            _new_tok = _secrets_mod.token_hex(24)
-            _AUTH_TOKENS[_new_tok] = (
-                _e, _assigned,
-                datetime.now() + timedelta(hours=_SESSION_HOURS)
-            )
+            # Create stateless signed token — works across process restarts
+            _new_tok = _make_session_token(_e, _assigned)
             st.session_state["authenticated"]  = True
             st.session_state["user_email"]     = _e
             st.session_state["login_error"]    = ""
             st.session_state["user_perfil"]    = _assigned
             st.session_state["_session_tok"]   = _new_tok
             st.session_state["_transitioning"] = True
-            st.query_params["s"] = _new_tok   # persists in URL through refresh
+            st.query_params["s"] = _new_tok
             log_activity(_e, "login")
             st.rerun()
         else:
@@ -1026,6 +1058,18 @@ def build_card(row, is_watched=False):
         q = html_lib.unescape(prom).replace(" ", "+")
         links.append(f'<a href="https://www.linkedin.com/search/results/all/?keywords={html_lib.escape(q)}" target="_blank" rel="noopener" style="{SBT}">🔍 Promotor</a>')
 
+    # ── Key Contacts + Action Window — removed from card display (noise).
+    # These fields were generating NameError when extras_html was used before definition.
+    # extras_html defined here, before ANY extras_html += below.
+    extras_html = ""
+
+    _raw_kc = str(row.get("key_contacts", "") or "").strip()
+    _raw_aw = str(row.get("action_window", "") or "").strip()
+    _raw_ot = str(row.get("obra_timeline", "") or "").strip()
+    # key_contacts and action_window are NOT rendered — removed per UX review.
+    # The information exists in the data but clutters the card. Promotor button
+    # covers contact discovery; urgency is handled by per-user Mis Alertas priorities.
+
     # ── Footer buttons: BOCM · Mapa · PDF · Promotor · [Seguir/Siguiendo] · source · Reportar
     # Seguir and Reportar live exclusively here — nothing outside the card.
     _src_label = "BOE" if bocm and (bocm.lower().startswith("https://www.boe.es") or bocm.lower().startswith("https://boe.es")) else "BOCM"
@@ -1058,46 +1102,6 @@ def build_card(row, is_watched=False):
     )
 
 
-    extras_html = ""
-
-    # ── Key Contacts (Apollo enrichment) ─────────────────────────────────────
-    _raw_kc = str(row.get("key_contacts", "") or "").strip()
-    _raw_aw = str(row.get("action_window", "") or "").strip()
-    _raw_ot = str(row.get("obra_timeline", "") or "").strip()
-
-    if _raw_kc and _raw_kc.lower() not in ("nan", "none"):
-        _kc_e = _html_esc.escape(_raw_kc[:300])
-        extras_html += (
-            "<div style='padding:10px 20px;background:#f0fdf4;"
-            "border-top:1px solid #bbf7d0;'>"
-            "<div style='font-size:10px;font-weight:700;color:#16a34a;"
-            "text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px;'>"
-            "🔍 Contacto clave</div>"
-            f"<div style='font-size:12.5px;color:#0d1a2b;line-height:1.6;'>{_kc_e}</div>"
-            "</div>"
-        )
-
-    if _raw_aw and _raw_aw.lower() not in ("nan", "none"):
-        _aw_color = ("#16a34a" if "ACTUAR" in _raw_aw
-                     else "#c8860a" if "30 DÍAS" in _raw_aw
-                     else "#64748b")
-        _aw_bg    = ("#dcfce7" if "ACTUAR" in _raw_aw
-                     else "#fef3c7" if "30 DÍAS" in _raw_aw
-                     else "#f1f5f9")
-        _aw_e     = _html_esc.escape(_raw_aw)
-        extras_html += (
-            "<div style='padding:6px 20px;background:#fafafa;"
-            "border-top:1px solid #f1f5f9;display:flex;align-items:center;gap:8px;'>"
-            f"<span style='background:{_aw_bg};color:{_aw_color};font-size:11px;"
-            f"font-weight:700;padding:3px 8px;border-radius:6px;'>{_aw_e}</span>"
-            + (
-                f"<span style='font-size:11px;color:#64748b;'>{_html_esc.escape(_raw_ot[:80])}</span>"
-                if _raw_ot and _raw_ot.lower() not in ("nan","none") else ""
-            )
-            + "</div>"
-        )
-
-
     # ── AI Evaluation — dropdown, same style as old Descripción dropdown ──
     # Phase (col Q) shown as a tag row below.
     _SUM = (
@@ -1107,6 +1111,7 @@ def build_card(row, is_watched=False):
         "list-style:none;border-top:1px solid #f1f5f9;background:#fff;"
     )
     _DIV = "padding:4px 20px 16px 20px;"
+
     ai_val = str(row.get("ai_evaluation", "") or row.get("AI Evaluation", "") or "").strip()
     if ai_val and ai_val.lower() not in ("nan", "none", ""):
         ai_e = _html_esc.escape(ai_val[:600])
@@ -1130,8 +1135,6 @@ def build_card(row, is_watched=False):
         "primera_ocupacion": ("⚪", "1ª Ocupación",           "#f8fafc", "#64748b", "#e2e8f0"),
         "en_tramite":        ("🟠", "En trámite",             "#fff7ed", "#c2410c", "#fed7aa"),
         "solicitud":         ("⚡", "Pre-lead · En solicitud","#fffbeb", "#b45309", "#fde68a"),
-        "adjudicacion":      ("🏆", "Adjudicación",           "#f0f9ff", "#0369a1", "#bae6fd"),
-        "en_obra":           ("🏗️", "En obra",                "#eff4fb", "#1e3a5f", "#bfdbfe"),
     }
     if fase_val and fase_val in _FASE_LABELS:
         fi, ft, fb, fc, fbd = _FASE_LABELS[fase_val]
@@ -1253,42 +1256,43 @@ def _geocode_nominatim(query):
 # Madrid municipality centroids — instant fallback when address geocoding fails.
 # Covers the most common BOCM municipalities for retail/expansion profiles.
 _MUNI_CENTROIDS = {
-    "madrid": (40.4168, -3.7038),
-    "alcalá de henares": (40.4818, -3.3647),
-    "alcobendas": (40.5499, -3.6414),
-    "alcorcón": (40.3490, -3.8242),
-    "algete": (40.5956, -3.4965),
-    "arganda del rey": (40.3015, -3.4422),
-    "aranjuez": (40.0332, -3.6019),
-    "boadilla del monte": (40.4071, -3.8759),
-    "brunete": (40.4014, -3.9976),
-    "collado villalba": (40.6330, -4.0046),
-    "coslada": (40.4227, -3.5650),
-    "fuenlabrada": (40.2839, -3.7982),
-    "galapagar": (40.5761, -4.0048),
-    "getafe": (40.3053, -3.7326),
-    "humanes de madrid": (40.2593, -3.8270),
+    "madrid":              (40.4168, -3.7038),
+    "alcalá de henares":   (40.4818, -3.3647),
+    "alcobendas":          (40.5499, -3.6414),
+    "alcorcón":            (40.3490, -3.8242),
+    "algete":              (40.5956, -3.4965),
+    "arganda del rey":     (40.3015, -3.4422),
+    "aranjuez":            (40.0332, -3.6019),
+    "boadilla del monte":  (40.4071, -3.8759),
+    "brunete":             (40.4014, -3.9976),
+    "collado villalba":    (40.6330, -4.0046),
+    "coslada":             (40.4227, -3.5650),
+    "fuenlabrada":         (40.2839, -3.7982),
+    "galapagar":           (40.5761, -4.0048),
+    "getafe":              (40.3053, -3.7326),
+    "humanes de madrid":   (40.2593, -3.8270),
     "las rozas de madrid": (40.4933, -3.8728),
-    "leganés": (40.3283, -3.7640),
-    "majadahonda": (40.4734, -3.8718),
-    "mejorada del campo": (40.3961, -3.4920),
-    "móstoles": (40.3220, -3.8642),
-    "navalcarnero": (40.2851, -4.0127),
+    "leganés":             (40.3283, -3.7640),
+    "majadahonda":         (40.4734, -3.8718),
+    "mejorada del campo":  (40.3961, -3.4920),
+    "móstoles":            (40.3220, -3.8642),
+    "navalcarnero":        (40.2851, -4.0127),
     "paracuellos de jarama": (40.5065, -3.5271),
-    "parla": (40.2381, -3.7760),
-    "pinto": (40.2427, -3.6974),
-    "pozuelo de alarcón": (40.4349, -3.8131),
-    "rivas-vaciamadrid": (40.3556, -3.5218),
+    "parla":               (40.2381, -3.7760),
+    "pinto":               (40.2427, -3.6974),
+    "pozuelo de alarcón":  (40.4349, -3.8131),
+    "rivas-vaciamadrid":   (40.3556, -3.5218),
     "san fernando de henares": (40.4245, -3.5368),
     "san sebastián de los reyes": (40.5534, -3.6281),
-    "torrejón de ardoz": (40.4586, -3.4795),
-    "tres cantos": (40.5951, -3.7078),
-    "valdemoro": (40.1910, -3.6747),
+    "torrejón de ardoz":   (40.4586, -3.4795),
+    "tres cantos":         (40.5951, -3.7078),
+    "valdemoro":           (40.1910, -3.6747),
     "velilla de san antonio": (40.3774, -3.5115),
     "villanueva de la cañada": (40.4521, -3.9849),
     "villanueva del pardillo": (40.4748, -3.9354),
     "ajalvir": (40.5415, -3.4632),
     "becerril de la sierra": (40.7188, -3.8906),
+    "brunete": (40.4014, -3.9976),
     "buitrago del lozoya": (40.9988, -3.6352),
     "casarrubuelos": (40.2020, -3.8890),
     "ciempozuelos": (40.1600, -3.6215),
@@ -1298,7 +1302,10 @@ _MUNI_CENTROIDS = {
     "el molar": (40.7158, -3.5879),
     "fuente el saz de jarama": (40.6235, -3.4856),
     "griñón": (40.2125, -3.8684),
+    "humanes de madrid": (40.2593, -3.8270),
     "meco": (40.5530, -3.3350),
+    "mejorada del campo": (40.3961, -3.4920),
+    "paracuellos de jarama": (40.5065, -3.5271),
     "quijorna": (40.4168, -3.9900),
     "robledo de chavela": (40.5068, -4.2424),
     "san agustín del guadalix": (40.7107, -3.6171),
@@ -1310,7 +1317,6 @@ _MUNI_CENTROIDS = {
     "villa del prado": (40.2762, -4.2777),
     "villalbilla": (40.4284, -3.3017),
     "villaviciosa de odón": (40.3556, -3.9003),
-
 }
 
 def _get_coords(row):
@@ -1779,14 +1785,12 @@ with st.sidebar:
      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{_udisplay}</p>
 </div>""", unsafe_allow_html=True)
         if st.button("\u21a9 Cerrar sesi\u00f3n", key="logout_btn"):
-            # Invalidate the session token
-            _tok_to_del = st.session_state.get("_session_tok", "")
-            if _tok_to_del: _AUTH_TOKENS.pop(_tok_to_del, None)
             st.session_state["authenticated"] = False
             st.session_state["user_email"]    = ""
             st.session_state["login_error"]   = ""
             st.session_state["user_perfil"]   = ""
             st.session_state["_session_tok"]  = ""
+            # Removing the ?s= param invalidates the session token in the URL
             st.query_params.pop("s", None)
             st.rerun()
 
@@ -1874,7 +1878,7 @@ def load_watchlist_full(user_email: str) -> list:
 
 
 def add_to_watchlist(user_email: str, row: dict) -> bool:
-    """Add a project to watchlist. Skips silently if already present."""
+    """Add a project to watchlist. Uses stable key (expediente or BOCM slug)."""
     try:
         ss = _get_sheet_connection()
         if not ss: return False
@@ -1883,22 +1887,39 @@ def add_to_watchlist(user_email: str, row: dict) -> bool:
             ws = ss.add_worksheet("Watchlist", rows=500, cols=10)
             ws.append_row(["email","source_url","expediente","fecha_added",
                            "phase_at_add","last_alerted","muni","description","notes","priority"])
-        exp   = str(row.get("expediente","") or "").strip()
         bocm  = str(row.get("bocm_url","") or "").strip()
         fase  = str(row.get("fase","") or "").strip()
         muni  = str(row.get("municipio","") or "").strip()
         desc  = str(row.get("descripcion","") or "")[:150]
         today = datetime.now().strftime("%Y-%m-%d")
+
+        # Stable unique key: expediente → BOCM slug → hash.
+        # Guarantees every card can be saved, not just those with a formal expediente.
+        exp = str(row.get("expediente","") or "").strip()
+        if not exp or exp.lower() in ("nan","none"):
+            _slug_m = re.search(r'BOCM[-_](\d{8}[-_]?\d*)', bocm, re.I)
+            if _slug_m:
+                exp = f"BOCM-{_slug_m.group(1).replace('_','-')}"
+            elif bocm:
+                exp = f"BOCM-{abs(hash(bocm)) % 10**10}"
+        if not exp:
+            return False
+
         # Idempotency — don't add same user+exp twice
-        existing = ws.get_all_records()
-        for r in existing:
-            if (r.get("email","").lower() == user_email.lower() and
-                    str(r.get("expediente","")).strip() == exp):
-                load_watchlist.clear(); return True  # already exists, _full uncached
+        try:
+            existing = ws.get_all_records()
+            for r in existing:
+                if (r.get("email","").lower() == user_email.lower() and
+                        str(r.get("expediente","")).strip() == exp):
+                    load_watchlist.clear(); return True
+        except Exception:
+            pass  # if check fails, proceed to write (may create duplicate — acceptable)
+
         ws.append_row([user_email, bocm, exp, today, fase, "", muni, desc, "", "0"])
-        load_watchlist.clear()  # clear only the expediente-list cache; _full is uncached
+        load_watchlist.clear()
         return True
-    except Exception:
+    except Exception as _err:
+        import sys; print(f"[add_to_watchlist] {_err}", file=sys.stderr)
         return False
 
 
@@ -2168,7 +2189,18 @@ with _tab_leads:
         _watched_set   = (_sheet_watched | st.session_state["just_saved"]) - st.session_state["just_removed"]
 
         for _, row in df_f.iterrows():
-            _exp     = str(row.get("expediente","") or "").strip()
+            # Stable unique key: expediente (ideal) → BOCM slug → URL hash.
+            # Expediente is empty for ~70% of BOCM documents (plans especiales,
+            # urbanizaciones, etc. don't always reference one). Without a fallback,
+            # the Seguir button would not render for those cards.
+            _exp = str(row.get("expediente","") or "").strip()
+            if not _exp or _exp.lower() in ("nan","none"):
+                _bocm_raw = str(row.get("bocm_url","") or "")
+                _slug_m   = re.search(r'BOCM[-_](\d{8}[-_]?\d*)', _bocm_raw, re.I)
+                if _slug_m:
+                    _exp = f"BOCM-{_slug_m.group(1).replace('_','-')}"
+                elif _bocm_raw:
+                    _exp = f"BOCM-{abs(hash(_bocm_raw)) % 10**10}"
             _already = (_exp in _watched_set) if _exp else False
 
             # Card has no seguir element — is_watched=False always; button below handles it
@@ -2176,11 +2208,6 @@ with _tab_leads:
 
             # ── Seguir / Siguiendo st.button — never <a href> ────────────────
             # st.button → server-side rerun → session_state intact → no logout
-            # Fallback: if expediente empty, use BOCM date-ID as unique key
-            if not _exp:
-                _bfb = str(row.get("bocm_url","") or "")
-                _bid = re.search(r'BOCM[-_](\d{8})', _bfb, re.I)
-                if _bid: _exp = f"BOCM-{_bid.group(1)}"
             if _exp and _is_real_user:
                 _safe_k = re.sub(r'[^a-zA-Z0-9_]', '_', _exp)
                 _sc, _sp = st.columns([1, 7])
@@ -2197,9 +2224,13 @@ with _tab_leads:
                         if st.button("🔔 Seguir", key=f"sv_{_safe_k}",
                                      help="Alertas cuando este proyecto avance de fase",
                                      use_container_width=True):
-                            add_to_watchlist(_u, row.to_dict())
-                            st.session_state["just_saved"].add(_exp)
-                            st.session_state["just_removed"].discard(_exp)
+                            _ok = add_to_watchlist(_u, row.to_dict())
+                            if _ok:
+                                st.session_state["just_saved"].add(_exp)
+                                st.session_state["just_removed"].discard(_exp)
+                                st.toast("🔔 Guardado. Aparecerá en Mis alertas.", icon="✅")
+                            else:
+                                st.toast("❌ Error guardando. Inténtalo de nuevo.")
                             st.rerun()
 
 # ── TAB 2: INTERACTIVE MAP ───────────────────────────────────
@@ -2262,15 +2293,10 @@ with _tab_alertas:
   <p style="font-size:14px;color:#64748b;margin:0;">Inicia sesión con tu email para gestionar tus alertas.</p>
 </div>""", unsafe_allow_html=True)
     else:
-        # ── Session dicts for in-session note backup ─────────────────────────────
-        # These survive reruns within the session. On re-login, sheet values reload.
-        if "alert_notes_local"     not in st.session_state: st.session_state["alert_notes_local"] = {}
-        if "alert_notes_saved_ok"  not in st.session_state: st.session_state["alert_notes_saved_ok"] = set()
+        if "alert_notes_local"    not in st.session_state: st.session_state["alert_notes_local"]    = {}
+        if "alert_notes_saved_ok" not in st.session_state: st.session_state["alert_notes_saved_ok"] = set()
 
-        # ── Load full watchlist (ALWAYS fresh — no @st.cache_data on load_watchlist_full) ─
         _wl_full = load_watchlist_full(_ua)
-
-        # Apply session-level removes/adds for instant feedback
         _removed = st.session_state.get("just_removed", set())
         _wl_full = [r for r in _wl_full
                     if str(r.get("expediente","")).strip() not in _removed]
@@ -2282,16 +2308,21 @@ with _tab_alertas:
                 _seen.add(_je)
 
         _PRIO = {
-            "1": ("🔴", "Prioridad 1", "#fef2f2", "#dc2626", "#fecaca"),
-            "2": ("🟠", "Prioridad 2", "#fff7ed", "#c2410c", "#fed7aa"),
-            "3": ("🟡", "Prioridad 3", "#fefce8", "#a16207", "#fde68a"),
-            "0": ("",   "Sin prioridad", "#fff",  "#94a3b8", "#e2e8f0"),
+            "1": ("🔴", "Prioridad 1", "#dc2626"),
+            "2": ("🟠", "Prioridad 2", "#c2410c"),
+            "3": ("🟡", "Prioridad 3", "#a16207"),
+            "0": ("",   "Sin prioridad","#94a3b8"),
         }
         def _gprio(r): return str(r.get("priority","0") or "0").strip() or "0"
-        # P1 sorts first (ascending by number), no-priority last
         _wl_full.sort(key=lambda r: int(_gprio(r)) if _gprio(r) != "0" else 999)
 
-        if not _wl_full:
+        # Accept any non-empty key ≤ 60 chars.
+        # NOTE: .isupper() removed — incorrectly rejected BOCM-20260414 type slugs.
+        _wl_valid = [r for r in _wl_full
+                     if str(r.get("expediente","") or "").strip()
+                     and len(str(r.get("expediente","") or "").strip()) <= 60]
+
+        if not _wl_valid:
             st.markdown("""
 <div style="text-align:center;padding:64px 24px;background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;margin-top:8px;">
   <div style="font-size:40px;margin-bottom:12px;">🔔</div>
@@ -2301,18 +2332,13 @@ with _tab_alertas:
   </p>
 </div>""", unsafe_allow_html=True)
         else:
-            # Pre-filter garbled expedientes before counting
-            _wl_valid = [r for r in _wl_full
-                         if str(r.get("expediente","") or "").strip()
-                         and len(str(r.get("expediente","") or "").strip()) <= 40
-                         and not str(r.get("expediente","") or "").strip().isupper()]
             st.markdown(
                 f'<p style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#94a3b8;'
                 f'text-transform:uppercase;letter-spacing:.08em;margin:0 0 16px;">'
                 f'{len(_wl_valid)} proyecto{"s" if len(_wl_valid)!=1 else ""} en seguimiento</p>',
                 unsafe_allow_html=True)
 
-            # Build index of leads data
+            # Build lookup from current sheet data
             _df_idx = {}
             if "expediente" in df.columns:
                 for _, _r in df[df["expediente"].astype(str).str.strip().isin(_seen)].iterrows():
@@ -2320,124 +2346,78 @@ with _tab_alertas:
                     if _k: _df_idx[_k] = _r
 
             for _wr in _wl_valid:
-                _exp_s = str(_wr.get("expediente","") or "").strip()
+                _exp_s  = str(_wr.get("expediente","") or "").strip()
                 if not _exp_s: continue
-
-                # (already filtered above)
-
                 _safe_k = re.sub(r'[^a-zA-Z0-9_]', '_', _exp_s)
                 _pv     = _gprio(_wr)
-                _, _pl, _pbg, _pfc, _pbd = _PRIO.get(_pv, _PRIO["0"])
+                _, _pl, _pfc = _PRIO.get(_pv, _PRIO["0"])
 
-                # Notes: sheet value is truth; session backup is fallback within session
                 _note_sheet   = str(_wr.get("notes","") or "")
                 _note_session = st.session_state["alert_notes_local"].get(_exp_s)
-                # Use session backup if it's newer than what's in the sheet
-                # (covers the window between save and sheet propagation)
-                _note_display = _note_session if (_note_session is not None) else _note_sheet
+                _note_display = _note_session if _note_session is not None else _note_sheet
                 _note_saved_ok = _exp_s in st.session_state["alert_notes_saved_ok"]
 
-                _row  = _df_idx.get(_exp_s)
-                _muni = (str(_row.get("municipio","") or "") if _row is not None else "") or "—"
-                _tipo = (str(_row.get("tipo","")      or "") if _row is not None else "") or "—"
-                _pem_v= (_row.get("pem_combined",0)          if _row is not None else 0) or 0
-                _desc = (str(_row.get("descripcion","") or "")[:140] if _row is not None else "")
-                _bocm = (str(_row.get("bocm_url","")  or "") if _row is not None else "")
-                _fase = (str(_row.get("fase","")      or "") if _row is not None else "")
-                _pem_s= (f"€{_pem_v/1_000_000:.1f}M" if _pem_v>=1_000_000
-                         else f"€{int(_pem_v/1000)}K" if _pem_v>=1000 else "")
-                _fl   = {"definitivo":"🟢 Definitivo","inicial":"🟡 Inicial",
-                         "licitacion":"🔵 Licitación","primera_ocupacion":"⚪ 1ª Ocup.",
-                         "adjudicacion":"🏆 Adjudicación","en_obra":"🏗️ En obra",
-                         "en_tramite":"🟠 En trámite","solicitud":"⚡ Solicitud"}.get(_fase,"")
+                _row = _df_idx.get(_exp_s)
 
-                # ── Card container ────────────────────────────────────────────
-                _bc = f"border-left:4px solid {_pfc};" if _pv != "0" else ""
-                st.markdown(
-                    f'<div style="background:#fff;border:1.5px solid #e2e8f0;{_bc}'
-                    f'border-radius:14px;margin-bottom:8px;overflow:hidden;'
-                    f'box-shadow:0 2px 10px rgba(0,0,0,.06);">',
-                    unsafe_allow_html=True)
-
-                # ── Header: info left | priority picker right ─────────────────
-                _c1, _c2 = st.columns([6, 2])
-                with _c1:
+                # ── Priority border strip above each alert card ───────────────
+                if _pv != "0":
                     st.markdown(
-                        f'<div style="padding:14px 0 10px 18px;">'
-                        f'<div style="font-size:11px;color:#94a3b8;font-family:\'JetBrains Mono\',monospace;'
-                        f'letter-spacing:.03em;margin-bottom:5px;">'
-                        f'{html_lib.escape(_muni)} &nbsp;·&nbsp; Exp. {html_lib.escape(_exp_s)}</div>'
-                        f'<div style="font-size:15px;font-weight:600;color:#0d1a2b;'
-                        f'font-family:\'Fraunces\',Georgia,serif;line-height:1.35;margin-bottom:8px;">'
-                        f'{html_lib.escape(_desc or _tipo)}</div>'
-                        + (f'<span style="font-size:11px;padding:2px 10px;border-radius:20px;'
-                           f'background:#eff4fb;color:#1e3a5f;border:1px solid #bfdbfe;margin-right:6px;">'
-                           f'{html_lib.escape(_tipo)}</span>' if _tipo not in ("—","") else "")
-                        + (f'<span style="font-size:13px;font-weight:700;color:#1e3a5f;">{_pem_s}</span>' if _pem_s else "")
-                        + '</div>', unsafe_allow_html=True)
-                with _c2:
-                    st.markdown('<div style="padding:18px 18px 0 0;">', unsafe_allow_html=True)
-                    _new_pv = st.selectbox("P", options=["0","1","2","3"],
+                        f'<div style="height:3px;background:{_pfc};border-radius:3px 3px 0 0;'
+                        f'margin-bottom:-2px;"></div>',
+                        unsafe_allow_html=True)
+
+                # ── Real lead card (identical to main list) ───────────────────
+                if _row is not None:
+                    _card_row = _row.to_dict()
+                else:
+                    # Minimal row so card still renders cleanly when not in current filter
+                    _card_row = {
+                        "municipio": _wr.get("muni",""),
+                        "descripcion": _wr.get("description",""),
+                        "expediente": _exp_s,
+                        "bocm_url": _wr.get("source_url",""),
+                        "fase": _wr.get("phase_at_add",""),
+                        "tipo": "",
+                    }
+                st.markdown(build_card(_card_row, is_watched=False), unsafe_allow_html=True)
+
+                # ── Priority picker + Notes + Remove row (tight, below card) ─
+                _pc1, _pc2, _pc3 = st.columns([2, 3, 2])
+                with _pc1:
+                    _new_pv = st.selectbox(
+                        "Prioridad",
+                        options=["0","1","2","3"],
                         format_func=lambda p: _PRIO[p][1],
                         index=["0","1","2","3"].index(_pv),
-                        key=f"prio_{_safe_k}", label_visibility="collapsed")
+                        key=f"prio_{_safe_k}",
+                        label_visibility="collapsed",
+                    )
                     if _new_pv != _pv:
                         update_watchlist_row(_ua, _exp_s, priority=int(_new_pv))
                         load_watchlist.clear(); st.rerun()
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                # ── Notes section ─────────────────────────────────────────────
-                st.markdown(
-                    '<div style="padding:4px 18px 12px;">'
-                    '<div style="font-size:10px;font-weight:700;color:#94a3b8;'
-                    'text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;">'
-                    'Mis notas (privadas)</div>',
-                    unsafe_allow_html=True)
-
-                _typed = st.text_area("",
-                    value=_note_display,
-                    placeholder="Añade contexto, contactos, próximos pasos…",
-                    key=f"note_{_safe_k}",
-                    label_visibility="collapsed", height=72)
-
-                # Save note button — explicit action prevents accidental saves
-                _note_col, _saved_col = st.columns([1, 3])
-                with _note_col:
-                    if st.button("💾 Guardar nota", key=f"savenote_{_safe_k}",
+                with _pc2:
+                    _typed = st.text_input(
+                        "Notas",
+                        value=_note_display,
+                        placeholder="✏️ Mis notas privadas…",
+                        key=f"note_{_safe_k}",
+                        label_visibility="collapsed",
+                    )
+                    if st.button("💾 Guardar", key=f"savenote_{_safe_k}",
                                  use_container_width=True):
-                        # 1. Persist to session immediately (survives rerun)
                         st.session_state["alert_notes_local"][_exp_s] = _typed
-                        # 2. Write to sheet
                         ok = update_watchlist_row(_ua, _exp_s, notes=_typed)
                         if ok:
                             st.session_state["alert_notes_saved_ok"].add(_exp_s)
                             st.toast("✅ Nota guardada", icon="💾")
                         else:
-                            st.toast("⚠️ Guardado local. Se sincronizará pronto.", icon="💾")
+                            st.toast("⚠️ No se pudo guardar. Inténtalo de nuevo.")
                         st.rerun()
-                with _saved_col:
+                with _pc3:
                     if _note_saved_ok and _note_display:
                         st.markdown(
-                            '<p style="font-size:11px;color:#16a34a;margin:6px 0 0;'
-                            'font-family:\'Plus Jakarta Sans\',system-ui;">✓ Nota guardada</p>',
+                            '<p style="font-size:11px;color:#16a34a;margin:4px 0;">✓ Guardado</p>',
                             unsafe_allow_html=True)
-
-                st.markdown('</div>', unsafe_allow_html=True)
-
-                # ── Footer: BOCM | fase badge | remove ───────────────────────
-                _fa, _fb, _fc = st.columns([2, 2, 2])
-                with _fa:
-                    if _bocm: st.markdown(
-                        f'<div style="padding:4px 0 14px 18px;">'
-                        f'<a href="{_bocm}" target="_blank" '
-                        f'style="font-size:12px;font-weight:600;color:#1e3a5f;text-decoration:none;">↗ Ver BOCM</a>'
-                        f'</div>', unsafe_allow_html=True)
-                with _fb:
-                    if _fl: st.markdown(
-                        f'<div style="padding:6px 0 14px;">'
-                        f'<span style="font-size:11px;color:#64748b;">{html_lib.escape(_fl)}</span>'
-                        f'</div>', unsafe_allow_html=True)
-                with _fc:
                     if st.button("✕ Dejar de seguir", key=f"rm_al_{_safe_k}",
                                  use_container_width=True):
                         remove_from_watchlist(_ua, _exp_s)
@@ -2447,8 +2427,7 @@ with _tab_alertas:
                         st.session_state["alert_notes_saved_ok"].discard(_exp_s)
                         load_watchlist.clear(); st.rerun()
 
-                st.markdown('</div>', unsafe_allow_html=True)
-                st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
 # ── Footer ──
 st.markdown(f"""
