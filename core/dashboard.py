@@ -297,15 +297,6 @@ if st.session_state.get("_transitioning"):
 .block-container {{ background: transparent !important; border: none !important;
     box-shadow: none !important; padding: 0 !important; max-width: 100% !important; }}
 @keyframes _spin {{ to {{ transform: rotate(360deg); }} }}
-
-/* Seguir / Siguiendo — compact pill-style */
-[data-testid="stButton"] button[kind="secondary"] {
-    font-size: 11px !important;
-    padding: 2px 10px !important;
-    height: 28px !important;
-    line-height: 1 !important;
-    border-radius: 100px !important;
-}
 </style>
 <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
      background:#f0f2f5;">
@@ -620,13 +611,6 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
     padding: 5px 14px !important;
 }
 
-/* --- THE GLUE: Pulls the Streamlit button up to attach it to the HTML card --- */
-[data-testid="stVerticalBlock"] > div:has(div.stMarkdown) + div {
-    margin-top: -15px !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
 /* ── DARK MODE ───────────────────────────────────────────────────────────────
    Fires only when the user's OS/browser is set to dark mode.
    Targets the Streamlit chrome (toolbar, sidebar, app shell) — not the cards,
@@ -690,6 +674,15 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
         color: #93c5fd !important;
         border-color: #2d3f55 !important;
     }
+}
+
+/* Seguir / Siguiendo — compact pill button */
+[data-testid="baseButton-secondary"] {
+    font-size: 11px !important;
+    padding: 3px 10px !important;
+    height: 28px !important;
+    line-height: 1.2 !important;
+    border-radius: 100px !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -2554,18 +2547,13 @@ with _tab_alertas:
                 st.markdown(build_card(_card_row, is_watched=True, inside_details=False),
                             unsafe_allow_html=True)
 
-                # ── Notes + actions below each alert card ─────────────────
-                # Layout (two rows):
-                #   Row 1: full-width notes expander
-                #   Row 2: [spacer] [priority selectbox] [Dejar de seguir]
-                # Full-width expander avoids column height mismatch.
-                # All keys prefixed "al_" — never collide with main list "sv_" keys.
+                # ── Row 1: Notes — full-width expander ───────────────────────
+                # All keys prefixed "al_" — never collides with main list "sv_" keys
                 _PRIO_OPTS = ["—", "🔴 P1", "🟡 P2", "🔵 P3"]
                 _PRIO_VAL  = {"—":"0","🔴 P1":"1","🟡 P2":"2","🔵 P3":"3"}
                 _PRIO_BACK = {"0":"—","1":"🔴 P1","2":"🟡 P2","3":"🔵 P3"}
                 _cur_label = _PRIO_BACK.get(_pv, "—")
 
-                # ── Row 1: Full-width notes expander ─────────────────────────
                 _note_lbl = (
                     f"📝 {_note_display[:50]}{'…' if len(_note_display)>50 else ''}"
                     if _note_display else "📝 Añadir nota privada…"
@@ -2594,7 +2582,7 @@ with _tab_alertas:
                             st.caption("✓ Guardada")
 
                 # ── Row 2: Priority selectbox + Dejar de seguir ───────────────
-                # Spacer pushes both controls flush-right, perfectly aligned.
+                # Both controls sit in the same row — identical height, flush-right
                 _r2_sp, _r2_prio, _r2_rm = st.columns([6, 2, 2])
 
                 with _r2_prio:
