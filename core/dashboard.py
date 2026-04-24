@@ -620,6 +620,13 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
     padding: 5px 14px !important;
 }
 
+/* --- THE GLUE: Pulls the Streamlit button up to attach it to the HTML card --- */
+[data-testid="stVerticalBlock"] > div:has(div.stMarkdown) + div {
+    margin-top: -15px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 /* ── DARK MODE ───────────────────────────────────────────────────────────────
    Fires only when the user's OS/browser is set to dark mode.
    Targets the Streamlit chrome (toolbar, sidebar, app shell) — not the cards,
