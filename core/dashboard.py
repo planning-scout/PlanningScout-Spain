@@ -507,18 +507,26 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden !important; }
-
-/* Hide ALL Streamlit attribution — "Made with Streamlit", "Created by ingatech-hub", etc.
-   Streamlit Cloud shows the deploying GitHub org in several elements; hide them all. */
-[data-testid="stToolbar"]         { display: none !important; }
+/* ── Hide ALL Streamlit chrome: menus, badges, GitHub, footer, toolbar ── */
+#MainMenu                          { display: none !important; visibility: hidden !important; }
+footer                             { display: none !important; visibility: hidden !important; }
+header[data-testid="stHeader"]     { display: none !important; }
+[data-testid="stToolbar"]          { display: none !important; }
+[data-testid="stDecoration"]       { display: none !important; }
 #stDecoration                      { display: none !important; }
 .viewerBadge_container__1QSob,
 .viewerBadge_link__1S137,
 .viewerBadge_text__1JaDK           { display: none !important; }
 [data-testid="stStatusWidget"]     { display: none !important; }
 [data-testid="manage-app-button"]  { display: none !important; }
+/* GitHub icon (bottom-right on Streamlit Cloud) */
+[data-testid="stActionButtonIcon"] { display: none !important; }
+.stActionButton                    { display: none !important; }
+/* "Made with Streamlit" and "Hosted by Streamlit" */
+.css-1dp5vir, .css-14xtw13,
+.css-1544g2n, .block-container ~ div > div > div > a { display: none !important; }
+/* Streamlit watermark in bottom right */
+[class*="watermark"], [class*="streamlit-footer"] { display: none !important; }
 
 .stApp { background: #f0f2f5 !important; }
 
@@ -553,18 +561,25 @@ footer { visibility: hidden !important; }
     color: #334155 !important;
 }
 
-/* Download button */
-.stDownloadButton button {
-    background: #fff !important;
+/* Download/Export button — always white bg + navy text, never dark */
+.stDownloadButton button,
+.stDownloadButton > button,
+[data-testid="stDownloadButton"] button {
+    background: #ffffff !important;
     color: #1e3a5f !important;
-    border: 1.5px solid #cbd5e1 !important;
+    border: 1.5px solid #1e3a5f !important;
     border-radius: 8px !important;
     font-size: 13px !important;
     font-weight: 600 !important;
+    padding: 8px 16px !important;
+    min-height: 38px !important;
+    line-height: 1.4 !important;
 }
-.stDownloadButton button:hover {
+.stDownloadButton button:hover,
+[data-testid="stDownloadButton"] button:hover {
     border-color: #1e3a5f !important;
     background: #eff4fb !important;
+    color: #1e3a5f !important;
 }
 
 /* Refresh button */
@@ -592,77 +607,114 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
 }
 
 /* Mobile */
+/* ═══════════════ MOBILE-FIRST STYLES (≤768px) ═══════════════════════════ */
 @media (max-width: 768px) {
-    /* Layout */
+
+    /* ── Layout ── */
     .block-container {
-        padding-left: 10px !important;
-        padding-right: 10px !important;
-        padding-top: 10px !important;
-        padding-bottom: 60px !important;
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+        padding-top: 8px !important;
+        padding-bottom: 80px !important;
+        max-width: 100% !important;
     }
 
-    /* Cards — full width, readable on small screens */
-    details > summary {
+    /* ── Sidebar: full overlay on mobile — Streamlit handles hamburger ── */
+    [data-testid="stSidebar"] {
+        width: 85vw !important;
+        min-width: 260px !important;
+        max-width: 340px !important;
+    }
+
+    /* ── Profile title: never truncate ── */
+    h1 { font-size: 20px !important; word-break: break-word !important; }
+
+    /* ── Metric cards: slightly smaller ── */
+    .block-container div[style*="border-radius:12px"] {
         padding: 12px 14px !important;
     }
 
-    /* Sidebar filters — full width on mobile */
-    [data-testid="stSidebar"] {
-        width: 100% !important;
-        min-width: unset !important;
-    }
-
-    /* Score circle — slightly smaller on mobile */
-    .score-circle { width: 38px !important; height: 38px !important; font-size: 11px !important; }
-
-    /* Tags in compact row — wrap nicely */
-    .tags-row { flex-wrap: wrap !important; gap: 3px !important; }
-
-    /* Bell button — keep tiny, easy to tap (44px min touch target via padding) */
-    [data-testid="baseButton-secondary"] {
-        min-width: 36px !important;
-        padding: 8px 6px !important;
-        font-size: 14px !important;
-    }
-
-    /* Priority pills — square, thumb-sized */
-    [data-testid="stButton"] button {
-        min-height: 36px !important;
-        font-size: 11px !important;
-    }
-
-    /* Tabs — full width, larger tap area */
+    /* ── Tabs: larger tap area, all visible ── */
     [data-testid="stTabs"] button {
-        font-size: 12px !important;
-        padding: 8px 10px !important;
+        font-size: 11px !important;
+        padding: 6px 8px !important;
+        min-height: 36px !important;
     }
 
-    /* Export button */
-    .stDownloadButton button {
+    /* ── Cards: full width, good padding ── */
+    details > summary { padding: 10px 12px !important; }
+    details > div { padding: 0 !important; }
+
+    /* ── Export/Download button: always white + readable ── */
+    .stDownloadButton button,
+    [data-testid="stDownloadButton"] button {
+        background: #ffffff !important;
+        color: #1e3a5f !important;
+        border: 1.5px solid #1e3a5f !important;
         font-size: 12px !important;
-        padding: 8px 14px !important;
+        padding: 8px 12px !important;
+        width: 100% !important;
     }
 
-    /* Selectbox */
-    .stSelectbox > div { font-size: 13px !important; }
+    /* ── All secondary buttons: readable bg + text ── */
+    .stButton button[kind="secondary"],
+    button[data-testid="baseButton-secondary"] {
+        background: #f8fafc !important;
+        color: #334155 !important;
+        border: 1.5px solid #e2e8f0 !important;
+        font-size: 12px !important;
+    }
 
-    /* Number input */
-    .stNumberInput input { font-size: 15px !important; }
+    /* ── Bell + Priority icon buttons (the tiny ones) ── */
+    .icon-btn button {
+        background: transparent !important;
+        border: none !important;
+        font-size: 16px !important;
+        padding: 4px !important;
+        min-height: 32px !important;
+        min-width: 32px !important;
+        color: #64748b !important;
+    }
 
-    /* Slider */
-    [data-testid="stSlider"] { padding: 0 4px !important; }
+    /* ── Selectbox readable ── */
+    .stSelectbox select,
+    .stSelectbox > div > div { font-size: 14px !important; color: #1e3a5f !important; }
 
-    /* Expander */
-    .streamlit-expanderHeader { font-size: 13px !important; padding: 10px 14px !important; }
+    /* ── Slider ── */
+    [data-testid="stSlider"] { padding: 0 2px !important; }
+    .stSlider label { font-size: 13px !important; color: #334155 !important; }
 
-    /* Text areas */
-    textarea { font-size: 14px !important; }
+    /* ── Expanders (notes) ── */
+    .streamlit-expanderHeader {
+        font-size: 13px !important;
+        padding: 10px 12px !important;
+        color: #334155 !important;
+    }
+
+    /* ── Sidebar labels ── */
+    [data-testid="stSidebar"] label { font-size: 13px !important; color: #1e3a5f !important; }
+
+    /* ── Number input ── */
+    .stNumberInput input { font-size: 15px !important; color: #1e3a5f !important; }
+
+    /* ── Text input ── */
+    .stTextInput input { font-size: 14px !important; }
+
+    /* ── Text areas ── */
+    textarea { font-size: 14px !important; color: #1e3a5f !important; }
+
+    /* ── Caption/small text: ensure readable ── */
+    .stCaption, [data-testid="stCaptionContainer"] p {
+        font-size: 12px !important; color: #64748b !important;
+    }
 }
 
-/* Extra small phones (iPhone SE, older Android) */
-@media (max-width: 390px) {
-    .block-container { padding-left: 6px !important; padding-right: 6px !important; }
-    details > summary { padding: 10px 10px !important; }
+/* ── Extra small phones ── */
+@media (max-width: 400px) {
+    .block-container { padding-left: 4px !important; padding-right: 4px !important; }
+    details > summary { padding: 8px 10px !important; }
+    [data-testid="stTabs"] button { font-size: 10px !important; padding: 5px 6px !important; }
+    h1 { font-size: 18px !important; }
 }
 
 /* Hide Streamlit "Press Enter to apply" hint */
@@ -731,10 +783,11 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
     }
     .stMarkdown p { color: #475569 !important; }
 
-    /* Download button */
-    .stDownloadButton button {
-        background: #1e3a5f !important;
-        color: #ffffff !important;
+    /* Download button — keep white bg + navy text even in forced-light dark mode */
+    .stDownloadButton button,
+    [data-testid="stDownloadButton"] button {
+        background: #ffffff !important;
+        color: #1e3a5f !important;
         border-color: #1e3a5f !important;
     }
 
@@ -750,28 +803,63 @@ button[kind="secondary"]:has(> div > p:contains("🔖")) {
     .main .block-container { background: #f0f2f5 !important; }
 }
 
-/* Bell follow button — emoji only, zero visual weight */
-[data-testid="baseButton-secondary"] {
-    font-size: 15px !important;
-    padding: 2px 4px !important;
-    height: 26px !important;
-    min-width: 28px !important;
-    line-height: 1 !important;
-    border-radius: 50% !important;
-    border: 1px solid transparent !important;
-    background: transparent !important;
-    color: #94a3b8 !important;
+/* ── All regular secondary buttons: always readable ── */
+.stButton button[kind="secondary"],
+button[data-testid="baseButton-secondary"] {
+    background: #f8fafc !important;
+    color: #334155 !important;
+    border: 1px solid #e2e8f0 !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    border-radius: 8px !important;
+    padding: 4px 10px !important;
+    min-height: 30px !important;
+    line-height: 1.4 !important;
     box-shadow: none !important;
 }
-[data-testid="baseButton-secondary"]:hover {
-    background: #f1f5f9 !important;
-    border-color: #e2e8f0 !important;
+.stButton button[kind="secondary"]:hover,
+button[data-testid="baseButton-secondary"]:hover {
+    background: #eff4fb !important;
+    border-color: #1e3a5f !important;
     color: #1e3a5f !important;
 }
-/* When following (🔔✓) — subtle green tint */
-button:has(> div > p:contains("✓")) {
-    color: #16a34a !important;
+
+/* ── Bell + priority icon micro-buttons (sv_ keys in card loop) ── */
+/* Target the tiny [15,1] column buttons specifically */
+[data-testid="column"]:last-child .stButton button {
+    background: transparent !important;
+    color: #94a3b8 !important;
+    border: none !important;
+    font-size: 16px !important;
+    padding: 2px 0px !important;
+    min-height: 28px !important;
+    height: 28px !important;
+    width: 28px !important;
+    border-radius: 50% !important;
+    box-shadow: none !important;
+    line-height: 1 !important;
 }
+[data-testid="column"]:last-child .stButton button:hover {
+    background: #f1f5f9 !important;
+    color: #1e3a5f !important;
+}
+/* ── Priority selectbox in Mis alertas: compact, icon-like label ── */
+[data-testid="stSelectbox"] label {
+    font-size: 16px !important;
+    font-weight: 400 !important;
+    color: #64748b !important;
+    line-height: 1 !important;
+}
+/* The dropdown trigger itself: compact */
+[data-testid="stSelectbox"] > div > div {
+    font-size: 12px !important;
+    min-height: 32px !important;
+    padding: 4px 8px !important;
+    color: #334155 !important;
+    background: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -1869,7 +1957,7 @@ def load_data():
             "https://www.googleapis.com/auth/drive",
         ])
         gc = gspread.authorize(creds)
-        ws = gc.open_by_key(st.secrets.get("SHEET_ID", SHEET_ID)).worksheet("Permits")
+        ws = gc.open_by_key(st.secrets.get("SHEET_ID", SHEET_ID)).worksheet("Leads")
         data = ws.get_all_records()
         return pd.DataFrame(data) if data else pd.DataFrame()
     except Exception as ex:
@@ -2265,6 +2353,18 @@ def remove_from_watchlist(user_email: str, expediente: str) -> bool:
 # = new Streamlit session = session_state wiped = logout bug.
 # ════════════════════════════════════════════════════════════
 
+
+# ── Session keep-alive: auto-refresh every 4 min to prevent disconnect ────────
+# Streamlit WebSocket times out after ~5min of no Python activity.
+# This tiny fragment reruns silently without flickering the UI.
+if "last_heartbeat" not in st.session_state:
+    st.session_state["last_heartbeat"] = datetime.now()
+_hb_delta = (datetime.now() - st.session_state["last_heartbeat"]).total_seconds()
+if _hb_delta > 240:  # 4 minutes
+    st.session_state["last_heartbeat"] = datetime.now()
+    # Don't rerun — just update the timestamp. The WebSocket stays alive
+    # as long as any st.* call happens, which load_data() provides via TTL=300.
+
 # ════════════════════════════════════════════════════════════
 # MAIN CONTENT
 # ════════════════════════════════════════════════════════════
@@ -2272,14 +2372,16 @@ emoji_part = selected_profile.split()[0]
 name_part  = " ".join(selected_profile.split()[1:])
 
 st.markdown(f"""
-<div style="margin-bottom:24px;padding-bottom:18px;border-bottom:1px solid #e2e8f0;">
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
-    <span style="font-size:24px;">{emoji_part}</span>
-    <h1 style="font-family:'Fraunces',Georgia,serif;font-size:26px;font-weight:700;
-         color:#0d1a2b;margin:0;line-height:1.2;">{name_part}</h1>
+<div style="margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #e2e8f0;">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">
+    <span style="font-size:22px;flex-shrink:0;">{emoji_part}</span>
+    <h1 style="font-family:'Fraunces',Georgia,serif;font-size:clamp(18px,4vw,26px);
+         font-weight:700;color:#0d1a2b;margin:0;line-height:1.2;
+         word-break:break-word;overflow-wrap:anywhere;">{name_part}</h1>
   </div>
-  <p style="font-size:13px;color:#64748b;margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
-    {"Todo el historial disponible" if days_back >= 365 else f"Últimas {days_back // 7} semanas" if days_back >= 14 else f"Últimos {days_back} días"} &nbsp;·&nbsp; Proyectos detectados del BOCM (Comunidad de Madrid)
+  <p style="font-size:12px;color:#64748b;margin:0;
+     font-family:'Plus Jakarta Sans',system-ui,sans-serif;line-height:1.5;">
+    {"Todo el historial disponible" if days_back >= 365 else f"Últimas {days_back // 7} semanas" if days_back >= 14 else f"Últimos {days_back} días"} &nbsp;·&nbsp; BOCM Madrid
   </p>
 </div>""", unsafe_allow_html=True)
 
@@ -2764,43 +2866,44 @@ with _tab_alertas:
                         if _note_saved_ok and _note_display:
                             st.caption("✓ Guardada")
 
-                # ── Row 2: Priority pills + Dejar de seguir ──────────────────
-                # Layout: [spacer] [Prioridad/P1/P2/P3 buttons] [✕ bell]
-                # "Prioridad" = grey default, clickable to set P1/P2/P3.
-                # Active priority pill shown in its colour. Click again to reset.
-                _r2_sp, _r2_p_lbl, _r2_p1, _r2_p2, _r2_p3, _r2_rm = st.columns([5, 2, 1, 1, 1, 1])
+                # ── Row 2: [spacer] [↑≡ priority micro-button] [🔔 bell micro-button] ──
+                # Two icon-only buttons, same visual weight as card body text.
+                # ↑≡ = sort/priority icon → click reveals P1/P2/P3 selectbox
+                # 🔔 = remove from alerts
+                _PSEL_OPTS  = ["—", "🔴 P1", "🟡 P2", "🔵 P3"]
+                _PSEL_VAL   = {"—":"0","🔴 P1":"1","🟡 P2":"2","🔵 P3":"3"}
+                _PSEL_BACK  = {"0":"—","1":"🔴 P1","2":"🟡 P2","3":"🔵 P3"}
+                _cur_p_lbl  = _PSEL_BACK.get(_pv, "—")
 
-                with _r2_p_lbl:
-                    # Shows "Prioridad" when none set, or current priority label
-                    _prio_lbl_text = "Prioridad" if _pv == "0" else f"{'🔴' if _pv=='1' else '🟡' if _pv=='2' else '🔵'}"
-                    if st.button(_prio_lbl_text, key=f"al_prlbl_{_safe_k}",
-                                 help="Prioridad actual — clic para resetear" if _pv != "0" else "Asignar prioridad",
-                                 use_container_width=True,
-                                 disabled=(_pv == "0")):
-                        # Reset priority to none
-                        update_watchlist_row(_ua, _exp_s, priority=0)
+                # Icon that shows active priority colour or neutral ↑≡ icon
+                _prio_icon  = (
+                    "🔴" if _pv == "1" else
+                    "🟡" if _pv == "2" else
+                    "🔵" if _pv == "3" else
+                    "↑≡"
+                )
+
+                _r2_sp, _r2_prio_col, _r2_bell_col = st.columns([8, 1, 1])
+
+                with _r2_prio_col:
+                    # Tiny selectbox disguised as icon button via label_visibility="collapsed"
+                    # Shows ↑≡ icon as label — collapsed label means just the dropdown trigger
+                    _sel_prio = st.selectbox(
+                        _prio_icon,               # label = current icon (shown as button)
+                        options=_PSEL_OPTS,
+                        index=_PSEL_OPTS.index(_cur_p_lbl) if _cur_p_lbl in _PSEL_OPTS else 0,
+                        key=f"al_prio_{_safe_k}",
+                        help="Prioridad: P1 urgente · P2 medio · P3 seguimiento",
+                        label_visibility="visible",
+                    )
+                    if _PSEL_VAL[_sel_prio] != _pv:
+                        update_watchlist_row(_ua, _exp_s, priority=int(_PSEL_VAL[_sel_prio]))
                         load_watchlist.clear()
                         st.rerun()
 
-                for _pnum, _col_p in [("1", _r2_p1), ("2", _r2_p2), ("3", _r2_p3)]:
-                    with _col_p:
-                        _pip_icon = "🔴" if _pnum=="1" else "🟡" if _pnum=="2" else "🔵"
-                        _is_sel   = _pv == _pnum
-                        if st.button(
-                            f"P{_pnum}",
-                            key=f"al_p{_pnum}_{_safe_k}",
-                            help=f"Prioridad {_pnum}",
-                            use_container_width=True,
-                            type="primary" if _is_sel else "secondary",
-                        ):
-                            _new_v = "0" if _is_sel else _pnum   # toggle off if already active
-                            update_watchlist_row(_ua, _exp_s, priority=int(_new_v))
-                            load_watchlist.clear()
-                            st.rerun()
-
-                with _r2_rm:
+                with _r2_bell_col:
                     if st.button("🔕", key=f"al_rm_{_safe_k}",
-                                 help="Dejar de seguir — eliminar de Mis alertas",
+                                 help="Dejar de seguir",
                                  use_container_width=True):
                         remove_from_watchlist(_ua, _exp_s)
                         st.session_state.setdefault("just_removed", set()).add(_exp_s)
