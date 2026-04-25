@@ -3762,6 +3762,8 @@ HDRS = [
     "Action Window",   # Col X — ⚡ ACTUAR ESTA SEMANA / 📞 30 DÍAS / 📅 MONITORIZAR / 🔮 PIPELINE
     "Key Contacts",    # Col Y — Promotor | Dir.Obra | Aparejador extracted from PDF
     "Obra Timeline",   # Col Z — plazo de ejecución, etapa structure, estimated start
+    "Last Updated",    # Col AA — timestamp when row was last modified (phase advance)
+    "Previous Phase",  # Col AB — phase before the most recent update
 ]
 _ws             = None
 _seen_urls      = set()
@@ -3830,6 +3832,17 @@ def load_seen():
         log(f"⚠️  load_seen [Leads]: {e}")
 
 def write_permit(p, pdf_url=""):
+    """
+    Write a permit to the Leads sheet.
+
+    UPSERT LOGIC — prevents duplicate cards when the same project advances in phase:
+    - BOCM publishes a NEW document each time a project changes phase.
+    - Each new document has a new URL and BOCM ID → old code always appended a new row.
+    - NEW: if the new document shares an expediente with an existing row, we UPDATE
+      that row's Phase, Date Granted, Source URL, Lead Score, AI Evaluation, etc.
+      We also store the old phase in "Previous Phase" and stamp "Last Updated".
+    - If no matching expediente exists → append as before.
+    """
     ws  = get_sheet()
     url = p.get("source_url","")
     bocm_id = extract_bocm_id(url)
@@ -3857,13 +3870,83 @@ def write_permit(p, pdf_url=""):
         if addr:
             maps = ("https://www.google.com/maps/search/"
                     + (addr + " " + muni + " España").replace(" ","+").replace(",",""))
-            # Format profile_fit as comma-separated string
         profile_fit = p.get("profile_fit", [])
         if isinstance(profile_fit, list):
             profile_fit_str = ", ".join(profile_fit)
         else:
             profile_fit_str = str(profile_fit) if profile_fit else ""
 
+        new_phase    = str(p.get("phase","") or "").strip()
+        new_exp      = str(p.get("expediente","") or "").strip()
+        now_str      = datetime.now().strftime("%Y-%m-%d %H:%M")
+        today_date   = datetime.now().strftime("%Y-%m-%d")
+
+        # ── UPSERT: try to find existing row by expediente ─────────────────────
+        # Only attempt if expediente is a formal reference (not a synthetic BOCM hash)
+        _updated_existing = False
+        if new_exp and ws and not new_exp.startswith("BOCM-"):
+            try:
+                all_rows = ws.get_all_values()
+                if len(all_rows) > 1:
+                    hdrs = all_rows[0]
+                    try:
+                        exp_col   = hdrs.index("Expediente")
+                        phase_col = hdrs.index("Phase")
+                        score_col = hdrs.index("Lead Score")
+                        url_col   = hdrs.index("Source URL")
+                        ai_col    = hdrs.index("AI Evaluation") if "AI Evaluation" in hdrs else -1
+                        date_col  = hdrs.index("Date Granted")
+                        upd_col   = hdrs.index("Last Updated")   if "Last Updated"   in hdrs else len(hdrs)
+                        prev_col  = hdrs.index("Previous Phase") if "Previous Phase" in hdrs else len(hdrs) + 1
+                        pem_col   = hdrs.index("Declared Value PEM (€)")
+
+                        _PHASE_ORDER = {"solicitud":1,"inicial":2,"en_tramite":2,
+                                        "definitivo":3,"licitacion":4,
+                                        "adjudicacion":5,"en_obra":6,"primera_ocupacion":7}
+
+                        for row_idx, row_vals in enumerate(all_rows[1:], start=2):
+                            if len(row_vals) > exp_col and row_vals[exp_col].strip() == new_exp:
+                                old_phase = row_vals[phase_col].strip() if len(row_vals) > phase_col else ""
+                                old_order = _PHASE_ORDER.get(old_phase.lower(), 0)
+                                new_order = _PHASE_ORDER.get(new_phase.lower(), 0)
+
+                                if new_order > old_order:
+                                    # Phase advanced — UPDATE the existing row in place
+                                    updates = []
+                                    updates.append((row_idx, phase_col+1, new_phase))
+                                    updates.append((row_idx, score_col+1, p.get("lead_score",0)))
+                                    updates.append((row_idx, url_col+1, url))
+                                    updates.append((row_idx, date_col+1, p.get("date_granted","")))
+                                    if ai_col >= 0:
+                                        updates.append((row_idx, ai_col+1, (p.get("ai_evaluation") or "")[:600]))
+                                    if dec:
+                                        updates.append((row_idx, pem_col+1, dec))
+                                    # Stamp Last Updated + Previous Phase
+                                    updates.append((row_idx, upd_col+1, now_str))
+                                    updates.append((row_idx, prev_col+1, old_phase))
+                                    for r, c, v in updates:
+                                        ws.update_cell(r, c, v)
+                                    _seen_urls.add(url)
+                                    if bocm_id: _seen_bocm_ids.add(bocm_id)
+                                    log(f"  🔄 [{p.get('lead_score',0):02d}pts] UPDATED {new_exp}: "
+                                        f"{old_phase} → {new_phase} | {muni}")
+                                    _updated_existing = True
+                                else:
+                                    # Same or older phase — mark URL seen so we don't re-process
+                                    _seen_urls.add(url)
+                                    if bocm_id: _seen_bocm_ids.add(bocm_id)
+                                    log(f"  ⏭️  Same/earlier phase for {new_exp} ({old_phase}→{new_phase}) — skipped")
+                                    _updated_existing = True  # treat as "handled"
+                                break
+                    except ValueError:
+                        pass  # column not found — fall through to append
+            except Exception as _e:
+                log(f"  ⚠️  Upsert check failed ({_e}) — falling back to append")
+
+        if _updated_existing:
+            return True
+
+        # ── APPEND: no existing row found by expediente ────────────────────────
         row = [
             p.get("date_granted",""), muni, addr,
             p.get("applicant") or "",
@@ -3873,19 +3956,21 @@ def write_permit(p, pdf_url=""):
             url, pdf_url or "",
             p.get("extraction_mode","keyword"),
             p.get("confidence",""),
-            datetime.now().strftime("%Y-%m-%d %H:%M"),
+            today_date,
             p.get("lead_score",0),
-            p.get("expediente",""),
-            p.get("phase",""),
+            new_exp,
+            new_phase,
             p.get("estimated_pem",""),
             (p.get("ai_evaluation") or "")[:600],
             (p.get("supplies_needed") or "")[:600],
             profile_fit_str,
             fuente,
             (p.get("project_size") or ""),
-            (p.get("action_window") or ""),     # Col X — urgency signal
-            (p.get("key_contacts") or "")[:300],# Col Y — extracted contacts
-            (p.get("obra_timeline") or ""),     # Col Z — timing info
+            (p.get("action_window") or ""),
+            (p.get("key_contacts") or "")[:300],
+            (p.get("obra_timeline") or ""),
+            "",   # Last Updated — empty on first write
+            "",   # Previous Phase — empty on first write
         ]
 
         try:
@@ -3905,7 +3990,7 @@ def write_permit(p, pdf_url=""):
                         "cell":{"userEnteredFormat":{"backgroundColor":{"red":rb,"green":gb,"blue":bb}}},
                         "fields":"userEnteredFormat.backgroundColor"}}]})
                 except: pass
-            phase_s = p.get("phase","?")
+            phase_s = new_phase or "?"
             dec_s   = f"€{dec:,.0f}" if dec else "N/A"
             log(f"  💾 [{p.get('lead_score',0):02d}pts|{phase_s}] "
                 f"{muni} | {addr[:30]} | {p.get('permit_type','?')[:22]} | {dec_s}")
@@ -4648,69 +4733,131 @@ def _get_watchlist_tab(spreadsheet):
         ws.append_row(_WATCHLIST_HDRS); return ws
 
 def send_watchlist_alerts():
-    """Run after each engine cycle — email subscribers when phase advances."""
+    """
+    Run after each engine cycle — email subscribers when a saved project advances in phase.
+
+    Matches watchlist entries against Leads sheet by:
+    1. Formal expediente (e.g. "01/4.778/26")
+    2. BOCM-slug key (e.g. "BOCM-20260327") — synthetic key used for projects without expediente
+    3. Source URL exact match
+
+    Only sends when phase order has genuinely advanced (uses _PHASE_ORDER).
+    Records last_alerted date to avoid duplicate emails on the same day.
+    Also updates phase_at_add in the Watchlist row to the new phase after alerting,
+    so the next alert only fires on the NEXT phase change.
+    """
     gf = os.environ.get("GMAIL_FROM","")
     gp = os.environ.get("GMAIL_APP_PASSWORD","")
-    if not all([gf, gp]): return
+    if not all([gf, gp]):
+        log("  ℹ️  GMAIL_FROM / GMAIL_APP_PASSWORD not set — watchlist emails skipped")
+        return
     ws_main = get_sheet()
     if not ws_main: return
     try:
         ss   = ws_main.spreadsheet
         wl   = _get_watchlist_tab(ss)
         subs = wl.get_all_records()
-        if not subs: return
+        if not subs:
+            log("  ℹ️  Watchlist empty — no alerts to send")
+            return
         leads = ss.worksheet("Leads").get_all_records()
-        # Build expediente → latest row map
-        exp_map = {}
+
+        # Build lookups: expediente → latest row, BOCM_slug → latest row, url → row
+        exp_map  = {}   # expediente str → latest lead row
+        slug_map = {}   # BOCM-YYYYMMDD → latest lead row
+        url_map  = {}   # source URL → lead row
+
+        import re as _re
         for row in leads:
-            exp = str(row.get("Expediente","") or "").strip()
-            if not exp: continue
-            if exp not in exp_map:
-                exp_map[exp] = row
-            else:
-                try:
-                    from dateutil import parser as _dp2
-                    d_new = _dp2.parse(str(row.get("Date Found","") or ""))
-                    d_old = _dp2.parse(str(exp_map[exp].get("Date Found","") or ""))
-                    if d_new > d_old: exp_map[exp] = row
-                except Exception: pass
-        _PHASE_ORDER = {"inicial":1,"en_tramite":2,"solicitud":2,"definitivo":3,
+            exp  = str(row.get("Expediente","") or "").strip()
+            lurl = str(row.get("Source URL","")  or "").strip()
+            if exp:
+                # Keep most phase-advanced row for each expediente
+                _PHASE_ORDER = {"solicitud":1,"inicial":2,"en_tramite":2,"definitivo":3,
+                                "licitacion":4,"adjudicacion":5,"en_obra":6,"primera_ocupacion":7}
+                if exp not in exp_map:
+                    exp_map[exp] = row
+                else:
+                    p_new = _PHASE_ORDER.get(str(row.get("Phase","")).lower(),0)
+                    p_old = _PHASE_ORDER.get(str(exp_map[exp].get("Phase","")).lower(),0)
+                    if p_new > p_old:
+                        exp_map[exp] = row
+            if lurl:
+                url_map[lurl] = row
+                slug_m = _re.search(r'BOCM[-_](\d{8})', lurl, _re.I)
+                if slug_m:
+                    key = f"BOCM-{slug_m.group(1)}"
+                    if key not in slug_map:
+                        slug_map[key] = row
+                    else:
+                        p_new = _PHASE_ORDER.get(str(row.get("Phase","")).lower(),0)
+                        p_old = _PHASE_ORDER.get(str(slug_map[key].get("Phase","")).lower(),0)
+                        if p_new > p_old:
+                            slug_map[key] = row
+
+        _PHASE_ORDER = {"solicitud":1,"inicial":2,"en_tramite":2,"definitivo":3,
                         "licitacion":4,"adjudicacion":5,"en_obra":6,"primera_ocupacion":7}
+        _PHASE_LABELS = {
+            "inicial":         "🟡 Aprobación Inicial",
+            "definitivo":      "🟢 Aprobación Definitiva",
+            "licitacion":      "🔵 Licitación activa",
+            "adjudicacion":    "🏆 Adjudicación",
+            "en_obra":         "🏗️ Obra en ejecución",
+            "primera_ocupacion":"⚪ Primera Ocupación",
+            "en_tramite":      "📋 En tramitación",
+        }
         today_s = datetime.now().strftime("%Y-%m-%d")
-        updates = []
+        updates = []  # (row_index, new_last_alerted, new_phase_at_add)
+
         for i, sub in enumerate(subs, start=2):
-            email  = str(sub.get("email","") or "").strip()
-            expd   = str(sub.get("expediente","") or "").strip()
-            p_add  = str(sub.get("phase_at_add","") or "").strip()
-            p_last = str(sub.get("last_alerted","") or "").strip()
-            if not email or not expd or p_last == today_s: continue
-            cur = exp_map.get(expd)
+            email   = str(sub.get("email","") or "").strip()
+            expd    = str(sub.get("expediente","") or "").strip()
+            p_add   = str(sub.get("phase_at_add","") or "").strip()
+            p_last  = str(sub.get("last_alerted","") or "").strip()
+            sub_url = str(sub.get("source_url","") or "").strip()
+            if not email or p_last == today_s: continue
+
+            # Find matching lead — try all lookup strategies
+            cur = (exp_map.get(expd)
+                   or slug_map.get(expd)
+                   or url_map.get(sub_url))
             if not cur: continue
+
             p_cur = str(cur.get("Phase","") or "").strip()
-            if _PHASE_ORDER.get(p_cur.lower(),0) <= _PHASE_ORDER.get(p_add.lower(),0): continue
-            # Phase advanced — send alert
-            _PHASE_LABELS = {"inicial":"🟡 Aprobación Inicial","definitivo":"🟢 Aprobación Definitiva",
-                             "licitacion":"🔵 Licitación","adjudicacion":"🏆 Adjudicación",
-                             "en_obra":"🏗️ En Obra","primera_ocupacion":"⚪ 1ª Ocupación"}
-            pl = _PHASE_LABELS.get(p_cur.lower(), p_cur)
-            subj = f"🚨 PlanningScout — {cur.get('Municipality','')}: {expd} → {pl}"
-            body = f"""<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:20px auto">
-<div style="background:#1565c0;color:#fff;padding:18px 24px;border-radius:8px 8px 0 0">
-  <h2 style="margin:0;font-size:18px">🔔 Alerta de proyecto — PlanningScout</h2>
+            if _PHASE_ORDER.get(p_cur.lower(),0) <= _PHASE_ORDER.get(p_add.lower(),0):
+                continue  # phase hasn't advanced
+
+            pl = _PHASE_LABELS.get(p_cur.lower(), p_cur.capitalize())
+            pl_old = _PHASE_LABELS.get(p_add.lower(), p_add.capitalize() or "—")
+            muni_s  = cur.get("Municipality","") or ""
+            pem_raw = cur.get("Declared Value PEM (€)","")
+            pem_s   = f"€{float(str(pem_raw).replace(',','').replace('.','')):.0f}" if pem_raw else "No declarado"
+            bocm_url = cur.get("Source URL","") or ""
+
+            subj = f"🔔 PlanningScout — {muni_s}: {expd} ha avanzado a {pl}"
+            body = f"""<html><body style="font-family:'Arial',sans-serif;max-width:600px;margin:24px auto;color:#1a1a2e;">
+<div style="background:#1e3a5f;color:#fff;padding:20px 28px;border-radius:10px 10px 0 0;">
+  <h2 style="margin:0;font-size:20px;font-weight:700;">🔔 Tu proyecto ha avanzado</h2>
+  <p style="margin:6px 0 0;font-size:13px;opacity:.8;">PlanningScout Madrid — Alerta automática</p>
 </div>
-<div style="border:1px solid #e0e0e0;border-top:0;padding:20px;border-radius:0 0 8px 8px">
-  <p><strong>Expediente:</strong> {expd}</p>
-  <p><strong>Municipio:</strong> {cur.get('Municipality','')}</p>
-  <p><strong>Dirección:</strong> {cur.get('Full Address','')}</p>
-  <p><strong>PEM:</strong> €{cur.get('Declared Value PEM (€)','')}</p>
-  <div style="background:#e8f5e9;border-left:4px solid #2e7d32;padding:12px;margin:14px 0;border-radius:4px">
-    <strong style="color:#1b5e20">Nueva fase: {pl}</strong>
-    <span style="color:#666;font-size:12px;margin-left:8px">(antes: {p_add})</span>
+<div style="border:1px solid #e2e8f0;border-top:none;padding:24px 28px;border-radius:0 0 10px 10px;background:#fff;">
+  <table style="width:100%;font-size:14px;border-collapse:collapse;">
+    <tr><td style="color:#94a3b8;padding:6px 0;width:130px;">Expediente</td><td style="font-weight:600;color:#0d1a2b;">{expd}</td></tr>
+    <tr><td style="color:#94a3b8;padding:6px 0;">Municipio</td><td style="color:#334155;">{muni_s}</td></tr>
+    <tr><td style="color:#94a3b8;padding:6px 0;">PEM</td><td style="color:#334155;">{pem_s}</td></tr>
+  </table>
+  <div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:14px 18px;margin:18px 0;border-radius:6px;">
+    <div style="font-size:16px;font-weight:700;color:#15803d;">{pl}</div>
+    <div style="font-size:12px;color:#64748b;margin-top:4px;">Antes: {pl_old}</div>
   </div>
-  <p style="font-size:13px">{str(cur.get('Description',''))[:200]}</p>
-  {'<a href="' + str(cur.get('Source URL','')) + '" style="background:#1565c0;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-size:13px">↗ Ver en BOCM</a>' if cur.get('Source URL') else ''}
-  <p style="font-size:11px;color:#aaa;margin-top:18px">Para cancelar esta alerta: info@planningscout.com</p>
-</div></body></html>"""
+  <p style="font-size:13px;color:#64748b;line-height:1.6;">{str(cur.get('Description',''))[:220]}…</p>
+  {'<a href="' + bocm_url + '" style="display:inline-block;background:#1e3a5f;color:#fff;padding:11px 22px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;margin-top:8px;">↗ Ver en BOCM</a>' if bocm_url else ''}
+  <p style="font-size:11px;color:#aaa;margin-top:24px;border-top:1px solid #f1f5f9;padding-top:14px;">
+    Para cancelar esta alerta visita tu panel en <a href="https://planningscout.streamlit.app" style="color:#1e3a5f;">planningscout.streamlit.app</a> → Mis alertas.<br>
+    O escríbenos a <a href="mailto:info@planningscout.com" style="color:#1e3a5f;">info@planningscout.com</a>
+  </p>
+</div>
+</body></html>"""
             try:
                 import smtplib as _sm
                 from email.mime.multipart import MIMEMultipart as _MMP
@@ -4721,14 +4868,31 @@ def send_watchlist_alerts():
                 with _sm.SMTP_SSL("smtp.gmail.com",465) as s2:
                     s2.login(gf, gp); s2.sendmail(gf, [email], msg.as_string())
                 log(f"  🔔 Alert sent: {email} | {expd} → {pl}")
-                updates.append((i, today_s))
-            except Exception as e2: log(f"  ⚠️ Alert: {e2}")
+                updates.append((i, today_s, p_cur))
+            except Exception as e2:
+                log(f"  ⚠️ Alert send error: {e2}")
+
         if updates:
             try:
-                wl.spreadsheet.values_batch_update({"valueInputOption":"USER_ENTERED",
-                    "data":[{"range":f"Watchlist!F{r}","values":[[d]]} for r,d in updates]})
-            except Exception: pass
-    except Exception as e: log(f"  ⚠️ Watchlist: {e}")
+                # Update last_alerted (col F) and phase_at_add (col E) in one batch
+                wl_hdrs = wl.row_values(1)
+                f_col = wl_hdrs.index("last_alerted") + 1  if "last_alerted"  in wl_hdrs else 6
+                e_col = wl_hdrs.index("phase_at_add") + 1  if "phase_at_add"  in wl_hdrs else 5
+                batch = []
+                for r, today_str, new_phase in updates:
+                    batch.append({"range": f"Watchlist!{chr(64+f_col)}{r}", "values": [[today_str]]})
+                    batch.append({"range": f"Watchlist!{chr(64+e_col)}{r}", "values": [[new_phase]]})
+                wl.spreadsheet.values_batch_update({
+                    "valueInputOption": "USER_ENTERED",
+                    "data": batch,
+                })
+                log(f"  ✅ {len(updates)} watchlist rows updated")
+            except Exception as _ue:
+                log(f"  ⚠️ Watchlist update error: {_ue}")
+        else:
+            log("  ✅ No phase changes detected — no alerts sent")
+    except Exception as e:
+        log(f"  ⚠️ Watchlist alerts: {e}")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -5229,9 +5393,17 @@ def run():
         f"+ application-phase solicitudes + small activity licences.")
     log(f"   To see per-doc reasons, set log level to DEBUG or review individual ⏭️ lines above.")
     log("=" * 70)
-    
+
     if os.path.exists(QUEUE_FILE): os.remove(QUEUE_FILE)
     if today.weekday() == 0: log("\n📧 Monday → digest"); send_digest()
+
+    # ── WATCHLIST ALERTS — send phase-change emails to subscribers ─────────────
+    # Runs after every engine cycle. Only sends when phase actually advanced.
+    log("\n🔔 Checking watchlist alerts...")
+    try:
+        send_watchlist_alerts()
+    except Exception as _wa_err:
+        log(f"  ⚠️ Watchlist alerts error: {_wa_err}")
 
 # ──────────────────────────────────────────────────────────────
 # BOE CONFIGURATION
