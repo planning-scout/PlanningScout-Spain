@@ -5005,7 +5005,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v18 (PLACE-S9+24kws+coliving+actiu+kiloutou-signals+datos60d)")
+    log(f"🏗️  PlanningScout Madrid — Engine v19 (upsert+alerts+all-sources-daily+PLACE-direct)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
@@ -5194,7 +5194,8 @@ def run():
         # ── SOURCE 5: BOE (Boletín Oficial del Estado) ───────────────────────────
         # State-level licitaciones: ADIF, Ministerios, AENA, Comunidad de Madrid
         # Uses XML extraction (fast, accurate) instead of PDF parsing
-        if MODE in ("weekly", "full") and time_ok(need_s=180):
+        # Runs in ALL modes — BOE publishes continuously, not in batches.
+        if time_ok(need_s=180):
             log(f"\n{'─'*55}")
             log(f"📰 SOURCE 5: BOE (state licitaciones - XML extraction)")
             
@@ -5291,7 +5292,8 @@ def run():
         # DoubleTrade's "corporate data" layer: newly formed promotores and
         # construction companies in Madrid = early signals 12-24mo before BOCM.
         # api.boe.es/BORME/v2/ is free, official, no WAF block from GitHub Actions.
-        if MODE in ("weekly","full") and time_ok(need_s=60):
+        # Runs in ALL modes — new company registrations happen every working day.
+        if time_ok(need_s=60):
             log(f"\n{'─'*55}")
             log("📋 SOURCE 8: BORME (nuevas empresas constructoras/promotoras)")
             log("   Using www.boe.es/diario_borme/xml.php (same server as working BOE source)")
@@ -5307,32 +5309,35 @@ def run():
                 log(f"  ⚠️ BORME: {_be}")
 
         # ── SOURCE 9: Plataforma de Contratación del Estado (PLACE) ──────────────
-        # National construction/infrastructure tenders > €30K
-        # Directly relevant for: FCC Construcción, Kiloutou, Molecor
-        if MODE in ("weekly","full") and time_ok(need_s=60):
+        # National construction/infrastructure tenders > €30K.
+        # Directly relevant for: Gran Constructora, Alquiler Maquinaria, Materiales.
+        # Runs in ALL modes — national tenders publish every working day.
+        if time_ok(need_s=60):
             log(f"\n{'─'*55}")
             log("🏛️  SOURCE 9: PLACE (Plataforma Contratación del Estado)")
             try:
                 place_items = search_place_national(date_from, date_to)
                 if place_items:
                     log(f"  🏛️  PLACE: {len(place_items)} construction tenders found")
-                    for _pu, _pt, _ps, _pp in place_items[:30]:
-                        if not time_ok(need_s=20): break
-                        # Use same CM Contratos processing (bypass classify_permit)
-                        # Score and write via process_cm_contrato path
-                        _fake_row = {
-                            "bocm_url":   _pu,
-                            "permit_type":"licitación de obras",
-                            "description": _pt[:200] + " " + _ps[:300],
-                            "municipality": "Madrid",
-                            "phase":       "licitacion",
-                            "declared_value_eur": _pp if _pp > 0 else None,
-                            "source_label": "PLACE",
+                    place_saved = place_skipped = place_errors = 0
+                    with ThreadPoolExecutor(max_workers=min(N_WORKERS, 3)) as executor:
+                        place_futures = {
+                            executor.submit(
+                                process_cm_contrato,   # same processing path as CM Contratos
+                                _pu, _pt,
+                                (_pt + " " + _ps)[:500],
+                                idx + 1, len(place_items)
+                            ): _pu
+                            for idx, (_pu, _pt, _ps, _pp) in enumerate(place_items)
+                            if time_ok(need_s=5)
                         }
-                        # Add to all_urls for BOCM processing? No — write directly
-                        # Process as CM contrato style (pre-verified, no classifier)
-                        all_urls.add(_pu)   # deduplicated by seen set
-                    log(f"  🏛️  PLACE: {len(place_items)} tenders → added to queue")
+                        for future in as_completed(place_futures):
+                            try:
+                                s, sk, e = future.result()
+                                place_saved += s; place_skipped += sk; place_errors += e
+                            except Exception as _pfe:
+                                log(f"  ❌ PLACE future: {_pfe}"); place_errors += 1
+                    log(f"  PLACE: ✅{place_saved} saved | ⏭️{place_skipped} skipped | ❌{place_errors} errors")
                 else:
                     log("  🏛️  PLACE: 0 Madrid construction tenders this period")
             except Exception as _place_e:
