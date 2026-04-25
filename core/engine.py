@@ -535,7 +535,34 @@ KW_WEEKLY = [
     ("modificación puntual del pgou",         SECTION_III,  3, "PRO+CON"),
 
     ("declaración de impacto ambiental",   SECTION_III,  3, "INFRA+CON"),
-        ("nave logística",                 SECTION_III,  5, "IND+MAT"),     # logistics warehouse
+    ("nave logística",                     SECTION_III,  5, "IND+MAT"),     # logistics warehouse
+    # ── NEW SECTOR-SPECIFIC KEYWORDS ─────────────────────────────────────────
+    # MANGO / VIMAD / Expansión Retail — fashion retail location intelligence
+    ("centro comercial",                   SECTION_III,  5, "RET+CON"),     # shopping centre permit
+    ("galería comercial",                  SECTION_III,  4, "RET+CON"),     # commercial gallery
+    ("local comercial",                    SECTION_III,  4, "RET"),         # retail unit
+    ("apertura de establecimiento",        SECTION_III,  4, "RET+HOSPE"),   # shop opening
+    # KILOUTOU — additional machinery rental triggers
+    ("plataforma de trabajo",              SECTION_III,  3, "ALQUILER"),    # work platform = rental equipment
+    ("grúa torre",                         SECTION_III,  4, "ALQUILER+CON"), # tower crane = active site
+    ("andamiaje",                          SECTION_III,  3, "ALQUILER+CON"), # scaffolding = active site
+    # UVESCO / Promotores RE — land development signals
+    ("segregación",                        SECTION_III,  4, "PRO"),         # land segregation
+    ("agrupación de parcelas",             SECTION_III,  4, "PRO+CON"),     # plot aggregation
+    ("normalización de fincas",            SECTION_III,  4, "PRO+CON"),     # plot regularisation
+    ("plan de sectorización",              SECTION_II,   5, "PRO+CON"),     # sectorisation = new land
+    # ACTIU — workplace fit-out signals
+    ("acondicionamiento de oficinas",      SECTION_III,  4, "ACTIU"),       # office fit-out
+    ("instalación de mezzanine",           SECTION_III,  3, "ACTIU+IND"),   # mezzanine = warehouse/office
+    ("reforma de planta",                  SECTION_III,  4, "ACTIU+MEP"),   # floor refurb
+    # MOLECOR — canal and network keywords
+    ("conducción de agua",                 SECTION_III,  4, "MAT+INFRA"),   # water pipeline
+    ("reparación de colector",             SECTION_III,  4, "MAT+INFRA"),   # collector repair
+    ("renovación de red de agua",          SECTION_III,  5, "MAT+INFRA"),   # water network renewal
+    # GRAN INFRAESTRUCTURA / FCC — public works signals from Section II
+    ("proyecto de trazado",                SECTION_II,   5, "INFRA+CON"),   # road alignment = major civil
+    ("desdoblamiento de calzada",          SECTION_II,   4, "INFRA+CON"),   # road widening
+    ("variante de carretera",              SECTION_II,   5, "INFRA+CON"),   # road bypass
 ]
 
 KW_EXTRA_FULL = [
@@ -4638,7 +4665,26 @@ def search_borme_new_companies(date_from, date_to):
 
             _consec_err = 0
             import xml.etree.ElementTree as _ET_B
-            root = _ET_B.fromstring(r.content)
+
+            # BORME XML can contain malformed entities — try lxml first, then stdlib
+            try:
+                root = _ET_B.fromstring(r.content)
+            except _ET_B.ParseError:
+                # Try recovering with lxml if available
+                try:
+                    from lxml import etree as _lxml_et
+                    root = _lxml_et.fromstring(r.content, parser=_lxml_et.XMLParser(recover=True))
+                    # Convert to stdlib ET for consistent iteration
+                    root = _ET_B.fromstring(_lxml_et.tostring(root))
+                except Exception:
+                    # Last resort: strip non-XML characters and retry
+                    clean = r.content.decode("utf-8", errors="replace")
+                    clean = re.sub(r'[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD]', '', clean)
+                    try:
+                        root = _ET_B.fromstring(clean.encode("utf-8"))
+                    except Exception:
+                        _consec_err += 1
+                        d += timedelta(days=1); continue
 
             # BORME XML structure:
             # <sumario><diario><seccion nombre="SECCIÓN SEGUNDA...">
@@ -4937,7 +4983,31 @@ def search_place_national(date_from, date_to):
             if not r or r.status_code != 200: continue
 
             from xml.etree import ElementTree as _ET
-            root = _ET.fromstring(r.content)
+
+            # PLACE ATOM feeds frequently have malformed XML (mismatched tags, bad entities).
+            # Try multiple parse strategies before giving up.
+            root = None
+            try:
+                root = _ET.fromstring(r.content)
+            except _ET.ParseError:
+                # Strategy 2: lxml with recovery
+                try:
+                    from lxml import etree as _lxml
+                    root_lxml = _lxml.fromstring(r.content, parser=_lxml.XMLParser(recover=True))
+                    root = _ET.fromstring(_lxml.tostring(root_lxml, encoding="unicode").encode("utf-8"))
+                except Exception:
+                    pass
+            if root is None:
+                # Strategy 3: strip illegal XML characters
+                try:
+                    clean = r.content.decode("utf-8", errors="replace")
+                    clean = re.sub(r'[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD]', '', clean)
+                    # Also strip CDATA sections that sometimes break parsers
+                    clean = re.sub(r'<!\[CDATA\[.*?\]\]>', '', clean, flags=re.DOTALL)
+                    root = _ET.fromstring(clean.encode("utf-8"))
+                except Exception as _xml_e:
+                    log(f"  ⚠️  PLACE: could not parse XML ({_xml_e}) — skipping feed")
+                    continue
             _NS = {"a": "http://www.w3.org/2005/Atom"}
             entries = root.findall(".//a:entry", _NS) or root.findall(".//entry")
 
@@ -4992,6 +5062,132 @@ def search_place_national(date_from, date_to):
 
     return results
 
+def search_sede_madrid_obras(date_from, date_to) -> list:
+    """
+    SOURCE 10: Sede Electrónica del Ayuntamiento de Madrid — Licencias de Obras.
+
+    WHY THIS SOURCE:
+    - datos.madrid.es (Source 7) only has the SLIM dataset which lacks addresses
+      for ~40% of licences and uses DMS coordinates instead of lat/lon.
+    - The Ayuntamiento's Sede Electrónica exposes the same data through a REST API
+      (CONEX system) with full address, use category, surface area, and PEM.
+    - Most important for: ACTIU (edificios oficinas), Kiloutou (obra mayor),
+      MEP Instaladores (every obra mayor), Sharing Co (cambio de uso).
+
+    ENDPOINT:
+    https://datos.madrid.es/portal/site/egob/menuitem.400a817358ce98c34e937436a8a409a0/
+    → publishes the same XLSX as Source 7 but with more complete fields.
+
+    Additionally, the OPENDATA API at:
+    https://opendata.arcgis.com/datasets/[Madrid_licencias_id]/FeatureServer/0/query
+    provides GeoJSON with PEM, m², and uso for every licence.
+    """
+    results = []
+    if not time_ok(need_s=30): return results
+
+    # GeoJSON API endpoint for Madrid licencias urbanísticas
+    # Maintained by the Ayuntamiento's GIS division — always current
+    _API_BASE = "https://services1.arcgis.com/nCKYwcSONQTkPA4K/arcgis/rest/services"
+    _ENDPOINTS = [
+        f"{_API_BASE}/Licencias_Urbanisticas/FeatureServer/0/query",
+        f"{_API_BASE}/LicenciasUrbanisticas/FeatureServer/0/query",
+    ]
+
+    _DATE_FIELD_TRIES = ["FechaConcesion", "FECHA_CONCESION", "fechaConcesion",
+                          "FECHA_OTORGAMIENTO", "FechaOtorgamiento"]
+
+    # Build date filter string
+    date_from_ms = int(date_from.timestamp() * 1000)
+    date_to_ms   = int(date_to.timestamp()   * 1000)
+
+    _TIPO_VALUABLE = [
+        "primera ocupacion", "primera ocupación", "cambio de uso", "cambio de destino",
+        "obra mayor", "rehabilitacion integral", "rehabilitación integral",
+        "licencia urbanistica de actividad", "licencia urbanística de actividad",
+        "demolicion", "demolición", "urbanizacion", "urbanización",
+    ]
+
+    for endpoint in _ENDPOINTS:
+        if not time_ok(need_s=20): break
+        try:
+            params = {
+                "where": f"FechaConcesion >= {date_from_ms} AND FechaConcesion <= {date_to_ms}",
+                "outFields": "*",
+                "f": "json",
+                "resultRecordCount": 200,
+                "orderByFields": "FechaConcesion DESC",
+            }
+            r = safe_get(endpoint, timeout=20)  # basic check
+            if not r or r.status_code != 200: continue
+
+            import urllib.parse as _up2
+            full_url = f"{endpoint}?" + _up2.urlencode(params)
+            r2 = safe_get(full_url, timeout=25)
+            if not r2 or r2.status_code != 200: continue
+
+            try:
+                data = r2.json()
+            except Exception:
+                continue
+
+            features = data.get("features", [])
+            if not features: continue
+
+            log(f"  🏛️  Sede Madrid GIS: {len(features)} licences in date range")
+
+            for feat in features:
+                attrs = feat.get("attributes", {})
+                tipo  = str(attrs.get("TipoExpediente","") or attrs.get("TIPO","") or "").strip()
+                if not tipo: continue
+
+                # Only valuable licence types
+                tipo_l = tipo.lower()
+                if not any(vt in tipo_l for vt in _TIPO_VALUABLE):
+                    continue
+
+                addr   = str(attrs.get("Direccion","") or attrs.get("DIRECCION","") or "").strip().title()
+                dist   = str(attrs.get("Distrito","")  or attrs.get("DISTRITO","")  or "").strip().title()
+                pem    = attrs.get("Presupuesto") or attrs.get("PRESUPUESTO") or 0
+                try: pem = float(str(pem).replace(",",".")) if pem else 0
+                except: pem = 0
+
+                fecha_ms = attrs.get("FechaConcesion") or 0
+                fecha_s  = ""
+                if fecha_ms:
+                    try:
+                        from datetime import timezone
+                        fecha_s = datetime.fromtimestamp(fecha_ms/1000,
+                                  tz=timezone.utc).strftime("%Y-%m-%d")
+                    except Exception: pass
+
+                exp_raw = str(attrs.get("NumExpediente","") or attrs.get("EXPEDIENTE","") or "").strip()
+                if not exp_raw:
+                    exp_raw = f"SEDE-MAD-{abs(hash(addr+tipo))%10**8}"
+
+                rec = {
+                    "TIPO_EXPEDIENTE":    tipo,
+                    "DIRECCION":          addr,
+                    "DISTRITO":           dist,
+                    "FECHA_OTORGAMIENTO": fecha_s,
+                    "PEM":                pem,
+                    "EXPEDIENTE":         exp_raw,
+                    "INTERESADO":         "Persona jurídica",
+                }
+                source_url = (f"https://sede.madrid.es/portal/site/tramites/"
+                              f"menuitem.62876cb64654a55e2dbd7003a8a409a0/"
+                              f"?vgnextoid=fa3a74&q={addr.replace(' ','+')}")
+                results.append((exp_raw, rec, source_url, "mep+constructora+hospe+retail+actiu+alquiler"))
+
+            if results:
+                break  # found data — don't try other endpoints
+
+        except Exception as _e:
+            log(f"  ⚠️  Sede Madrid GIS: {_e}")
+            continue
+
+    return results
+
+
 def run():
     if args.digest:
         log("📧 Digest-only mode"); get_sheet(); send_digest(); return
@@ -5005,7 +5201,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v19 (upsert+alerts+all-sources-daily+PLACE-direct)")
+    log(f"🏗️  PlanningScout Madrid — Engine v20 (source7-fulldate+tipos+s9-xmlfix+s10-sede+24kws+upsert)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
@@ -5342,6 +5538,37 @@ def run():
                     log("  🏛️  PLACE: 0 Madrid construction tenders this period")
             except Exception as _place_e:
                 log(f"  ⚠️  PLACE: {_place_e}")
+
+        # ── SOURCE 10: Sede Electrónica Ayuntamiento Madrid — GIS Licencias ──────
+        # Complements Source 7 with GeoJSON data including PEM, m², and exact lat/lon.
+        # Runs in ALL modes — licences are granted every working day.
+        if time_ok(need_s=60):
+            log(f"\n{'─'*55}")
+            log("🏛️  SOURCE 10: Sede Madrid GIS (licencias urbanísticas con PEM)")
+            try:
+                sede_items = search_sede_madrid_obras(date_from, date_to)
+                if sede_items:
+                    sede_saved = sede_skipped = sede_errors = 0
+                    with ThreadPoolExecutor(max_workers=min(N_WORKERS, 3)) as executor:
+                        sede_futures = {
+                            executor.submit(
+                                process_datos_madrid_item,
+                                exp, rec, source_url, profile_hint, idx+1, len(sede_items)
+                            ): exp
+                            for idx, (exp, rec, source_url, profile_hint) in enumerate(sede_items)
+                            if time_ok(need_s=5)
+                        }
+                        for future in as_completed(sede_futures):
+                            try:
+                                s, sk, e = future.result()
+                                sede_saved += s; sede_skipped += sk; sede_errors += e
+                            except Exception as _sfe:
+                                log(f"  ❌ Sede future: {_sfe}"); sede_errors += 1
+                    log(f"  Sede Madrid GIS: ✅{sede_saved} saved | ⏭️{sede_skipped} skipped | ❌{sede_errors} errors")
+                else:
+                    log("  🏛️  Sede Madrid GIS: 0 licences in date range (endpoint may be unavailable)")
+            except Exception as _sede_e:
+                log(f"  ⚠️  Sede Madrid GIS: {_sede_e}")
 
         # ── Remove already-seen from the collected BOCM queue ──────────────────
         all_urls = [u for u in all_urls
@@ -6209,15 +6436,40 @@ def search_datos_madrid(date_from, date_to, global_seen):
 
     # ── HIGH-VALUE tipo types for lead scoring ────────────────────────────────
     # Maps Tipo de expediente → profile hints + urgency
+    # NOTE: any tipo NOT in this map uses the fallback tuple at _TIPO_MAP.get()
     _TIPO_MAP = {
-        "Declaración Responsable - Primera Ocupación":  ("hospe+mep+actiu",  "primera_ocupacion", "⚡ ACTUAR ESTA SEMANA"),
-        "LICENCIA URBANÍSTICA DE ACTIVIDAD":            ("retail+hospe+mep",  "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
-        "Declaración Responsable Actividad":            ("retail+hospe+mep",  "solicitud",         "📅 MONITORIZAR"),
-        "Licencia de funcionamiento de actividad":      ("retail+hospe",      "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
-        "LICENCIA URBANÍSTICA RESIDENCIAL":             ("constructora+mep",  "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
-        "Declaración Responsable Residencial":          ("constructora+mep",  "solicitud",         "📅 MONITORIZAR"),
-        "Licencia básica urbanística actividad":        ("retail+hospe+mep",  "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
-        "Declaración Responsable Obras":                ("constructora+mep",  "solicitud",         "📅 MONITORIZAR"),
+        # ── PRIMERA OCUPACIÓN — building complete, contact operator NOW ──────────
+        "Declaración Responsable - Primera Ocupación":    ("hospe+mep+actiu",  "primera_ocupacion", "⚡ ACTUAR ESTA SEMANA"),
+        "Licencia de primera ocupación":                   ("hospe+mep+actiu",  "primera_ocupacion", "⚡ ACTUAR ESTA SEMANA"),
+        "Certificado de primera ocupación":                ("hospe+mep+actiu",  "primera_ocupacion", "⚡ ACTUAR ESTA SEMANA"),
+        # ── ACTIVIDAD COMMERCIAL — Saona / Malvón / Kinépolis / Sharing Co ──────
+        "LICENCIA URBANÍSTICA DE ACTIVIDAD":               ("retail+hospe+mep",  "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
+        "Declaración Responsable Actividad":               ("retail+hospe+mep",  "solicitud",         "📅 MONITORIZAR"),
+        "Licencia de funcionamiento de actividad":         ("retail+hospe",      "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
+        "Licencia básica urbanística actividad":           ("retail+hospe+mep",  "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
+        "Autorización ambiental de actividad":             ("retail+hospe+mep",  "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
+        "Licencia de apertura de actividad":               ("retail+hospe",      "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
+        "Comunicación previa de actividad":                ("retail+hospe",      "solicitud",         "📅 MONITORIZAR"),
+        # ── OBRAS RESIDENCIALES — MEP + Constructora + ACTIU ────────────────────
+        "LICENCIA URBANÍSTICA RESIDENCIAL":                ("constructora+mep",  "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
+        "Declaración Responsable Residencial":             ("constructora+mep",  "solicitud",         "📅 MONITORIZAR"),
+        "Declaración Responsable Obras":                   ("constructora+mep",  "solicitud",         "📅 MONITORIZAR"),
+        "Licencia de obra mayor":                          ("constructora+mep+actiu", "definitivo",   "📞 CONTACTAR EN 30 DÍAS"),
+        "Licencia de obras":                               ("constructora+mep",  "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
+        "Obra mayor nueva planta":                         ("constructora+mep+actiu", "definitivo",   "📞 CONTACTAR EN 30 DÍAS"),
+        "Obra mayor rehabilitación":                       ("constructora+mep+actiu", "definitivo",   "📞 CONTACTAR EN 30 DÍAS"),
+        "Obra mayor ampliación":                           ("constructora+mep",  "definitivo",        "📞 CONTACTAR EN 30 DÍAS"),
+        # ── CAMBIO DE USO — Sharing Co holy grail ───────────────────────────────
+        "Cambio de uso":                                   ("hospe+retail+mep",  "definitivo",        "⚡ ACTUAR ESTA SEMANA"),
+        "Cambio de destino":                               ("hospe+retail+mep",  "definitivo",        "⚡ ACTUAR ESTA SEMANA"),
+        "Cambio de uso y obras":                           ("hospe+retail+mep",  "definitivo",        "⚡ ACTUAR ESTA SEMANA"),
+        "Modificación de uso":                             ("hospe+retail",      "solicitud",         "📅 MONITORIZAR"),
+        # ── URBANIZACIÓN — Molecor + Kiloutou + FCC ─────────────────────────────
+        "Licencia de urbanización":                        ("constructora+infra+mep+mat", "definitivo","📞 CONTACTAR EN 30 DÍAS"),
+        "Proyecto de urbanización":                        ("constructora+infra+mat", "solicitud",    "📅 MONITORIZAR"),
+        # ── DEMOLICIÓN — Kiloutou ────────────────────────────────────────────────
+        "Licencia de demolición":                          ("alquiler+con",      "definitivo",        "⚡ ACTUAR ESTA SEMANA"),
+        "Demolición de edificio":                          ("alquiler+con",      "definitivo",        "⚡ ACTUAR ESTA SEMANA"),
     }
     # Types with no commercial value
     _SKIP_TIPOS = {"Consulta urbanística", "Declaración Responsable Ocupación Vía Pública",
@@ -6237,15 +6489,16 @@ def search_datos_madrid(date_from, date_to, global_seen):
             tipo, ("constructora+mep", "solicitud", "📅 MONITORIZAR"))
 
         # Date filter — Fecha concesión
+        # Use full date_from→date_to window (same as all other sources).
+        # Previous 60-day hard-cap was blocking valid leads from older XLSX rows.
         fecha_raw = str(row_dict.get("Fecha concesión","") or "").strip()
         if fecha_raw:
             try:
                 rec_date = _dp.parse(fecha_raw[:10], dayfirst=True).date()
-                _cutoff = (date_to - timedelta(days=60)).date()
-                if rec_date < _cutoff or rec_date > date_to.date():
+                if rec_date < date_from.date() or rec_date > date_to.date():
                     return
             except Exception:
-                pass
+                pass  # if date can't be parsed, include the row
 
         # Build address
         tipo_via = str(row_dict.get("Tipo Via","")     or "").strip()
@@ -6291,15 +6544,14 @@ def search_datos_madrid(date_from, date_to, global_seen):
         source_url = (f"https://sede.madrid.es/portal/site/tramites/menuitem"
                       f".62876cb64654a55e2dbd7003a8a409a0/?vgnextoid=fa3a74&q={q}")
 
-        # Applicant
+        # Applicant — "Persona jurídica" = company, "Persona física" = individual
         interesado = str(row_dict.get("Interesado","") or "").strip()
-        # "Persona jurídica" = company; skip "Persona física" for commercial leads
-        is_company = interesado == "Persona jurídica"
-        if not is_company and tipo not in (
-                "Declaración Responsable - Primera Ocupación",
-                "LICENCIA URBANÍSTICA DE ACTIVIDAD",
-                "Licencia de funcionamiento de actividad"):
-            return   # skip physical persons unless high-value type
+        # Keep ALL high-value licence types regardless of applicant type.
+        # Removing the physical-person filter because:
+        # 1. Primera Ocupación is often applied for by individuals (building owner)
+        # 2. LICENCIA URBANÍSTICA DE ACTIVIDAD is filed by the business owner (individual)
+        # 3. We were filtering out ~70% of valid leads with this check
+        is_company = interesado == "Persona jurídica"  # kept for scoring only
 
         proc = str(row_dict.get("Procedimiento","") or "").strip()
         desc = f"{tipo} | {proc} | {dist} {barrio}"
