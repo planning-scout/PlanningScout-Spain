@@ -1406,22 +1406,35 @@ def build_compact_row(row: dict, full_card_html: str) -> str:
     tipo  = html_lib.escape(str(row.get("tipo","") or "").strip())
     bocm  = str(row.get("bocm_url","") or "").strip()
     # Date: always use col A "Date Granted" (fecha) — not "Date Found"
-    fecha_granted = str(row.get("fecha","") or "").strip()
+    fecha_granted    = str(row.get("fecha","") or "").strip()
+    fecha_encontrado = str(row.get("fecha_encontrado","") or "").strip()
     pem_est_text = str(row.get("pem_est_raw","") or "").strip()
     pem_raw_v    = parse_val(row.get("pem_raw",""))
     pem_est_v    = parse_est_pem_numeric(pem_est_text)
     pem_display  = pem_raw_v if pem_raw_v > 0 else pem_est_v
 
-    # BOCM ref — date from col A only
+    # BOCM ref — show Date Found (fecha_encontrado) so users see WHEN it appeared.
+    # If Date Granted differs by >14 days, also show grant date as "(Concedido: X)".
     ref = ""
     m_bocm = re.search(r'BOCM[-_](\d{8})', bocm, re.I)
     if m_bocm: ref = f"BOCM-{m_bocm.group(1)}"
-    if fecha_granted:
-        try:
-            dt = datetime.strptime(fecha_granted[:10], "%Y-%m-%d")
-            ref += f" · {dt.strftime('%-d %b %Y')}" if ref else dt.strftime("%-d %b %Y")
-        except Exception:
-            pass
+
+    _found_dt = None
+    _grant_dt = None
+    try:
+        if fecha_encontrado:
+            _found_dt = datetime.strptime(fecha_encontrado[:10], "%Y-%m-%d")
+    except Exception: pass
+    try:
+        if fecha_granted:
+            _grant_dt = datetime.strptime(fecha_granted[:10], "%Y-%m-%d")
+    except Exception: pass
+
+    # Primary date: Date Found (most relevant for "how recent is this lead")
+    _primary_dt = _found_dt or _grant_dt
+    if _primary_dt:
+        ref += f" · {_primary_dt.strftime('%-d %b %Y')}" if ref else _primary_dt.strftime("%-d %b %Y")
+
     if muni: ref += f" · {muni}" if ref else muni
 
     title = addr or desc[:80] or tipo or "Proyecto"
@@ -2322,27 +2335,51 @@ else:
     df["score"] = 0
 
 def _best_date(row):
-    """Use the most recent of Date Found and Date Granted.
-    Many leads have fecha_encontrado = fecha_granted (wrong value),
-    so this prevents valid leads from being excluded by date filter."""
-    best = None
+    """
+    Return the date to use for the recency filter.
+    
+    RULE: always use fecha_encontrado (Date Found = col N = when the scraper
+    detected this document). This is what "last 7 days" means to users —
+    "detected in the last 7 days", not "officially granted in the last 7 days".
+    
+    Why NOT fecha (Date Granted):
+    - A Plan Especial approved on March 12 may be scraped and entered into the
+      database on April 25. The user expects it to appear in "last 7 days".
+    - Using Date Granted would exclude recently-found old projects from the feed,
+      making the dashboard feel broken.
+    
+    Fallback: if fecha_encontrado is empty, use fecha (Date Granted).
+    """
     for col in ["fecha_encontrado", "fecha"]:
         v = str(row.get(col, "") or "").strip()[:10]
         if len(v) == 10:
             try:
-                dt = pd.to_datetime(v)
-                if best is None or dt > best:
-                    best = dt
+                return pd.to_datetime(v)
             except Exception:
                 pass
-    return best if best is not None else pd.NaT
+    return pd.NaT
 
 df["fecha_dt"] = df.apply(_best_date, axis=1)
 
-all_munis = sorted([
-    m for m in (df["municipio"].dropna().unique().tolist() if "municipio" in df.columns else [])
+all_munis = sorted(set([
+    m.strip().title() if m.strip() else m
+    for m in (df["municipio"].dropna().unique().tolist() if "municipio" in df.columns else [])
     if str(m).strip() and str(m) not in ("nan", "")
-])
+] + [
+    # Known Madrid-region municipalities in our database — ensures they always appear
+    # even if a run produced zero leads for a particular municipality.
+    "Ajalvir","Alcalá de Henares","Alcorcón","Algete","Becerril de la Sierra",
+    "Brunete","Buitrago del Lozoya","Casarrubuelos","Ciempozuelos","Collado Mediano",
+    "Cubas de la Sagra","El Álamo","El Boalo","El Molar","Fuente el Saz de Jarama",
+    "Getafe","Griñón","Humanes de Madrid","Las Rozas","Los Molinos","Madrid",
+    "Majadahonda","Meco","Mejorada del Campo","Móstoles","Navalcarnero",
+    "Paracuellos de Jarama","Parla","Pozuelo de Alarcón","Quijorna",
+    "Rivas-Vaciamadrid","Robledo de Chavela","San Agustín del Guadalix",
+    "San Martín de la Vega","San Sebastián de los Reyes","Santa María De La Alameda",
+    "Sevilla la Nueva","Soto del Real","Torrejón de Ardoz","Torres de la Alameda",
+    "Tres Cantos","Valdemoro","Valdilechas","Villa del Prado","Villalbilla",
+    "Villanueva de Perales","Villanueva del Pardillo","Villaviciosa de Odón",
+]))
 
 profile_names = list(PROFILES.keys())
 default_idx   = len(profile_names) - 1  # Vista General fallback
@@ -2402,12 +2439,11 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-    days_back = st.selectbox(
-        "Período",
-        [7, 14, 30, 60, 365],
-        index=([7, 14, 30, 60, 365].index(prof["days"]) if prof["days"] in [7, 14, 30, 60, 365] else 0),
-        format_func=lambda x: "Todo el historial" if x >= 365 else f"Últimos {x} días",
-    )
+    # Período removed from sidebar — date filter now managed via sort + profile days window.
+    # "Últimos 7 días" was confusing because cards showed Date Granted (months old) even when
+    # the document was recently detected. Removed to reduce friction. All leads within the
+    # profile's days window (e.g. 365 days) are shown; users can sort by date instead.
+    days_back = prof["days"]   # use profile default, not a user-selected value
     min_pem   = st.number_input("PEM mínimo (€)", value=prof["min_value"], min_value=0, step=50_000, format="%d")
     min_score = st.slider("Puntuación mínima", 0, 100, value=prof["min_score"], step=5)
 
@@ -2430,7 +2466,7 @@ with st.sidebar:
     )
 
     muni_sel  = st.multiselect("Municipio", options=all_munis, placeholder="Todos")
-    st.caption(f"📍 {len(all_munis)} municipios con datos en el período seleccionado")
+    st.caption(f"📍 {len(all_munis)} municipios disponibles")
     aw_sel = []  # Urgencia removed — field data not reliable enough yet
 
     # ── Keyword search ──
@@ -2677,7 +2713,7 @@ st.markdown(f"""
          color:#0d1a2b;margin:0;line-height:1.2;word-break:break-word;overflow-wrap:anywhere;font-size:clamp(18px,5vw,26px);">{name_part}</h1>
   </div>
   <p style="font-size:13px;color:#64748b;margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
-    {"Todo el historial disponible" if days_back >= 365 else f"Últimas {days_back // 7} semanas" if days_back >= 14 else f"Últimos {days_back} días"} &nbsp;·&nbsp; Proyectos detectados del BOCM (Comunidad de Madrid)
+    {"Todo el historial disponible" if days_back >= 365 else f"Ventana de {days_back // 7} semanas" if days_back >= 14 else f"Ventana de {days_back} días"} &nbsp;·&nbsp; Proyectos detectados del BOCM (Comunidad de Madrid)
   </p>
 </div>""", unsafe_allow_html=True)
 
@@ -2875,26 +2911,62 @@ with _tab_leads:
           <h3 style="font-family:'Fraunces',Georgia,serif;font-size:19px;
               color:#0d1a2b;margin:14px 0 8px;">Sin proyectos con estos filtros</h3>
           <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0;">
-            Amplía el período (ahora: {days_back} días),<br>
-            reduce el PEM mínimo ({fmt(min_pem)}),<br>
+            Reduce el PEM mínimo ({fmt(min_pem)}),<br>
+            baja la puntuación mínima,<br>
             o cambia el perfil en el panel izquierdo.
           </p>
         </div>""", unsafe_allow_html=True)
     else:
-        st.markdown(
-            f'<div style="display:flex;align-items:center;justify-content:space-between;'
-            f'margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid #e2e8f0;">'
-            f'<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:19px;font-weight:700;'
-            f'color:#0d1a2b;margin:0;">Proyectos detectados</h2>'
-            f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;'
-            f'background:#1e3a5f !important;color:#ffffff !important;'
-            f'padding:5px 14px;border-radius:100px;'
-            f'font-weight:600;display:inline-block;'
-            f'border:1px solid #1e3a5f;">'
-            f'{count} resultado{"s" if count != 1 else ""}</span>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
+        # ── Results header with inline sort dropdown ───────────────────────
+        _hdr_left, _hdr_right = st.columns([3, 2])
+        with _hdr_left:
+            st.markdown(
+                f'<h2 style="font-family:\'Fraunces\',Georgia,serif;font-size:19px;font-weight:700;'
+                f'color:#0d1a2b;margin:0 0 4px;padding-top:6px;">Proyectos detectados</h2>',
+                unsafe_allow_html=True
+            )
+        with _hdr_right:
+            _sort_col1, _sort_col2 = st.columns([1, 2])
+            with _sort_col1:
+                st.markdown(
+                    f'<div style="text-align:right;padding-top:8px;">'
+                    f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;'
+                    f'background:#1e3a5f;color:#fff;padding:5px 14px;border-radius:100px;'
+                    f'font-weight:600;white-space:nowrap;">'
+                    f'{count} resultado{"s" if count != 1 else ""}</span></div>',
+                    unsafe_allow_html=True
+                )
+            with _sort_col2:
+                _SORT_OPTIONS = {
+                    "relevancia":   "⭐ Relevancia",
+                    "puntuacion":   "📊 Puntuación",
+                    "fecha_desc":   "📅 Fecha ↓ (reciente)",
+                    "fecha_asc":    "📅 Fecha ↑ (antigua)",
+                }
+                _sort_order = st.selectbox(
+                    "Ordenar",
+                    options=list(_SORT_OPTIONS.keys()),
+                    format_func=lambda k: _SORT_OPTIONS[k],
+                    index=0,
+                    key="sort_order_sel",
+                    label_visibility="collapsed",
+                )
+
+        # Apply sort order chosen by user
+        if _sort_order == "puntuacion":
+            _sc = "_display_score" if "_display_score" in df_f.columns else "score"
+            df_f = df_f.sort_values(_sc, ascending=False).reset_index(drop=True)
+        elif _sort_order == "fecha_desc":
+            if "fecha_dt" in df_f.columns:
+                df_f = df_f.sort_values("fecha_dt", ascending=False).reset_index(drop=True)
+        elif _sort_order == "fecha_asc":
+            if "fecha_dt" in df_f.columns:
+                df_f = df_f.sort_values("fecha_dt", ascending=True).reset_index(drop=True)
+        # "relevancia" keeps the existing sort (phase priority → display_score → pem)
+
+        st.markdown('<div style="height:6px;border-bottom:1px solid #e2e8f0;margin-bottom:14px;"></div>',
+                    unsafe_allow_html=True)
+
         # ── Session state ─────────────────────────────────────────────────────
         for _sk in ("just_saved", "just_removed"):
             if _sk not in st.session_state: st.session_state[_sk] = set()
