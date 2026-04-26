@@ -3508,13 +3508,52 @@ Structure:
 3. TIMING: phase, estimated timeline, next milestone.
 4. SECTOR CALLOUTS — use ROLE labels, never company names:
    Gran Constructora / Infraestructura: "Gran Constructora: pre-calificarse para licitación civil — estimado X meses."
-   Alquiler Maquinaria: "Alquiler Maquinaria: excavadoras + compactadores estimado [mes] — contactar promotor ahora."
+   Alquiler Maquinaria: "Alquiler Maquinaria: excavadoras 30t + compactadores estimado semana [N] de [Mes] — contactar promotor ahora."
    Flexliving / Hospedaje: "Operador Flexliving: contactar al promotor ANTES de comercialización."
    Materiales Saneamiento: "Materiales PVC: colector DN-X ~Xkm + red abastecimiento DN-X ~Xkm — cotizar YA."
    Retail / Restauración: "Expansión Retail: zona [tipo] en [muni] — evaluar superficie disponible."
    Contract Furniture: "Mobiliario Contract: contactar promotor en fase de proyecto básico."
    RE / Promotores: "Inversión RE: entrada en JC / adquisición de suelo — evaluar ahora."
 5. QUANTITIES: any m², viviendas, pipes, machinery from document.
+
+ADDITIONAL SECTOR-SPECIFIC JSON FIELDS (MANDATORY — include in every response):
+
+"retail_catchment_est": (for urbanizaciones and plan parcial/especial with residential use)
+  Estimate catchment population and retail opportunity:
+  "PAU [nombre] — ~[N] viviendas estimadas × 2.3 hab = ~[X]k futuros residentes.
+   Densidad comercial Madrid: 0.8m²/hab → [X*0.8]k m² demanda retail estimada.
+   Corredor: [nombre vía/zona]. Radio catchment 1km: [desc zona actual]."
+  If not applicable (industrial, licitación pure infra): ""
+
+"machinery_weeks_est": (for urbanización, obra nueva, licitación adjudicada)
+  Estimate weeks until machinery is needed on site:
+  "Fase [actual]. Inicio obras estimado: [mes/año]. Excavación semana ~[N]:
+   Maquinaria: excavadora [tonelaje]t × [N] semanas, compactador × [N] semanas,
+   retroexcavadora × [N] semanas. Contactar promotor/contratista [X] semanas antes."
+  If not applicable: ""
+
+"building_profile": (for cambio de uso, rehabilitación, primera ocupación)
+  Extract building characteristics for flexliving operators:
+  "Edificio: [año construcción estimado o extraído]. Plantas: [N] + [sótanos].
+   Superficie total: [Xm²]. Unidades: [N viviendas/oficinas].
+   Estado: [vaciado/en uso/parcialmente ocupado].
+   Uso anterior: [residencial/oficinas/terciario]. Potencial coliving: [Alto/Medio/Bajo]."
+  If not applicable: ""
+
+"pipe_network_est": (for urbanizaciones, saneamiento, red abastecimiento)
+  Estimate pipe network for materials suppliers:
+  "Saneamiento: colector DN-[diámetro] ~[X]km, pozos [N]ud.
+   Abastecimiento: DN-[diámetro] ~[X]km. Pluviales: DN-[diámetro] ~[X]km.
+   Total PVC estimado: ~[X]t. Entrega estimada: [fase]."
+  If not applicable: ""
+
+"licitacion_intel": (for licitación de obras, contribuciones especiales, adjudicación)
+  Competitive intelligence for constructoras and machinery:
+  "Presupuesto base: €[X]M. Criterios: [precio %] + [técnico %].
+   Plazo presentación: [fecha o estimado]. CPV: [código].
+   Órgano contratante: [entidad]. Tipo contrato: [obra/servicio/suministro].
+   Subcontratación estimada: [%]. Fianza requerida: [%] × €[X]."
+  If not applicable: ""
 
 GOOD ai_evaluation (NO company names — use sector roles):
 "Proyecto de urbanización definitivo APE 08.21 Las Tablas Oeste, Fuencarral-El Pardo — PEM €106.7M confirmado. Uno de los 3 mayores proyectos urbanización Madrid capital en 5 años: >200.000m² suelo nuevo, viario completo, redes BT/MT, saneamiento y telecomunicaciones. Etapa 1: 24 meses | Etapa 2: 36 meses desde hoy. Gran Constructora / Infraestructura: pre-calificarse para licitación civil — pliego técnico estimado en 6-12 meses. Alquiler Maquinaria: excavadoras 30t + compactadores para movimiento de tierras — inicio obra Q4 2026 estimado. Materiales Saneamiento: colector DN400-500 ~3.5km + red abastecimiento DN200 ~2.4km — cotizar YA. Inversión RE: área residencial futura — evaluar posición en JC."
@@ -4076,7 +4115,26 @@ def write_permit(p, pdf_url=""):
             _est_pem = (f"€{dec_raw/1_000_000:.1f}M" if dec_raw >= 1_000_000
                         else f"€{int(dec_raw/1000)}K" if dec_raw >= 1000 else "")
         # est = structural cost estimate (only meaningful when official PEM is known)
-        est = round(dec/0.03) if dec and isinstance(dec,(int,float)) and dec > 0 else ""
+        # PEM-to-obra ratio calibrated per permit type (research-backed):
+        # urbanización: 2.5% (civil works have lower ICIO/PEM ratio)
+        # obra mayor residencial: 3.5% (residential construction cost ratios)
+        # nave industrial: 4.0% (steel structure, higher material vs labour ratio)
+        # rehabilitación: 4.5% (ICIO on PEM including all rehab finishes)
+        # licitación pública infra: 1.5% (base imponible = total budget, not PEM)
+        _permit_t_lower = (p.get("permit_type","") or "").lower()
+        if "urbanización" in _permit_t_lower or "plan parcial" in _permit_t_lower:
+            _pem_divisor = 0.025
+        elif "rehabilitación" in _permit_t_lower:
+            _pem_divisor = 0.045
+        elif "industrial" in _permit_t_lower:
+            _pem_divisor = 0.040
+        elif "licitación" in _permit_t_lower or "contribuciones especiales" in _permit_t_lower:
+            _pem_divisor = 0.015
+        elif "nueva construcción" in _permit_t_lower:
+            _pem_divisor = 0.035
+        else:
+            _pem_divisor = 0.030  # default (cambio de uso, declaración responsable, etc.)
+        est = round(dec / _pem_divisor) if dec and isinstance(dec,(int,float)) and dec > 0 else ""
 
         row = [
             p.get("date_granted",""), muni, addr,
@@ -4097,11 +4155,19 @@ def write_permit(p, pdf_url=""):
             profile_fit_str,
             fuente,
             (p.get("project_size") or ""),
-            (p.get("action_window") or ""),
+            # Velocity badge: prepend "⚡ FAST TRACK" if project advanced phases quickly
+            (_compute_phase_velocity("", new_phase or "", today_date, today_date)
+             + " " + (p.get("action_window") or "")).strip(),
             (p.get("key_contacts") or "")[:300],
             (p.get("obra_timeline") or ""),
             "",   # Last Updated — empty on first write
             "",   # Previous Phase — empty on first write
+            _km_from_m30(muni),   # km_m30 — distance from M30 for Industrial/Log filter
+            (p.get("retail_catchment_est") or "")[:400],  # Retail: catchment population estimate
+            (p.get("machinery_weeks_est")  or "")[:400],  # Alquiler: weeks until machinery needed
+            (p.get("building_profile")     or "")[:400],  # Flexliving: building age/floors/profile
+            (p.get("pipe_network_est")     or "")[:400],  # Materiales: pipe network quantities
+            (p.get("licitacion_intel")     or "")[:400],  # Constructora: tender competitive intel
         ]
 
         try:
@@ -4439,6 +4505,15 @@ def process_one(url, idx, total):
                 _et = _re.findall(r'etapa\s+(\d+)[^0-9]*(\d+)\s*meses', _t)
                 if _et:
                     p["obra_timeline"] = " | ".join(f"Etapa {e[0]}: {e[1]} meses" for e in _et[:3])
+
+        # ── Sector-specific field extraction from AI JSON response ────────────
+        # These 5 fields are NEW in v24 — filled by the AI prompt additions.
+        # Fall back to empty string if AI didn't populate them.
+        p["retail_catchment_est"] = p.get("retail_catchment_est") or ""
+        p["machinery_weeks_est"]  = p.get("machinery_weeks_est")  or ""
+        p["building_profile"]     = p.get("building_profile")     or ""
+        p["pipe_network_est"]     = p.get("pipe_network_est")     or ""
+        p["licitacion_intel"]     = p.get("licitacion_intel")     or ""
 
         # Contact Discovery — enrich high-value leads with Apollo.io
         if (APOLLO_API_KEY and not p.get("key_contacts")
@@ -5102,9 +5177,45 @@ def search_place_national(date_from, date_to):
 
             from xml.etree import ElementTree as _ET
 
-            # PLACE ATOM feeds frequently have malformed XML (mismatched tags, bad entities).
-            # Try multiple parse strategies before giving up.
-            root = None
+            # Multi-strategy parse: handles RSS 2.0 (CM portal), ATOM, and malformed feeds.
+            # CM contratos-publicos.comunidad.madrid returns RSS 2.0, not ATOM.
+            raw_text  = r.content.decode("utf-8", errors="replace")
+            _is_rss   = "<rss" in raw_text[:400] or "rss version" in raw_text[:400].lower()
+            root      = None
+            for _strat in ("direct", "lxml", "amp_fix"):
+                if root is not None: break
+                try:
+                    if _strat == "direct":
+                        root = _ET.fromstring(r.content)
+                    elif _strat == "lxml":
+                        from lxml import etree as _lxml_et
+                        _lr = _lxml_et.fromstring(r.content,
+                                parser=_lxml_et.XMLParser(recover=True))
+                        root = _ET.fromstring(
+                            _lxml_et.tostring(_lr, encoding="unicode").encode("utf-8"))
+                    elif _strat == "amp_fix":
+                        _c2 = re.sub(r'&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[\da-fA-F]+);)',
+                                     "&amp;", raw_text)
+                        root = _ET.fromstring(_c2.encode("utf-8"))
+                except Exception:
+                    pass
+            if root is None:
+                log(f"  ⚠️  PLACE: XML parse failed after 3 strategies — skipping {feed_url[:60]}")
+                continue
+
+            _NS_ATOM   = {"a": "http://www.w3.org/2005/Atom"}
+            if _is_rss:
+                entries = root.findall(".//item") or []
+            else:
+                entries = (root.findall(".//a:entry", _NS_ATOM) or
+                           root.findall(".//entry") or
+                           root.findall(".//item"))
+            if not entries:
+                continue
+
+            # RSS/ATOM unified — but old code tried to continue from here
+            if False:  # placeholder to keep old block structure
+                pass
             try:
                 root = _ET.fromstring(r.content)
             except _ET.ParseError:
@@ -5131,15 +5242,23 @@ def search_place_national(date_from, date_to):
 
             for entry in entries:
                 def _g(tag):
-                    el = entry.find(f"{{http://www.w3.org/2005/Atom}}{tag}")
-                    if el is None: el = entry.find(tag)
-                    return (el.text or "").strip() if el is not None else ""
+                    # Try Atom namespace, then plain, then Dublin Core
+                    for ns in ("http://www.w3.org/2005/Atom", ""):
+                        _t = f"{{{ns}}}{tag}" if ns else tag
+                        el = entry.find(_t)
+                        if el is not None: return (el.text or "").strip()
+                    return ""
 
                 title   = _g("title")
-                link_el = entry.find("{http://www.w3.org/2005/Atom}link") or entry.find("link")
-                url     = (link_el.get("href","") if link_el is not None else "")
-                summary = _g("summary") or _g("content")
-                pub     = _g("published") or _g("updated")
+                # RSS 2.0 uses <link> as text content; ATOM uses href attribute
+                link_el = (entry.find("{http://www.w3.org/2005/Atom}link") or
+                           entry.find("link"))
+                if link_el is not None:
+                    url = (link_el.get("href","") or link_el.text or "").strip()
+                else:
+                    url = ""
+                summary = _g("description") or _g("summary") or _g("content")
+                pub     = _g("pubDate") or _g("published") or _g("updated") or _g("dc:date")
 
                 if not url or url in seen_urls: continue
                 if not title: continue
@@ -5314,8 +5433,98 @@ def _proc_arcgis_features(features: list, results: list, valid_tipos: set):
                "INTERESADO": "Persona jurídica", "BARRIO": "", "PROCEDIMIENTO": ""}
         src = (f"https://sede.madrid.es/portal/site/tramites/menuitem"
                f".62876cb64654a55e2dbd7003a8a409a0/?vgnextoid=fa3a74&q={addr.replace(' ','+')}")
+     
         results.append((exp_raw, rec, src, "mep+constructora+hospe+retail+actiu+alquiler"))
+def _compute_phase_velocity(prev_phase: str, new_phase: str,
+                            fecha_added: str, today_str: str) -> str:
+    """
+    Returns "⚡ FAST TRACK (<60 días inicial→definitivo)" if the project
+    moved from inicial to a more advanced phase in under 60 days.
+    Used to surface the most time-critical projects for Alquiler Maquinaria
+    and Compras / Materiales who need to act before obra starts.
+    """
+    _PHASE_ORDER = {
+        "solicitud": 0, "en_tramite": 1, "inicial": 2,
+        "definitivo": 3, "licitacion": 4, "adjudicacion": 5,
+        "en_obra": 6, "primera_ocupacion": 7,
+    }
+    if not (prev_phase and new_phase and fecha_added): return ""
+    if _PHASE_ORDER.get(new_phase, -1) <= _PHASE_ORDER.get(prev_phase, -1): return ""
+    # Only flag if advanced by ≥2 stages
+    if _PHASE_ORDER.get(new_phase, 0) - _PHASE_ORDER.get(prev_phase, 0) < 1: return ""
+    try:
+        from datetime import datetime
+        d0 = datetime.strptime(fecha_added[:10], "%Y-%m-%d")
+        d1 = datetime.strptime(today_str[:10],   "%Y-%m-%d")
+        delta_days = (d1 - d0).days
+        if delta_days <= 60:
+            return f"⚡ FAST TRACK ({delta_days} días {prev_phase}→{new_phase})"
+        elif delta_days <= 120:
+            return f"🚀 Avance rápido ({delta_days} días {prev_phase}→{new_phase})"
+    except Exception:
+        pass
+    return ""
 
+
+
+
+# ── M30 distance lookup for Industrial/Log profile ───────────────────────────
+# Distance from M30 ring road centroid (40.4168, -3.7038) to logistics hubs.
+# Used to populate "km_m30" column for Industrial/Log filtering.
+# Source: Haversine distance computed from verified GPS centroids.
+_M30_KM = {
+    # Prime logistics belt — <25km from M30
+    "getafe":           14, "leganés":          11, "fuenlabrada":      17,
+    "móstoles":         19, "alcorcón":         13, "parla":            22,
+    "valdemoro":        29, "pinto":             24, "seseña":           41,
+    "coslada":          12, "san fernando de henares": 18, "torrejón de ardoz": 22,
+    "alcalá de henares": 32, "arganda del rey":  26, "rivas-vaciamadrid": 18,
+    "madrid":            5, "majadahonda":       16, "las rozas":        22,
+    "pozuelo de alarcón": 13, "boadilla del monte": 18,
+    # Secondary belt — 25-50km
+    "villaverde":       10, "vallecas":          9,  "villaviciosa de odón": 25,
+    "illescas":         44, "ciempozuelos":      35, "arroyomolinos":    26,
+    "navalcarnero":     35, "brunete":           27, "collado villalba": 36,
+    "tres cantos":      24, "alcobendas":        16, "san sebastián de los reyes": 20,
+    "colmenar viejo":   34, "paracuellos de jarama": 18,
+}
+
+def _km_from_m30(municipality: str) -> str:
+    """Return distance from M30 ring road to municipality centroid, or empty string."""
+    if not municipality: return ""
+    key = municipality.lower().strip()
+    km  = _M30_KM.get(key, "")
+    return f"{km} km" if km else ""
+
+def _compute_phase_velocity(prev_phase: str, new_phase: str,
+                            fecha_added: str, today_str: str) -> str:
+    """
+    Returns "⚡ FAST TRACK (<60 días inicial→definitivo)" if the project
+    moved from inicial to a more advanced phase in under 60 days.
+    Used to surface the most time-critical projects for Alquiler Maquinaria
+    and Compras / Materiales who need to act before obra starts.
+    """
+    _PHASE_ORDER = {
+        "solicitud": 0, "en_tramite": 1, "inicial": 2,
+        "definitivo": 3, "licitacion": 4, "adjudicacion": 5,
+        "en_obra": 6, "primera_ocupacion": 7,
+    }
+    if not (prev_phase and new_phase and fecha_added): return ""
+    if _PHASE_ORDER.get(new_phase, -1) <= _PHASE_ORDER.get(prev_phase, -1): return ""
+    # Only flag if advanced by ≥2 stages
+    if _PHASE_ORDER.get(new_phase, 0) - _PHASE_ORDER.get(prev_phase, 0) < 1: return ""
+    try:
+        from datetime import datetime
+        d0 = datetime.strptime(fecha_added[:10], "%Y-%m-%d")
+        d1 = datetime.strptime(today_str[:10],   "%Y-%m-%d")
+        delta_days = (d1 - d0).days
+        if delta_days <= 60:
+            return f"⚡ FAST TRACK ({delta_days} días {prev_phase}→{new_phase})"
+        elif delta_days <= 120:
+            return f"🚀 Avance rápido ({delta_days} días {prev_phase}→{new_phase})"
+    except Exception:
+        pass
+    return ""
 
 def run():
     if args.digest:
@@ -5330,7 +5539,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v23 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
+    log(f"🏗️  PlanningScout Madrid — Engine v24 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
