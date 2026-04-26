@@ -3500,12 +3500,25 @@ obra_timeline — extract construction timing from document:
   If no timing found: ""
 
 AI_EVALUATION — THE MOST IMPORTANT FIELD. SECTOR-SPECIFIC, ACTIONABLE (NO COMPANY NAMES):
-Write 3-6 sentences. NEVER generic. NEVER mention specific company names.
-Use SECTOR ROLE labels instead of company names.
+
+CRITICAL EXTRACTION FIRST — before writing, extract from the document:
+□ Plazo de ejecución: look for "plazo de ejecución de X meses" or "etapa 1: X meses"
+□ Superficie: "superficie del ámbito", "superficie total", "m² edificables", "parcelas aportadas"
+□ PEM/PBL: "presupuesto de ejecución material", "base imponible", "presupuesto base licitación"
+□ Junta de Compensación: "presidente:", "gerente:", "Junta de Compensación de [NAME]"
+□ Número de parcelas/propietarios: "número de parcelas", "propietarios"
+□ Criterios adjudicación: "criterios de adjudicación", "precio X%", "técnico X%"
+□ Fianza provisional: "fianza provisional", "garantía provisional"
+□ Número de viviendas: "viviendas", "pisos", "unidades residenciales"
+□ Arquitecto/aparejador: "director de obra", "director de ejecución", "arquitecto técnico"
+□ Suelos contaminados: declaration present/absent
+□ Cuenta de liquidación: coste obras urbanización stated
+
+Then write 3-6 sentences. NEVER generic. NEVER company names. Use SECTOR ROLE labels.
 Structure:
 1. WHAT + WHERE + PEM: "Proyecto de urbanización definitivo [NAME], [MUNI] — PEM €X.XM."
-2. SCALE/CONTEXT: why this location matters, population/corridor, strategic importance.
-3. TIMING: phase, estimated timeline, next milestone.
+2. SCALE/CONTEXT: extracted data (parcelas, m², viviendas, plazo)
+3. TIMING: phase, extracted plazo, next milestone.
 4. SECTOR CALLOUTS — use ROLE labels, never company names:
    Gran Constructora / Infraestructura: "Gran Constructora: pre-calificarse para licitación civil — estimado X meses."
    Alquiler Maquinaria: "Alquiler Maquinaria: excavadoras 30t + compactadores estimado semana [N] de [Mes] — contactar promotor ahora."
@@ -3516,44 +3529,150 @@ Structure:
    RE / Promotores: "Inversión RE: entrada en JC / adquisición de suelo — evaluar ahora."
 5. QUANTITIES: any m², viviendas, pipes, machinery from document.
 
-ADDITIONAL SECTOR-SPECIFIC JSON FIELDS (MANDATORY — include in every response):
+SECTOR-SPECIFIC JSON FIELDS — FILL ALL THAT ARE APPLICABLE (empty string "" if not relevant):
 
-"retail_catchment_est": (for urbanizaciones and plan parcial/especial with residential use)
-  Estimate catchment population and retail opportunity:
-  "PAU [nombre] — ~[N] viviendas estimadas × 2.3 hab = ~[X]k futuros residentes.
-   Densidad comercial Madrid: 0.8m²/hab → [X*0.8]k m² demanda retail estimada.
-   Corredor: [nombre vía/zona]. Radio catchment 1km: [desc zona actual]."
-  If not applicable (industrial, licitación pure infra): ""
+═══════════════════════════════════════════════════════════════
+GRAN INFRAESTRUCTURA fields (fill for licitaciones, urbanizaciones >€5M):
+═══════════════════════════════════════════════════════════════
+"infra_cpv_codes": "45000000; 45231300" (CPV codes from pliego or estimated)
+"infra_pbl_eur": 4800000  (presupuesto base licitación as number, not string)
+"infra_deadline": "15/06/2026" or "estimado Q3 2026" (bid submission deadline)
+"infra_criteria": "Precio 60% + Técnico 40%" (adjudicación criteria from pliego)
+"infra_clasificacion": "Grupo E Subgrupo 1 Categoría F" (empresa solvency classification)
+"infra_procedure": "Abierto" or "Restringido" or "Negociado" (tender procedure)
+"infra_contracting_body": "Ayuntamiento de Getafe — Div. Contratación"
 
-"machinery_weeks_est": (for urbanización, obra nueva, licitación adjudicada)
-  Estimate weeks until machinery is needed on site:
-  "Fase [actual]. Inicio obras estimado: [mes/año]. Excavación semana ~[N]:
-   Maquinaria: excavadora [tonelaje]t × [N] semanas, compactador × [N] semanas,
-   retroexcavadora × [N] semanas. Contactar promotor/contratista [X] semanas antes."
-  If not applicable: ""
+═══════════════════════════════════════════════════════════════
+GRAN CONSTRUCTORA fields (fill for obra mayor, plan parcial, urbanización):
+═══════════════════════════════════════════════════════════════
+"const_num_viviendas": "571 viviendas plurifamiliares + 48 VPO" (extract from PDF)
+"const_uso_previsto": "residencial libre + VPO 30%" (from plan)
+"const_tipologia": "plurifamiliar 12 plantas + 2 sótanos + PB comercial"
+"const_promotor_cif": "A-28123456" (from PDF if available, else "")
+"const_aparejador": "Arquitecto técnico / aparejador from PDF"
+"const_plazo_ejecucion": "24 meses" or "Fase I: 18m | Fase II: 30m"
 
-"building_profile": (for cambio de uso, rehabilitación, primera ocupación)
-  Extract building characteristics for flexliving operators:
-  "Edificio: [año construcción estimado o extraído]. Plantas: [N] + [sótanos].
-   Superficie total: [Xm²]. Unidades: [N viviendas/oficinas].
-   Estado: [vaciado/en uso/parcialmente ocupado].
-   Uso anterior: [residencial/oficinas/terciario]. Potencial coliving: [Alto/Medio/Bajo]."
-  If not applicable: ""
+═══════════════════════════════════════════════════════════════
+EXPANSIÓN RETAIL fields (fill for ALL urbanizaciones, plan parcial, cambio de uso, lic. actividad):
+THIS IS THE MOST IMPORTANT SECTOR — be exhaustive. Retail expansion directors
+need to act 18-36 months before a new neighbourhood is habitable.
+═══════════════════════════════════════════════════════════════
+"retail_pob_futura_est": "~4,200 residentes (1,680 viv × 2.5 hab/viv)" (compute from viviendas)
+"retail_renta_capita": "€24,300/año (municipio: Valdemoro — clase media)" (use your knowledge of Madrid renta by municipality)
+  Madrid renta reference (use to fill if not in document):
+  Madrid capital: €32,400 | Las Rozas: €34,100 | Majadahonda: €36,200 | Pozuelo: €41,500
+  Getafe: €22,400 | Fuenlabrada: €19,800 | Móstoles: €20,100 | Alcorcón: €23,600
+  Valdemoro: €24,300 | Alcalá de Henares: €22,100 | Coslada: €21,800
+  Tres Cantos: €33,500 | Alcobendas: €31,200 | Boadilla: €42,100
+"retail_m2_comercial_est": "~3,360 m² demanda retail (4,200 hab × 0.8 m²/hab)" (compute)
+"retail_competencia_1km": "Mercadona ~1.2km · Lidl ~2.1km · SIN Dia/Mango/Zara en zona" (use geography knowledge)
+"retail_zona_tipo": "Residencial clase media-alta / familiar / universitaria / obrera"
+"retail_transporte": "Cercanías C-3 a 800m · A-42 salida 18 · Bus L152" (from geography)
+"retail_apertura_est": "Viviendas habitables estimado: Q2 2028 (urbanización definitiva + 18m construcción)"
+"retail_local_m2": "235 m² PB" (for cambio de uso / licencia actividad — extract from PDF)
+"retail_fachada_m": "14m fachada a calle principal" (extract from PDF if available)
+"retail_oportunidad": one sentence: WHY this is relevant for retail expansion.
+  Examples:
+  - "Nueva zona residencial con 4,200 habitantes en 2028 y CERO competencia Dia/supermercado — primer operador = ventaja decisiva."
+  - "Local PB 235m² en nueva calle peatonal zona universitaria — alta rotación hostelería/retail moda."
+  - "Cambio de uso a local comercial en barrio obrero densamente poblado sin supermercado moderno en 800m."
 
-"pipe_network_est": (for urbanizaciones, saneamiento, red abastecimiento)
-  Estimate pipe network for materials suppliers:
-  "Saneamiento: colector DN-[diámetro] ~[X]km, pozos [N]ud.
-   Abastecimiento: DN-[diámetro] ~[X]km. Pluviales: DN-[diámetro] ~[X]km.
-   Total PVC estimado: ~[X]t. Entrega estimada: [fase]."
-  If not applicable: ""
+═══════════════════════════════════════════════════════════════
+PROMOTORES / RE fields (fill for urbanización, plan parcial, reparcelación):
+═══════════════════════════════════════════════════════════════
+"re_sup_total_m2": "42,350 m² ámbito total"
+"re_sup_edificable_m2": "18,200 m² edificables (FAR 0.43)"
+"re_num_parcelas": "47 parcelas aportadas"
+"re_junta_contacto": "Presidente: Pedro García Sanz | Gerente: Urbanizaciones Siglo XXI SL"
+"re_cargas_pendientes": "€2.1M cuota urbanización pendiente (estimado)"
+"re_tipo_suelo": "SGPLU-3 / APR 08.21 — suelo urbano no consolidado"
+"re_plazo_urbanizacion": "Fase I: 24m | Fase II: 36m desde aprobación"
 
-"licitacion_intel": (for licitación de obras, contribuciones especiales, adjudicación)
-  Competitive intelligence for constructoras and machinery:
-  "Presupuesto base: €[X]M. Criterios: [precio %] + [técnico %].
-   Plazo presentación: [fecha o estimado]. CPV: [código].
-   Órgano contratante: [entidad]. Tipo contrato: [obra/servicio/suministro].
-   Subcontratación estimada: [%]. Fianza requerida: [%] × €[X]."
-  If not applicable: ""
+═══════════════════════════════════════════════════════════════
+INSTALADORES MEP fields (fill for obra mayor, rehabilitación, primera ocupación):
+═══════════════════════════════════════════════════════════════
+"mep_num_plantas": "12 plantas + 2 sótanos" (extract or estimate from m²/PEM)
+"mep_sup_m2": "8,450 m² construidos" (from PDF or estimate)
+"mep_uso_tipo": "residencial libre" or "hotel 4*" or "oficinas clase A"
+"mep_hvac_est": "VRF ~180kW (residencial multifamiliar) · 48 ud interiores estimadas"
+  HVAC reference:
+  Residencial <3 plantas: split individual | 4-12 plantas: VRF ~120-200kW
+  Oficinas: VRF o clima centralizado ~40W/m² | Hotel: HVAC zonal + ACS centralizado
+"mep_ascensores_est": "3 ascensores × 10 paradas (≥8 plantas obligatorio)" (Norma CTE SI)
+"mep_pci_tipo": "Rociadores automáticos (>28m altura) + BIEs + detección" (CTE DB-SI)
+"mep_cert_energetica": "Clase A objetivo (inferido de PEM/m² y zona climática C3)"
+"mep_director_tecnico": "From PDF: Aparejador / Director de Ejecución"
+
+═══════════════════════════════════════════════════════════════
+INDUSTRIAL / LOG. fields (fill for nave industrial, urbanización industrial, polígono):
+═══════════════════════════════════════════════════════════════
+"ind_sup_parcela_m2": "15,200 m² parcela" (from PDF)
+"ind_sup_nave_m2": "9,800 m² nave" (from PDF or estimate as 65% of parcela)
+"ind_altura_libre_m": "12m libre interior (estimado desde tipología logística)"
+  Reference: estándar logístico Madrid ≥10m; e-commerce/last-mile ≥8m; manufactura 6-8m
+"ind_muelles_est": "~12 muelles (1 muelle / 800m² nave, estándar logístico)"
+"ind_potencia_kva": "630 kVA (desde pliego)" or "~400 kVA estimado (industria media)"
+"ind_poligono_nombre": "P.I. La Isla — Getafe" or "Sector PAU Industrial Valdemoro"
+"ind_dist_autopista_km": "A-4 salida 18 a 0.8km (estimado desde ubicación)"
+
+═══════════════════════════════════════════════════════════════
+ALQUILER MAQUINARIA fields (fill for adjudicación, urbanización en obra, demolición):
+═══════════════════════════════════════════════════════════════
+"alq_contratista": "Ferrovial Servicios SA — adjudicatario confirmado" (from adjudicación)
+"alq_importe_adj": "€4,800,000" (adjudicación amount)
+"alq_inicio_obra_est": "Septiembre 2026 (estimado: +3 meses desde adjudicación)"
+"alq_maquinaria_est": "Excavadora 30t × 8sem · Compactadora vibratoria × 6sem · Dumper · Retroexcavadora 20t"
+  Reference per PEM:
+  <€500K: retroexcavadora + dumper | €500K-€2M: exc.20t + comp. + dumper
+  €2M-€10M: exc.30t × 2 + comp. + grúa torre | >€10M: flota completa + grúa pluma
+"alq_m3_tierras_est": "~45,000 m³ movimiento tierras (estimado 8m³/m² urbanización)"
+"alq_duracion_meses": "18 meses (desde pliego)" or "~12 meses (estimado)"
+"alq_jefe_obra": "From PDF: Director de Obra / Jefe de Obra"
+
+═══════════════════════════════════════════════════════════════
+COMPRAS / MATERIALES fields (fill for urbanización, obra nueva, licitación):
+═══════════════════════════════════════════════════════════════
+"mat_colector_dn_km": "DN-400 ~3.2km + DN-300 ~1.8km (saneamiento separativo)"
+  Reference: urbanización ~200m colector per ha; DN400 for colectores principales
+"mat_red_abast_dn_km": "DN-200 ~2.4km abastecimiento potable"
+"mat_hormigon_m3_est": "~4,800 m³ HA-25 (estimado: 0.35m³/m² urbanización + estructura)"
+"mat_aridos_t_est": "~12,000t áridos Z-1 (zahorra artificial base viario)"
+"mat_acero_t_est": "~380t B500S (estimado: 45kg/m² edificación)"
+"mat_contratista": "Empresa adjudicataria para contactar jefe de compras"
+"mat_plazo_entrega": "Inicio suministro estimado: Q4 2026 · JIT requerido"
+
+═══════════════════════════════════════════════════════════════
+CONTRACT & OFICINAS fields (fill for oficinas, hotel, universidad, hospital):
+═══════════════════════════════════════════════════════════════
+"cont_uso_edificio": "Oficinas clase A / Hotel 4* / Residencia universitaria / Hospital"
+"cont_m2_oficinas": "4,200 m² plantas diáfanas"
+"cont_num_plantas": "8 plantas tipo + PB + 2 sótanos"
+"cont_puestos_trabajo": "~560 puestos estimados (4,200m² ÷ 7.5m²/puesto NIA)"
+  Reference: 7.5m²/puesto = flex/open plan; 10m²/puesto = celdular; hotel = por habitación
+"cont_arquitecto": "From PDF: estudio de arquitectura / firma interior design"
+"cont_certificacion": "LEED Gold objetivo (desde pliego o tipología)"
+"cont_entrega_est": "1ª ocupación estimada: Q1 2028 (aprobación definitiva + 24m obra)"
+
+═══════════════════════════════════════════════════════════════
+FLEXLIVING & HOSTELERÍA fields (fill for cambio de uso, rehab, primera ocupación):
+═══════════════════════════════════════════════════════════════
+"flex_anno_construccion": "1978" (extract from PDF or estimate from typology/zone)
+  Reference: Centro/Salamanca/Malasaña: 1930-1970 | PAU years: 1995-2010 | New: >2010
+"flex_num_unidades": "48 unidades (pisos/habitaciones)" (from PDF)
+"flex_sup_total_m2": "3,240 m² totales" (from PDF)
+"flex_uso_anterior": "Oficinas 100% — en desocupación parcial desde 2022" (from PDF)
+"flex_propietario_tipo": "Único propietario: Fondo Inmobiliario XYZ" or "Comunidad de Propietarios (≥20 copropietarios)"
+  NOTE: Único propietario = HIGH priority for Sharing Co (can lease whole building)
+        Comunidad de propietarios = LOW priority (complex deal structure)
+"flex_estado_actual": "Vacío / Parcialmente ocupado / En rehabilitación activa"
+"flex_barrio_tipo": "Centro histórico / Universitario (UAM 1.2km) / Negocios AZCA / Residencial familiar"
+"flex_potencial_coliving": "ALTO — único propietario + >40 unidades + centro + desocupado" or "BAJO" or "MEDIO"
+  Scoring:
+  HIGH: único propietario + ≥40 unidades + zona central/universitaria + vacío
+  MEDIUM: único propietario + <40 unidades OR comunidad + buena zona
+  LOW: comunidad copropietarios + periferia + pequeño
+"flex_irr_est": "~6.2% yield neto estimado (€18/m²/mes × 3,240m² × 12 - capex €800K)"
+  Reference yields Madrid coliving 2024: prime zones 5.5-7%, suburban 7-9%
 
 GOOD ai_evaluation (NO company names — use sector roles):
 "Proyecto de urbanización definitivo APE 08.21 Las Tablas Oeste, Fuencarral-El Pardo — PEM €106.7M confirmado. Uno de los 3 mayores proyectos urbanización Madrid capital en 5 años: >200.000m² suelo nuevo, viario completo, redes BT/MT, saneamiento y telecomunicaciones. Etapa 1: 24 meses | Etapa 2: 36 meses desde hoy. Gran Constructora / Infraestructura: pre-calificarse para licitación civil — pliego técnico estimado en 6-12 meses. Alquiler Maquinaria: excavadoras 30t + compactadores para movimiento de tierras — inicio obra Q4 2026 estimado. Materiales Saneamiento: colector DN400-500 ~3.5km + red abastecimiento DN200 ~2.4km — cotizar YA. Inversión RE: área residencial futura — evaluar posición en JC."
@@ -3893,19 +4012,124 @@ def extract(text, url, pub_date, pdf_text=None):
 # ════════════════════════════════════════════════════════════
 # GOOGLE SHEETS — 17 columns
 # ════════════════════════════════════════════════════════════
-HDRS = [
+# ── Google Sheet column headers ─────────────────────────────────────────────
+# BASE COLUMNS (cols A-AB) — all profiles
+HDRS_BASE = [
     "Date Granted","Municipality","Full Address","Applicant",
     "Permit Type","Declared Value PEM (€)","Est. Build Value (€)",
     "Maps Link","Description","Source URL","PDF URL",
     "Mode","Confidence","Date Found","Lead Score","Expediente","Phase",
     "Estimated PEM","AI Evaluation","Supplies Needed","Profile Fit","Fuente",
-    "Project Size",    # Col W — m², viviendas, plantas, or AI size estimate
-    "Action Window",   # Col X — ⚡ ACTUAR ESTA SEMANA / 📞 30 DÍAS / 📅 MONITORIZAR / 🔮 PIPELINE
-    "Key Contacts",    # Col Y — Promotor | Dir.Obra | Aparejador extracted from PDF
-    "Obra Timeline",   # Col Z — plazo de ejecución, etapa structure, estimated start
-    "Last Updated",    # Col AA — timestamp when row was last modified (phase advance)
-    "Previous Phase",  # Col AB — phase before the most recent update
+    "Project Size","Action Window","Key Contacts","Obra Timeline",
+    "Last Updated","Previous Phase","km M30",
 ]
+
+# SECTOR COLUMNS (cols AC+) — profile-specific intelligence
+# Engine writes these; dashboard reads them filtered per active profile
+HDRS_SECTOR = [
+    # 🏗️ Gran Infraestructura (7)
+    "infra_cpv_codes","infra_pbl_eur","infra_deadline",
+    "infra_criteria","infra_clasificacion","infra_procedure","infra_contracting_body",
+    # 🏢 Gran Constructora (6)
+    "const_num_viviendas","const_uso_previsto","const_tipologia",
+    "const_promotor_cif","const_aparejador","const_plazo_ejecucion",
+    # 🏪 Expansión Retail (9)
+    "retail_pob_futura_est","retail_renta_capita","retail_m2_comercial_est",
+    "retail_competencia_1km","retail_zona_tipo","retail_transporte",
+    "retail_apertura_est","retail_local_m2","retail_oportunidad",
+    # 📐 Promotores / RE (6)
+    "re_sup_total_m2","re_sup_edificable_m2","re_num_parcelas",
+    "re_junta_contacto","re_cargas_pendientes","re_tipo_suelo",
+    # 🔧 Instaladores MEP (6)
+    "mep_num_plantas","mep_sup_m2","mep_hvac_est",
+    "mep_ascensores_est","mep_pci_tipo","mep_director_tecnico",
+    # 🏭 Industrial / Log. (6)
+    "ind_sup_parcela_m2","ind_sup_nave_m2","ind_altura_libre_m",
+    "ind_muelles_est","ind_potencia_kva","ind_poligono_nombre",
+    # 🚧 Alquiler Maquinaria (6)
+    "alq_contratista","alq_importe_adj","alq_inicio_obra_est",
+    "alq_maquinaria_est","alq_m3_tierras_est","alq_duracion_meses",
+    # 🛒 Compras / Materiales (6)
+    "mat_colector_dn_km","mat_red_abast_dn_km","mat_hormigon_m3_est",
+    "mat_aridos_t_est","mat_acero_t_est","mat_contratista",
+    # 💼 Contract & Oficinas (6)
+    "cont_uso_edificio","cont_m2_oficinas","cont_puestos_trabajo",
+    "cont_arquitecto","cont_certificacion","cont_entrega_est",
+    # 🏠 Flexliving & Hostelería (7)
+    "flex_anno_construccion","flex_num_unidades","flex_sup_total_m2",
+    "flex_uso_anterior","flex_propietario_tipo","flex_potencial_coliving","flex_irr_est",
+]
+
+HDRS = HDRS_BASE + HDRS_SECTOR
+
+# ── Profile-tab definitions ───────────────────────────────────────────────────
+# Each profile gets its OWN tab in Google Sheets — a filtered VIEW of the Leads tab
+# containing only the base columns + that profile's sector columns.
+# The engine creates and updates these tabs automatically.
+# The dashboard reads from a profile tab if the user switches profile,
+# giving a cleaner, faster experience with pre-filtered data.
+PROFILE_TABS = {
+    "infrastructura": {
+        "tab_name": "📊 Infraestructura",
+        "profile_keys": ["infrastructura","constructora"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("infra_") or c.startswith("const_")],
+        "min_score": 40, "min_pem": 500_000,
+    },
+    "constructora": {
+        "tab_name": "📊 Constructora",
+        "profile_keys": ["constructora","infrastructura","alquiler","materiales"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("const_") or c.startswith("alq_") or c.startswith("mat_")],
+        "min_score": 35, "min_pem": 300_000,
+    },
+    "retail": {
+        "tab_name": "📊 Retail",
+        "profile_keys": ["retail","hospe"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("retail_") or c.startswith("flex_")],
+        "min_score": 40, "min_pem": 0,
+    },
+    "promotores": {
+        "tab_name": "📊 Promotores",
+        "profile_keys": ["promotores"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("re_")],
+        "min_score": 45, "min_pem": 500_000,
+    },
+    "mep": {
+        "tab_name": "📊 MEP",
+        "profile_keys": ["mep"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("mep_")],
+        "min_score": 30, "min_pem": 80_000,
+    },
+    "industrial": {
+        "tab_name": "📊 Industrial",
+        "profile_keys": ["industrial"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("ind_")],
+        "min_score": 35, "min_pem": 200_000,
+    },
+    "alquiler": {
+        "tab_name": "📊 Alquiler Maq.",
+        "profile_keys": ["alquiler"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("alq_")],
+        "min_score": 25, "min_pem": 200_000,
+    },
+    "materiales": {
+        "tab_name": "📊 Materiales",
+        "profile_keys": ["materiales"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("mat_") or c.startswith("alq_")],
+        "min_score": 30, "min_pem": 200_000,
+    },
+    "actiu": {
+        "tab_name": "📊 Contract",
+        "profile_keys": ["actiu"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("cont_")],
+        "min_score": 35, "min_pem": 300_000,
+    },
+    "hospe": {
+        "tab_name": "📊 Flexliving",
+        "profile_keys": ["hospe"],
+        "sector_cols": [c for c in HDRS_SECTOR if c.startswith("flex_") or c.startswith("retail_")],
+        "min_score": 30, "min_pem": 100_000,
+    },
+}
 _ws             = None
 _seen_urls      = set()
 _seen_bocm_ids  = set()
@@ -4162,12 +4386,82 @@ def write_permit(p, pdf_url=""):
             (p.get("obra_timeline") or ""),
             "",   # Last Updated — empty on first write
             "",   # Previous Phase — empty on first write
-            _km_from_m30(muni),   # km_m30 — distance from M30 for Industrial/Log filter
-            (p.get("retail_catchment_est") or "")[:400],  # Retail: catchment population estimate
-            (p.get("machinery_weeks_est")  or "")[:400],  # Alquiler: weeks until machinery needed
-            (p.get("building_profile")     or "")[:400],  # Flexliving: building age/floors/profile
-            (p.get("pipe_network_est")     or "")[:400],  # Materiales: pipe network quantities
-            (p.get("licitacion_intel")     or "")[:400],  # Constructora: tender competitive intel
+            _km_from_m30(muni),   # km_m30
+            # ── Gran Infraestructura ─────────────────────────────────────────
+            (p.get("infra_cpv_codes")       or "")[:200],
+            str(p.get("infra_pbl_eur")      or "")[:50],
+            (p.get("infra_deadline")        or "")[:100],
+            (p.get("infra_criteria")        or "")[:200],
+            (p.get("infra_clasificacion")   or "")[:100],
+            (p.get("infra_procedure")       or "")[:50],
+            (p.get("infra_contracting_body")or "")[:200],
+            # ── Gran Constructora ────────────────────────────────────────────
+            (p.get("const_num_viviendas")   or "")[:100],
+            (p.get("const_uso_previsto")    or "")[:150],
+            (p.get("const_tipologia")       or "")[:150],
+            (p.get("const_promotor_cif")    or "")[:20],
+            (p.get("const_aparejador")      or "")[:150],
+            (p.get("const_plazo_ejecucion") or "")[:100],
+            # ── Expansión Retail (9 fields) ──────────────────────────────────
+            (p.get("retail_pob_futura_est") or "")[:200],
+            (p.get("retail_renta_capita")   or "")[:100],
+            (p.get("retail_m2_comercial_est")or"")[:150],
+            (p.get("retail_competencia_1km")or "")[:300],
+            (p.get("retail_zona_tipo")      or "")[:100],
+            (p.get("retail_transporte")     or "")[:200],
+            (p.get("retail_apertura_est")   or "")[:150],
+            (p.get("retail_local_m2")       or "")[:50],
+            (p.get("retail_oportunidad")    or "")[:400],
+            # ── Promotores / RE ──────────────────────────────────────────────
+            (p.get("re_sup_total_m2")       or "")[:100],
+            (p.get("re_sup_edificable_m2")  or "")[:100],
+            (p.get("re_num_parcelas")       or "")[:50],
+            (p.get("re_junta_contacto")     or "")[:300],
+            (p.get("re_cargas_pendientes")  or "")[:100],
+            (p.get("re_tipo_suelo")         or "")[:100],
+            # ── Instaladores MEP ─────────────────────────────────────────────
+            (p.get("mep_num_plantas")       or "")[:80],
+            (p.get("mep_sup_m2")            or "")[:80],
+            (p.get("mep_hvac_est")          or "")[:200],
+            (p.get("mep_ascensores_est")    or "")[:100],
+            (p.get("mep_pci_tipo")          or "")[:150],
+            (p.get("mep_director_tecnico")  or "")[:150],
+            # ── Industrial / Log. ────────────────────────────────────────────
+            (p.get("ind_sup_parcela_m2")    or "")[:80],
+            (p.get("ind_sup_nave_m2")       or "")[:80],
+            (p.get("ind_altura_libre_m")    or "")[:50],
+            (p.get("ind_muelles_est")       or "")[:80],
+            (p.get("ind_potencia_kva")      or "")[:80],
+            (p.get("ind_poligono_nombre")   or "")[:150],
+            # ── Alquiler Maquinaria ──────────────────────────────────────────
+            (p.get("alq_contratista")       or "")[:200],
+            str(p.get("alq_importe_adj")    or "")[:50],
+            (p.get("alq_inicio_obra_est")   or "")[:100],
+            (p.get("alq_maquinaria_est")    or "")[:300],
+            (p.get("alq_m3_tierras_est")    or "")[:100],
+            (p.get("alq_duracion_meses")    or "")[:50],
+            # ── Compras / Materiales ─────────────────────────────────────────
+            (p.get("mat_colector_dn_km")    or "")[:150],
+            (p.get("mat_red_abast_dn_km")   or "")[:150],
+            (p.get("mat_hormigon_m3_est")   or "")[:100],
+            (p.get("mat_aridos_t_est")      or "")[:100],
+            (p.get("mat_acero_t_est")       or "")[:100],
+            (p.get("mat_contratista")       or "")[:200],
+            # ── Contract & Oficinas ──────────────────────────────────────────
+            (p.get("cont_uso_edificio")     or "")[:100],
+            (p.get("cont_m2_oficinas")      or "")[:80],
+            (p.get("cont_puestos_trabajo")  or "")[:100],
+            (p.get("cont_arquitecto")       or "")[:150],
+            (p.get("cont_certificacion")    or "")[:100],
+            (p.get("cont_entrega_est")      or "")[:100],
+            # ── Flexliving & Hostelería ──────────────────────────────────────
+            (p.get("flex_anno_construccion")or "")[:20],
+            (p.get("flex_num_unidades")     or "")[:50],
+            (p.get("flex_sup_total_m2")     or "")[:80],
+            (p.get("flex_uso_anterior")     or "")[:200],
+            (p.get("flex_propietario_tipo") or "")[:200],
+            (p.get("flex_potencial_coliving")or"")[:50],
+            (p.get("flex_irr_est")          or "")[:100],
         ]
 
         try:
@@ -4506,14 +4800,82 @@ def process_one(url, idx, total):
                 if _et:
                     p["obra_timeline"] = " | ".join(f"Etapa {e[0]}: {e[1]} meses" for e in _et[:3])
 
-        # ── Sector-specific field extraction from AI JSON response ────────────
-        # These 5 fields are NEW in v24 — filled by the AI prompt additions.
-        # Fall back to empty string if AI didn't populate them.
-        p["retail_catchment_est"] = p.get("retail_catchment_est") or ""
-        p["machinery_weeks_est"]  = p.get("machinery_weeks_est")  or ""
-        p["building_profile"]     = p.get("building_profile")     or ""
-        p["pipe_network_est"]     = p.get("pipe_network_est")     or ""
-        p["licitacion_intel"]     = p.get("licitacion_intel")     or ""
+        # ── Sector-specific field extraction from AI JSON — 65 fields × 10 profiles
+        # Gran Infraestructura
+        p["infra_cpv_codes"]       = p.get("infra_cpv_codes")       or ""
+        p["infra_pbl_eur"]         = p.get("infra_pbl_eur")         or ""
+        p["infra_deadline"]        = p.get("infra_deadline")        or ""
+        p["infra_criteria"]        = p.get("infra_criteria")        or ""
+        p["infra_clasificacion"]   = p.get("infra_clasificacion")   or ""
+        p["infra_procedure"]       = p.get("infra_procedure")       or ""
+        p["infra_contracting_body"]= p.get("infra_contracting_body")or ""
+        # Gran Constructora
+        p["const_num_viviendas"]   = p.get("const_num_viviendas")   or ""
+        p["const_uso_previsto"]    = p.get("const_uso_previsto")    or ""
+        p["const_tipologia"]       = p.get("const_tipologia")       or ""
+        p["const_promotor_cif"]    = p.get("const_promotor_cif")    or ""
+        p["const_aparejador"]      = p.get("const_aparejador")      or ""
+        p["const_plazo_ejecucion"] = p.get("const_plazo_ejecucion") or ""
+        # Expansión Retail (9 fields — hottest sector)
+        p["retail_pob_futura_est"] = p.get("retail_pob_futura_est") or ""
+        p["retail_renta_capita"]   = p.get("retail_renta_capita")   or ""
+        p["retail_m2_comercial_est"]=p.get("retail_m2_comercial_est")or ""
+        p["retail_competencia_1km"]= p.get("retail_competencia_1km")or ""
+        p["retail_zona_tipo"]      = p.get("retail_zona_tipo")      or ""
+        p["retail_transporte"]     = p.get("retail_transporte")     or ""
+        p["retail_apertura_est"]   = p.get("retail_apertura_est")   or ""
+        p["retail_local_m2"]       = p.get("retail_local_m2")       or ""
+        p["retail_oportunidad"]    = p.get("retail_oportunidad")    or ""
+        # Promotores / RE
+        p["re_sup_total_m2"]       = p.get("re_sup_total_m2")       or ""
+        p["re_sup_edificable_m2"]  = p.get("re_sup_edificable_m2")  or ""
+        p["re_num_parcelas"]       = p.get("re_num_parcelas")       or ""
+        p["re_junta_contacto"]     = p.get("re_junta_contacto")     or ""
+        p["re_cargas_pendientes"]  = p.get("re_cargas_pendientes")  or ""
+        p["re_tipo_suelo"]         = p.get("re_tipo_suelo")         or ""
+        # Instaladores MEP
+        p["mep_num_plantas"]       = p.get("mep_num_plantas")       or ""
+        p["mep_sup_m2"]            = p.get("mep_sup_m2")            or ""
+        p["mep_hvac_est"]          = p.get("mep_hvac_est")          or ""
+        p["mep_ascensores_est"]    = p.get("mep_ascensores_est")    or ""
+        p["mep_pci_tipo"]          = p.get("mep_pci_tipo")          or ""
+        p["mep_director_tecnico"]  = p.get("mep_director_tecnico")  or ""
+        # Industrial / Log.
+        p["ind_sup_parcela_m2"]    = p.get("ind_sup_parcela_m2")    or ""
+        p["ind_sup_nave_m2"]       = p.get("ind_sup_nave_m2")       or ""
+        p["ind_altura_libre_m"]    = p.get("ind_altura_libre_m")    or ""
+        p["ind_muelles_est"]       = p.get("ind_muelles_est")       or ""
+        p["ind_potencia_kva"]      = p.get("ind_potencia_kva")      or ""
+        p["ind_poligono_nombre"]   = p.get("ind_poligono_nombre")   or ""
+        # Alquiler Maquinaria
+        p["alq_contratista"]       = p.get("alq_contratista")       or ""
+        p["alq_importe_adj"]       = p.get("alq_importe_adj")       or ""
+        p["alq_inicio_obra_est"]   = p.get("alq_inicio_obra_est")   or ""
+        p["alq_maquinaria_est"]    = p.get("alq_maquinaria_est")    or ""
+        p["alq_m3_tierras_est"]    = p.get("alq_m3_tierras_est")    or ""
+        p["alq_duracion_meses"]    = p.get("alq_duracion_meses")    or ""
+        # Compras / Materiales
+        p["mat_colector_dn_km"]    = p.get("mat_colector_dn_km")    or ""
+        p["mat_red_abast_dn_km"]   = p.get("mat_red_abast_dn_km")   or ""
+        p["mat_hormigon_m3_est"]   = p.get("mat_hormigon_m3_est")   or ""
+        p["mat_aridos_t_est"]      = p.get("mat_aridos_t_est")      or ""
+        p["mat_acero_t_est"]       = p.get("mat_acero_t_est")       or ""
+        p["mat_contratista"]       = p.get("mat_contratista")       or ""
+        # Contract & Oficinas
+        p["cont_uso_edificio"]     = p.get("cont_uso_edificio")     or ""
+        p["cont_m2_oficinas"]      = p.get("cont_m2_oficinas")      or ""
+        p["cont_puestos_trabajo"]  = p.get("cont_puestos_trabajo")  or ""
+        p["cont_arquitecto"]       = p.get("cont_arquitecto")       or ""
+        p["cont_certificacion"]    = p.get("cont_certificacion")    or ""
+        p["cont_entrega_est"]      = p.get("cont_entrega_est")      or ""
+        # Flexliving & Hostelería
+        p["flex_anno_construccion"]= p.get("flex_anno_construccion")or ""
+        p["flex_num_unidades"]     = p.get("flex_num_unidades")     or ""
+        p["flex_sup_total_m2"]     = p.get("flex_sup_total_m2")     or ""
+        p["flex_uso_anterior"]     = p.get("flex_uso_anterior")     or ""
+        p["flex_propietario_tipo"] = p.get("flex_propietario_tipo") or ""
+        p["flex_potencial_coliving"]=p.get("flex_potencial_coliving")or ""
+        p["flex_irr_est"]          = p.get("flex_irr_est")          or ""
 
         # Contact Discovery — enrich high-value leads with Apollo.io
         if (APOLLO_API_KEY and not p.get("key_contacts")
@@ -5526,6 +5888,117 @@ def _compute_phase_velocity(prev_phase: str, new_phase: str,
         pass
     return ""
 
+
+def create_or_update_profile_tabs(sh):
+    """
+    Create/refresh profile-specific tabs in Google Sheets.
+
+    Each profile tab is a filtered VIEW of the Leads tab:
+    - Only rows where Profile Fit contains the profile key(s)
+    - Only the base columns + that profile's sector columns
+    - Sorted by Lead Score descending
+    - Applied min_score and min_pem filters
+
+    This lets the dashboard:
+    1. Load faster (only relevant rows per profile)
+    2. Display clean profile-specific columns without showing empty ones
+    3. Give each client a "their" tab they can bookmark or export directly
+
+    Called at the end of every engine run.
+    """
+    try:
+        leads_ws = sh.worksheet("Leads")
+        all_rows = leads_ws.get_all_values()
+        if len(all_rows) < 2:
+            log("  ℹ️  Profile tabs: Leads tab empty — skipping")
+            return
+
+        header_row = all_rows[0]
+        data_rows  = all_rows[1:]
+
+        # Build column index for each HDRS key
+        col_idx = {h: i for i, h in enumerate(header_row) if h}
+
+        # Profile Fit column index
+        pf_col = col_idx.get("Profile Fit", None)
+        sc_col = col_idx.get("Lead Score", None)
+        pem_col= col_idx.get("Declared Value PEM (€)", None)
+
+        if pf_col is None:
+            log("  ⚠️  Profile tabs: 'Profile Fit' column not found in Leads")
+            return
+
+        for prof_key, conf in PROFILE_TABS.items():
+            try:
+                tab_name     = conf["tab_name"]
+                prof_keys    = conf["profile_keys"]
+                sector_cols  = conf["sector_cols"]
+                min_score    = conf["min_score"]
+                min_pem      = conf["min_pem"]
+
+                # Columns for this tab: base + sector
+                tab_cols = HDRS_BASE + sector_cols
+                tab_col_indices = [col_idx.get(c) for c in tab_cols]
+                tab_col_indices = [i for i in tab_col_indices if i is not None]
+
+                # Filter rows
+                filtered = []
+                for row in data_rows:
+                    if len(row) <= pf_col: continue
+                    pf_val = str(row[pf_col]).lower()
+                    # Check if any of this profile's keys appear in Profile Fit
+                    if not any(pk in pf_val for pk in prof_keys): continue
+                    # Score filter
+                    if sc_col is not None:
+                        try:
+                            if int(row[sc_col] or 0) < min_score: continue
+                        except: pass
+                    # PEM filter
+                    if pem_col is not None and min_pem > 0:
+                        try:
+                            pem_v = float(str(row[pem_col]).replace("€","").replace(",","").strip() or 0)
+                            if pem_v < min_pem: continue
+                        except: pass
+                    # Extract only the relevant columns
+                    filtered_row = [(row[i] if i < len(row) else "") for i in tab_col_indices]
+                    filtered.append(filtered_row)
+
+                # Sort by score descending
+                if sc_col is not None and sc_col in tab_col_indices:
+                    sort_idx = tab_col_indices.index(sc_col)
+                    filtered.sort(key=lambda r: int(r[sort_idx] or 0) if sort_idx < len(r) else 0,
+                                  reverse=True)
+
+                # Build header row for this tab
+                tab_headers = [header_row[i] for i in tab_col_indices]
+
+                # Get or create the tab
+                try:
+                    tab_ws = sh.worksheet(tab_name)
+                    tab_ws.clear()
+                except Exception:
+                    tab_ws = sh.add_worksheet(tab_name, rows=max(500, len(filtered)+10),
+                                              cols=len(tab_headers)+2)
+
+                # Write header + data
+                all_tab_data = [tab_headers] + filtered
+                tab_ws.update(all_tab_data, "A1")
+
+                # Color header row navy
+                tab_ws.format("A1:ZZ1", {
+                    "backgroundColor": {"red": 0.118, "green": 0.227, "blue": 0.373},
+                    "textFormat": {"foregroundColor": {"red":1,"green":1,"blue":1},
+                                   "bold": True, "fontSize": 10},
+                })
+
+                log(f"  📊 Profile tab '{tab_name}': {len(filtered)} rows × {len(tab_headers)} cols")
+
+            except Exception as tab_e:
+                log(f"  ⚠️  Profile tab '{conf['tab_name']}': {tab_e}")
+
+    except Exception as e:
+        log(f"  ⚠️  create_or_update_profile_tabs: {e}")
+
 def run():
     if args.digest:
         log("📧 Digest-only mode"); get_sheet(); send_digest(); return
@@ -5539,7 +6012,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v24 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
+    log(f"🏗️  PlanningScout Madrid — Engine v26 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
@@ -5944,6 +6417,18 @@ def run():
         send_watchlist_alerts()
     except Exception as _wa_err:
         log(f"  ⚠️ Watchlist alerts error: {_wa_err}")
+
+    # ── Refresh profile-specific tabs ──────────────────────────────────────────
+    # Creates/updates one tab per sector profile in Google Sheets.
+    # Each tab shows only rows+columns relevant to that profile.
+    try:
+        _sh_for_tabs = get_sheet().spreadsheet
+        log(f"\n{chr(9472)*55}")
+        log("📊 Refreshing profile tabs…")
+        create_or_update_profile_tabs(_sh_for_tabs)
+    except Exception as _pt_err:
+        log(f"  ⚠️  Profile tabs refresh: {_pt_err}")
+
 
 # ──────────────────────────────────────────────────────────────
 # BOE CONFIGURATION
