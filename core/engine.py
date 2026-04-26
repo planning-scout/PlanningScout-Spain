@@ -5464,52 +5464,54 @@ def search_borme_new_companies(date_from, date_to):
                 "modificaciones estatutarias", "cambio de objeto social",
             }
             _CONSTRUCT_TERMS = [
-                "construccion", "construc", "promoci", "inmobili", "urban",
+                "construc", "promoci", "promotor", "inmobili", "urban",
                 "edificac", "obras", "rehab", "reform", "desarrollo",
                 "real estate", "inversion", "patrimon", "proyecto",
+                "residenci", "viviend", "solar", "parcela", "finca",
+                "logistic", "industrial", "nave ", "obra civil",
             ]
-
-            for seccion in root.iter("seccion"):
-                sec_nombre = (seccion.get("nombre") or "").lower()
-                # Only Sección Segunda (Anuncios y avisos legales — Registro Mercantil)
-                # AND Sección Primera (Empresas)
-                if "segunda" not in sec_nombre and "primera" not in sec_nombre:
+            
+            # BORME XML real structure:
+            # <seccion num="1" nombre="Empresas"> (NOT "primera" or "segunda")
+            # <seccion num="2" nombre="Anuncios y avisos legales">
+            # We want ANY section that has a REGISTRO MERCANTIL DE MADRID departamento.
+            # Removing the section filter — departamento filter is sufficient and precise.
+            for dep in root.iter("departamento"):
+                dep_nombre = (dep.get("nombre") or "").lower()
+                if "madrid" not in dep_nombre and "registro mercantil" not in dep_nombre:
                     continue
 
-                for dep in seccion.iter("departamento"):
-                    dep_nombre = (dep.get("nombre") or "").lower()
-                    if "madrid" not in dep_nombre and "registro mercantil" not in dep_nombre:
+                for anuncio in dep.iter("anuncio"):
+                    anuncio_id = anuncio.get("id","")
+                    titulo_el  = anuncio.find("titulo")
+                    titulo_txt = (titulo_el.text or "").lower() if titulo_el is not None else ""
+
+                    if not any(act in titulo_txt for act in _INTERESTING_ACTS):
                         continue
 
-                    for anuncio in dep.iter("anuncio"):
-                        anuncio_id = anuncio.get("id","")
-                        titulo_el  = anuncio.find("titulo")
-                        titulo_txt = (titulo_el.text or "").lower() if titulo_el is not None else ""
-
-                        if not any(act in titulo_txt for act in _INTERESTING_ACTS):
-                            continue
-
-                        # Get company name from the anuncio text
-                        # In BORME XML, the company name is usually the first line of <texto>
-                        texto_el = anuncio.find("texto")
-                        empresa  = ""
-                        # Also try <denominacion> and <razon_social> elements
-                        for _el_name in ["denominacion", "razon_social", "nombre"]:
-                            _den_el = anuncio.find(_el_name)
-                            if _den_el is not None and _den_el.text:
-                                empresa = _den_el.text.strip()
+                    # Real BORME XML company name element is <empresa>, not <texto>
+                    # Fallback chain: <empresa> → title colon-suffix → anuncio_id
+                    empresa = ""
+                    for _el_name in ["empresa", "denominacion", "razon_social", "nombre"]:
+                        _den_el = anuncio.find(_el_name)
+                        if _den_el is not None and (_den_el.text or "").strip():
+                            empresa = _den_el.text.strip()
+                            break
+                    if not empresa:
+                        # BORME sometimes embeds company name after colon in titulo:
+                        # "CONSTITUCIÓN : EMPRESA SL" or "CONSTITUCIÓN. EMPRESA SL."
+                        raw_tit = titulo_el.text.strip() if titulo_el is not None else ""
+                        for sep in (":", " - ", ". "):
+                            if sep in raw_tit:
+                                empresa = raw_tit.split(sep, 1)[1].strip()[:100]
                                 break
-                        if texto_el is not None and texto_el.text:
-                            # First word-group before "." or ":" is usually the company name
-                            t = texto_el.text.strip()
-                            empresa = t.split(".")[0].split(":")[0].strip()[:80]
-                        else:
-                            empresa = titulo_el.text if titulo_el is not None else anuncio_id
+                    if not empresa:
+                        empresa = anuncio_id
 
-                        # Filter: construction/promotor sector keywords
-                        emp_lower = empresa.lower()
-                        if not any(ct in emp_lower for ct in _CONSTRUCT_TERMS):
-                            continue
+                    # Filter: construction/promotor sector keywords in company name
+                    emp_lower = empresa.lower()
+                    if not any(ct in emp_lower for ct in _CONSTRUCT_TERMS):
+                        continue
 
                         pdf_el  = anuncio.find("url_pdf")
                         borme_link = ""
@@ -5799,33 +5801,7 @@ def search_place_national(date_from, date_to):
             if not entries:
                 continue
 
-            # RSS/ATOM unified — but old code tried to continue from here
-            if False:  # placeholder to keep old block structure
-                pass
-            try:
-                root = _ET.fromstring(r.content)
-            except _ET.ParseError:
-                # Strategy 2: lxml with recovery
-                try:
-                    from lxml import etree as _lxml
-                    root_lxml = _lxml.fromstring(r.content, parser=_lxml.XMLParser(recover=True))
-                    root = _ET.fromstring(_lxml.tostring(root_lxml, encoding="unicode").encode("utf-8"))
-                except Exception:
-                    pass
-            if root is None:
-                # Strategy 3: strip illegal XML characters
-                try:
-                    clean = r.content.decode("utf-8", errors="replace")
-                    clean = re.sub(r'[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD]', '', clean)
-                    # Also strip CDATA sections that sometimes break parsers
-                    clean = re.sub(r'<!\[CDATA\[.*?\]\]>', '', clean, flags=re.DOTALL)
-                    root = _ET.fromstring(clean.encode("utf-8"))
-                except Exception as _xml_e:
-                    log(f"  ⚠️  PLACE: could not parse XML ({_xml_e}) — skipping feed")
-                    continue
-            _NS = {"a": "http://www.w3.org/2005/Atom"}
-            entries = root.findall(".//a:entry", _NS) or root.findall(".//entry")
-
+            # entries already populated above — proceed directly to iteration
             for entry in entries:
                 def _g(tag):
                     # Try Atom namespace, then plain, then Dublin Core
@@ -5918,43 +5894,78 @@ def search_sede_madrid_obras(date_from, date_to) -> list:
     _date_to_s   = date_to.strftime("%Y-%m-%d")
     import urllib.parse as _up10
 
-    # ── ArcGIS FeatureServer — Madrid Open Data portal (verified tenant IDs) ────
-    # The Ayuntamiento de Madrid publishes GIS data through their own ArcGIS Online
-    # organisation. Correct org: EMT/Ayuntamiento open data.
-    # These URLs are found at: https://opendata.arcgis.com (search "licencias madrid")
-    _ARCGIS_ENDPOINTS = [
-        # Madrid City Council open data (most likely location)
-        "https://services.arcgis.com/fFM1TIwpe1uxYhTa/arcgis/rest/services/Licencias_Urbanisticas/FeatureServer/0/query",
-        "https://opendata.arcgis.com/datasets/licencias-urbanisticas-madrid/FeatureServer/0/query",
-        # Alternative: EMT Madrid GIS
-        "https://services1.arcgis.com/nCKYwcSONQTkPA4K/arcgis/rest/services/Licencias_Urbanisticas_Madrid/FeatureServer/0/query",
-        "https://services1.arcgis.com/nCKYwcSONQTkPA4K/arcgis/rest/services/LicenciasUrbanisticas/FeatureServer/0/query",
-    ]
-    date_from_ms = int(date_from.timestamp() * 1000)
-    date_to_ms   = int(date_to.timestamp()   * 1000)
+    # ── datos.madrid.es CKAN datastore API — confirmed correct approach ─────────
+    # The Ayuntamiento de Madrid does NOT publish licencias on ArcGIS Online.
+    # The authoritative source is datos.madrid.es CKAN:
+    #   Dataset: "Licencias urbanísticas sujetas al ICIO"
+    #   Resource: licencias-urbanisticas-sujetas-al-icio
+    # Field names confirmed from CKAN data dictionary:
+    #   TIPO_LICENCIA, NUMERO_EXPEDIENTE, DIRECCION, DISTRITO, BARRIO,
+    #   FECHA_OTORGAMIENTO, PRESUPUESTO, INTERESADO
+    _date_from_sql = date_from.strftime("%Y-%m-%dT00:00:00")
+    _date_to_sql   = date_to.strftime("%Y-%m-%dT23:59:59")
 
-    for endpoint in _ARCGIS_ENDPOINTS:
+    # CKAN datastore_search_sql — supports date filtering
+    _CKAN_ENDPOINTS = [
+        # Primary: SQL endpoint with date filter
+        ("https://datos.madrid.es/api/3/action/datastore_search_sql",
+         {"sql": (f"SELECT * FROM \"licencias-urbanisticas-sujetas-al-icio\" "
+                  f"WHERE \"FECHA_OTORGAMIENTO\" >= '{_date_from_sql}' "
+                  f"AND \"FECHA_OTORGAMIENTO\" <= '{_date_to_sql}' "
+                  f"ORDER BY \"FECHA_OTORGAMIENTO\" DESC LIMIT 500")}),
+        # Fallback: plain search (no date filter, latest 500 records)
+        ("https://datos.madrid.es/api/3/action/datastore_search",
+         {"resource_id": "licencias-urbanisticas-sujetas-al-icio",
+          "limit": 500, "sort": "FECHA_OTORGAMIENTO desc"}),
+    ]
+
+    for ckan_url, ckan_params in _CKAN_ENDPOINTS:
         if not time_ok(need_s=20): break
         try:
-            params = {
-                "where": f"FechaConcesion >= {date_from_ms} AND FechaConcesion <= {date_to_ms}",
-                "outFields": "*", "f": "json",
-                "resultRecordCount": 200, "orderByFields": "FechaConcesion DESC",
-            }
-            full_url = f"{endpoint}?{_up10.urlencode(params)}"
-            r2 = safe_get(full_url, timeout=25)
-            if not r2 or r2.status_code != 200: continue
+            import urllib.parse as _upc10
+            if "datastore_search_sql" in ckan_url:
+                full_url = f"{ckan_url}?{_upc10.urlencode(ckan_params)}"
+                r2 = safe_get(full_url, timeout=30,
+                              headers={"Accept": "application/json"})
+            else:
+                qs = "&".join(f"{k}={_upc10.quote(str(v))}" for k,v in ckan_params.items())
+                full_url = f"{ckan_url}?{qs}"
+                r2 = safe_get(full_url, timeout=30,
+                              headers={"Accept": "application/json"})
+
+            if not r2 or r2.status_code != 200:
+                log(f"  ⚠️  Sede Madrid GIS: CKAN HTTP {r2.status_code if r2 else 'no response'}")
+                continue
+
+            body_text = r2.content[:200].decode("utf-8","replace").lower()
+            if "<html" in body_text or "<!doctype" in body_text:
+                log(f"  ⚠️  Sede Madrid GIS: CKAN returned HTML (WAF block)")
+                break   # WAF block — no point retrying other CKAN endpoints
+
             try:
                 data2 = r2.json()
             except Exception:
                 continue
-            if data2.get("error"): continue    # ArcGIS returns {"error":{"code":400,...}}
-            features = data2.get("features", [])
-            if not features: continue
-            log(f"  🏛️  Sede Madrid GIS (ArcGIS): {len(features)} licencias found")
-            _proc_arcgis_features(features, results, _TIPO_VALUABLE)
+
+            # CKAN success response: {"success": true, "result": {"records": [...]}}
+            if not data2.get("success"):
+                err_msg = data2.get("error", {}).get("message", "unknown")
+                log(f"  ⚠️  Sede Madrid GIS: CKAN error — {err_msg}")
+                continue
+
+            records = (data2.get("result", {}).get("records", []) or
+                       data2.get("result", {}).get("result", []))
+
+            if not records:
+                log(f"  🏛️  Sede Madrid GIS: 0 licences in CKAN date range")
+                continue
+
+            log(f"  🏛️  Sede Madrid GIS (CKAN): {len(records)} licencias found")
+            _proc_ckan_records(records, results, _TIPO_VALUABLE)
             if results: break
+
         except Exception as _e:
+            log(f"  ⚠️  Sede Madrid GIS: {_e}")
             continue
 
     return results
@@ -6381,26 +6392,51 @@ def search_portal_suelo(date_from, date_to) -> list:
     results = []
     if not time_ok(need_s=30): return results
     
-    # CM Open Data JSON endpoint — confirmed working from public portal
-    _JSON_URL = "https://datos.comunidad.madrid/catalogo/dataset/parcelas_portal_suelo/resource/parcelas_portal_suelo_json"
-    _JSON_DIRECT = "https://datos.comunidad.madrid/recurso/d/parcelas_portal_suelo.json"
-    
-    for url in [_JSON_DIRECT, _JSON_URL]:
+    # CM Open Data CKAN API — datos.comunidad.madrid
+    # The Portal del Suelo 4.0 dataset is published on the CM CKAN portal.
+    # Correct resource slug confirmed from datos.comunidad.madrid catalog.
+    # Both JSON download and CKAN datastore API are tried.
+    _PORTAL_SUELO_URLS = [
+        # CKAN datastore_search (returns {"success": true, "result": {"records": [...]}})
+        "https://datos.comunidad.madrid/catalogo/api/3/action/datastore_search?resource_id=portal-del-suelo-parcelas&limit=500",
+        # Direct CSV/JSON download from CM open data
+        "https://datos.comunidad.madrid/catalogo/dataset/portal_del_suelo_parcelas/resource/portal-del-suelo-parcelas/download/portal_del_suelo_parcelas.json",
+        # Fallback: CM SPARQL/API
+        "https://datos.comunidad.madrid/catalogo/api/3/action/datastore_search?resource_id=parcelas_portal_suelo_4_0&limit=500",
+    ]
+
+    for url in _PORTAL_SUELO_URLS:
         if not time_ok(need_s=20): break
         try:
-            r = safe_get(url, timeout=20)
-            if not r or r.status_code != 200: continue
-            
+            r = safe_get(url, timeout=25, headers={"Accept": "application/json"})
+            if not r or r.status_code != 200:
+                log(f"  ⚠️  Portal Suelo: HTTP {r.status_code if r else 'no response'} — {url[:70]}")
+                continue
+
+            body_peek = r.content[:200].decode("utf-8","replace").lower()
+            if "<html" in body_peek or "<!doctype" in body_peek:
+                log(f"  ⚠️  Portal Suelo: got HTML — endpoint may have changed: {url[:60]}")
+                continue
+
             try:
                 data = r.json()
             except Exception:
                 continue
-            
-            # Handle both list and {"result": [...]} format
-            parcelas = data if isinstance(data, list) else data.get("result", data.get("records", []))
+
+            # Handle CKAN format {"success":true,"result":{"records":[...]}}
+            # and plain list/dict formats
+            if isinstance(data, dict) and data.get("success"):
+                parcelas = data.get("result", {}).get("records", [])
+            elif isinstance(data, list):
+                parcelas = data
+            else:
+                parcelas = (data.get("records") or data.get("result") or
+                            data.get("data") or data.get("parcelas") or [])
+
             if not parcelas:
+                log(f"  ⚠️  Portal Suelo: 0 records from {url[:60]} (may need resource_id update)")
                 continue
-            
+
             log(f"  🏛️  Portal Suelo: {len(parcelas)} parcelas available")
             
             for i, p in enumerate(parcelas):
@@ -6412,16 +6448,25 @@ def search_portal_suelo(date_from, date_to) -> list:
                             return str(v).strip()
                     return ""
                 
-                muni      = _g("municipio", "MUNICIPIO", "municipality")
-                uso       = _g("uso_principal", "uso", "USO_PRINCIPAL", "use")
-                sup_m2    = _g("superficie_m2", "superficie", "SUPERFICIE_M2", "area_m2")
-                edific    = _g("indice_edificabilidad", "edificabilidad", "EDIFICABILIDAD")
-                clasif    = _g("clasificacion", "CLASIFICACION", "classification")
-                estado    = _g("estado_urbanizacion", "estado", "ESTADO")
-                ref_cat   = _g("referencia_catastral", "ref_catastral", "REFERENCIA_CATASTRAL")
-                precio    = _g("precio_venta", "precio", "PRECIO_VENTA")
-                regimen   = _g("regimen", "REGIMEN", "concession_type")
-                contrato_url = _g("url_contratacion", "enlace_contratacion", "URL_CONTRATACION")
+                # CM Portal del Suelo confirmed field names (from datos.comunidad.madrid schema)
+                muni      = _g("municipio", "MUNICIPIO", "municipality", "Municipio")
+                uso       = _g("uso_principal", "uso", "USO_PRINCIPAL", "Uso", "uso_suelo", "USO_SUELO")
+                sup_m2    = _g("superficie_m2", "superficie", "SUPERFICIE_M2", "Superficie_m2",
+                               "sup_parcela", "area_m2", "Superficie")
+                edific    = _g("indice_edificabilidad", "edificabilidad", "EDIFICABILIDAD",
+                               "Indice_edificabilidad", "ind_edificabilidad", "edificabilidad_bruta")
+                clasif    = _g("clasificacion", "CLASIFICACION", "classification",
+                               "Clasificacion_suelo", "clasificacion_suelo")
+                estado    = _g("estado_urbanizacion", "estado", "ESTADO", "Estado",
+                               "estado_tramitacion", "Estado_tramitacion")
+                ref_cat   = _g("referencia_catastral", "ref_catastral", "REFERENCIA_CATASTRAL",
+                               "Referencia_catastral", "refcat")
+                precio    = _g("precio_venta", "precio", "PRECIO_VENTA", "Precio_venta",
+                               "precio_tasacion", "Precio")
+                regimen   = _g("regimen", "REGIMEN", "concession_type", "Regimen",
+                               "tipo_contrato", "modalidad")
+                contrato_url = _g("url_contratacion", "enlace_contratacion", "URL_CONTRATACION",
+                                  "url_licitacion", "enlace_licitacion", "url", "URL")
                 
                 if not muni or not uso: continue
                 
@@ -6546,17 +6591,30 @@ def search_ite_padron(date_from, date_to) -> list:
         ("orden de ejecución de obras", SECTION_III),  # council-ordered works after ITE failure
     ]
     
+    # ITE Padrón is published ANNUALLY in October — it will NEVER appear
+    # in a 2-week or 4-week run window unless October falls in that window.
+    # Fix: always scan the last 18 months regardless of the job's date_from.
+    # This ensures the most recent October ITE list is always captured.
+    from datetime import date as _date_cls
+    today_ite = datetime.now().date()
+    ite_scan_from = datetime(today_ite.year - 1, today_ite.month, today_ite.day) - timedelta(days=180)
+    ite_scan_to   = datetime.now()
+
     _ite_urls = set()
     for kw, sec in _ITE_SEARCHES:
         if not time_ok(need_s=10): break
         try:
-            chunk_start = date_from
-            chunk_end   = min(date_to, date_from + timedelta(days=365))
-            urls = search_bocm_keyword(kw, sec, date_from, chunk_end, 3)
+            urls = search_bocm_keyword(kw, sec, ite_scan_from, ite_scan_to, 5)
             _ite_urls.update(urls)
             time.sleep(0.5)
         except Exception:
             pass
+
+    if _ite_urls:
+        log(f"  🏛️  ITE Padrón: {len(_ite_urls)} potential ITE documents found (18-month window)")
+    else:
+        log(f"  ITE Padrón: +0 documentos ITE — padrón published annually in October; "
+            f"check again in {'October' if today_ite.month < 10 else 'November'}")
     
     if _ite_urls:
         log(f"  🏛️  ITE Padrón: {len(_ite_urls)} potential ITE documents found")
