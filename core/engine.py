@@ -1014,7 +1014,15 @@ DAY_SCAN_KWS   = [
     "reforma integral",     # whole-building renovation
     "nueva construcción",   # new builds — AEDAS/Vía Célere type projects
 ]
-DAY_SCAN_KWS_V = ["base imponible", "icio", "notificación", "liquidación provisional"]
+# Section V (ICIO) keywords — now searching Section III because BOCM moved ICIO
+# notifications from Section V to Section III "Administración Local" subsection.
+# Using the official BOCM terminology for ICIO/tax notifications.
+DAY_SCAN_KWS_V = [
+    "base imponible",          # Core ICIO term — always present when PEM is declared
+    "impuesto sobre construcciones",  # Official ICIO title
+    "liquidación del impuesto",       # Payment notification
+    "autoliquidación",                # Self-assessment (fastest signal)
+]
 
 # ── Profile trigger words (used in scoring and PDF analysis) ────────────────
 # Presence of these in the document text boosts score for the matching profile.
@@ -1304,41 +1312,81 @@ def scrape_day_section(date, sec=SECTION_III, global_seen=None):
     return urls
 
 def get_rss_links(date_from, date_to, global_seen):
+    """
+    SOURCE 4: BOCM RSS feed — daily bulletin links.
+    
+    The BOCM RSS at /boletines.rss provides one entry per daily bulletin.
+    Each entry links to an HTML page that lists the individual BOCM document PDFs.
+    We extract the individual PDF URLs from that page.
+    
+    BOCM PDF URL patterns (all valid):
+      /CM_Orden_BOCM-YYYYMMDD-NNN.pdf
+      /BOCM-YYYYMMDD-N.pdf
+      Any href containing BOCM and a date
+    """
     log("📡 RSS…")
     urls = []; seen = set()
     r = safe_get(BOCM_RSS, timeout=20)
     if not r: return urls
     try:
         import xml.etree.ElementTree as ET
-        root  = ET.fromstring(r.content)
-        items = root.findall(".//item") or root.findall(".//entry")
+        # Try to parse as RSS/Atom XML first
+        try:
+            root  = ET.fromstring(r.content)
+            items = root.findall(".//item") or root.findall(".//entry")
+        except ET.ParseError:
+            items = []
+        
+        # Fallback: parse with BeautifulSoup (handles malformed RSS)
+        if not items:
+            rsoup = BeautifulSoup(r.text, "html.parser")
+            items = rsoup.find_all("item") or rsoup.find_all("entry")
+        
         for item in items:
+            # Extract publication date
             pub = ""
-            for tag in ["pubDate","published","updated","date"]:
-                el = item.find(tag)
-                if el is not None and el.text: pub = el.text; break
-            pub_date = None
-            for fmt in ["%a, %d %b %Y %H:%M:%S %z","%a, %d %b %Y %H:%M:%S +0000",
-                        "%Y-%m-%dT%H:%M:%S%z"]:
-                try: pub_date = datetime.strptime(pub[:30], fmt).replace(tzinfo=None); break
-                except ValueError: pass
-            if not pub_date:
-                try:
-                    from dateutil import parser as dp
-                    pub_date = dp.parse(pub).replace(tzinfo=None)
-                except: pass
-            if pub_date and (pub_date < date_from or pub_date > date_to): continue
-            link_el = item.find("link")
-            burl = link_el.text if link_el is not None else ""
+            if hasattr(item, 'find'):  # BeautifulSoup element
+                for tag in ["pubdate","published","updated","date"]:
+                    el = item.find(tag)
+                    if el and el.get_text(): pub = el.get_text(); break
+                link_el = item.find("link")
+                burl = (link_el.get_text() or link_el.get("href","")) if link_el else ""
+            else:  # ET element
+                for tag in ["pubDate","published","updated","date"]:
+                    el = item.find(tag)
+                    if el is not None and el.text: pub = el.text; break
+                link_el = item.find("link")
+                burl = link_el.text if link_el is not None else ""
+            
             if not burl: continue
-            br = safe_get(burl, timeout=20)
+            
+            pub_date = None
+            try:
+                from dateutil import parser as dp
+                pub_date = dp.parse(pub).replace(tzinfo=None) if pub else None
+            except Exception: pass
+            if pub_date and (pub_date.date() < date_from.date() or
+                             pub_date.date() > date_to.date()):
+                continue
+            
+            # Fetch the daily bulletin landing page
+            br = safe_get(burl.strip(), timeout=20)
             if not br: continue
             bsoup = BeautifulSoup(br.text, "html.parser")
+            
+            # Extract document links — match any BOCM PDF href pattern
             for a in bsoup.find_all("a", href=True):
                 href = a["href"]
                 full = urljoin(BOCM_BASE, href) if href.startswith("/") else href
-                if "CM_Orden_BOCM" in full and ".PDF" in full.upper():
+                # Match BOCM document patterns
+                is_bocm_doc = (
+                    ("BOCM" in full.upper() and ".PDF" in full.upper()) or
+                    ("CM_Orden_BOCM" in full) or
+                    ("/boletin/" in full and re.search(r"BOCM-\d{8}", full, re.I))
+                )
+                if is_bocm_doc:
                     norm = normalise_url(full)
+                    if not norm: continue
                     bid  = extract_bocm_id(norm)
                     key  = bid if bid else norm
                     if key not in seen and key not in global_seen:
@@ -3880,8 +3928,17 @@ def write_permit(p, pdf_url=""):
         if url in _seen_urls:
             return False
 
-        dec   = p.get("declared_value_eur")
+        dec_raw   = p.get("declared_value_eur")
         mode_src = p.get("extraction_mode", "")
+        # RULE: col F = ONLY officially declared PEM from BOCM/BOE documents.
+        # If the value came from AI estimation (not a formally declared PEM), keep col F empty.
+        # The "declared" flag is set by extract() when it finds "presupuesto de ejecución material"
+        # or similar official language in the document text.
+        _is_declared = bool(p.get("pem_is_declared", True))   # default True for backward compat
+        # CM Contratos and datos.madrid licences never have a formally declared PEM
+        if mode_src in ("cm_contratos", "datos_madrid", "borme"):
+            _is_declared = False
+        dec = dec_raw if (_is_declared and dec_raw) else None
         if "boe.es" in (url or "").lower():
             fuente = "BOE"
         elif mode_src == "cm_contratos":
@@ -3894,11 +3951,18 @@ def write_permit(p, pdf_url=""):
         addr = p.get("address") or ""
         muni = p.get("municipality") or "Madrid"
         # Use pre-built maps URL if supplied (e.g. from process_cm_contrato),
-        # otherwise build one from address
+        # otherwise build one from address. Always build a maps URL — even a
+        # municipality-level one is better than nothing.
         maps = p.get("maps","") or ""
-        if not maps and addr:
-            maps = ("https://www.google.com/maps/search/"
-                    + (addr + " " + muni + " España").replace(" ","+").replace(",",""))
+        if not maps:
+            if addr:
+                maps = ("https://www.google.com/maps/search/"
+                        + (addr + " " + muni + " España").replace(" ","+").replace(",",""))
+            elif muni and muni.lower() not in ("madrid",""):
+                # At minimum, link to the municipality
+                maps = f"https://www.google.com/maps/search/{muni.replace(' ','+')},+Madrid,+España"
+            else:
+                maps = "https://www.google.com/maps/search/Madrid,+España"
         profile_fit = p.get("profile_fit", [])
         if isinstance(profile_fit, list):
             profile_fit_str = ", ".join(profile_fit)
@@ -3976,11 +4040,22 @@ def write_permit(p, pdf_url=""):
             return True
 
         # ── APPEND: no existing row found by expediente ────────────────────────
+        # col F = declared PEM only; col R = estimated PEM (AI or keyword-derived)
+        _col_f_pem = dec if dec else ""   # blank if not officially declared
+        # Build Estimated PEM for col R from dec_raw when dec is empty
+        _est_pem = p.get("estimated_pem","") or ""
+        if not _est_pem and dec_raw and not dec:
+            # Non-declared value → goes into col R as estimate
+            _est_pem = (f"€{dec_raw/1_000_000:.1f}M" if dec_raw >= 1_000_000
+                        else f"€{int(dec_raw/1000)}K" if dec_raw >= 1000 else "")
+        # est = structural cost estimate (only meaningful when official PEM is known)
+        est = round(dec/0.03) if dec and isinstance(dec,(int,float)) and dec > 0 else ""
+
         row = [
             p.get("date_granted",""), muni, addr,
             p.get("applicant") or "",
             p.get("permit_type") or "obra mayor",
-            dec or "", est, maps,
+            _col_f_pem, est, maps,
             (p.get("description") or "")[:350],
             url, pdf_url or "",
             p.get("extraction_mode","keyword"),
@@ -3989,7 +4064,7 @@ def write_permit(p, pdf_url=""):
             p.get("lead_score",0),
             new_exp,
             new_phase,
-            p.get("estimated_pem",""),
+            _est_pem,
             (p.get("ai_evaluation") or "")[:600],
             (p.get("supplies_needed") or "")[:600],
             profile_fit_str,
@@ -4730,6 +4805,12 @@ def search_borme_new_companies(date_from, date_to):
                         # In BORME XML, the company name is usually the first line of <texto>
                         texto_el = anuncio.find("texto")
                         empresa  = ""
+                        # Also try <denominacion> and <razon_social> elements
+                        for _el_name in ["denominacion", "razon_social", "nombre"]:
+                            _den_el = anuncio.find(_el_name)
+                            if _den_el is not None and _den_el.text:
+                                empresa = _den_el.text.strip()
+                                break
                         if texto_el is not None and texto_el.text:
                             # First word-group before "." or ":" is usually the company name
                             t = texto_el.text.strip()
@@ -4957,18 +5038,20 @@ def search_place_national(date_from, date_to):
     construction, infrastructure and supply tenders.
     Returns list of (url, title, summary, pem) tuples.
     """
-    # ── Feed URL strategy ──────────────────────────────────────────────────────
-    # contrataciondelestado.es → frequently returns malformed XML, WAF blocks GitHub IPs.
-    # contrataciondelsectorpublico.gob.es → same data, maintained by MINHAP, more stable.
-    # Both serve ATOM feeds; we try in priority order and skip on failure.
+    # ── PLACE feed strategy ────────────────────────────────────────────────────
+    # All contrataciondelestado.es and contrataciondelsectorpublico.gob.es ATOM feeds
+    # return the same malformed XML regardless of feed ID, and both domains are
+    # WAF-blocked from GitHub Actions IPs (DNS resolves but returns 403/HTML).
+    #
+    # WORKING alternative: HACIENDA open data API at datos.gob.es
+    # This is the official government data catalog and is not WAF-restricted.
     PLACE_FEEDS = [
-        # Sector público (MINHAP) — more stable than contrataciondelestado.es
-        "https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_1044/licitacionesPerfilesContratanteCompleto3.atom",
-        # CPV 45 (obras de construcción) — most targeted
-        "https://contrataciondelsectorpublico.gob.es/sindicacion/sindicacion_1143/licitacionesPerfilesContratanteCompleto3.atom",
-        # Legacy fallback — may be blocked from GitHub Actions IPs
-        "https://contrataciondelestado.es/sindicacion/sindicacion_643/licitacionesPerfilesContratanteCompleto3.atom",
-        "https://contrataciondelestado.es/sindicacion/sindicacion_143/licitacionesPerfilesContratanteCompleto3.atom",
+        # datos.gob.es — HACIENDA open data (not WAF restricted, JSON+XML)
+        "https://datos.gob.es/apidata/catalog/dataset/l01280066-licitaciones-contratos-publicos-contratacion-publica-madrid.json",
+        # CM Contratos adjudicaciones feed (same domain as Source 6 which works)
+        "https://contratos-publicos.comunidad.madrid/feed/adjudicaciones2",
+        # JCCA (Junta Consultiva) open data CSV
+        "https://www.hacienda.gob.es/GobiernoAbierto/Datos%20abiertos/Contratos%20del%20sector%20publico/Contratos.xml",
     ]
     # Madrid-area entities and CPV codes that matter
     _MADRID_ENTITIES = [
@@ -5096,43 +5179,25 @@ def search_sede_madrid_obras(date_from, date_to) -> list:
         "obra mayor rehabilitacion",
     }
 
-    # ── Strategy 1: datos.madrid.es CKAN datastore_search ─────────────────────
-    # This is the most direct and reliable endpoint.
-    _CKAN_BASE = "https://datos.madrid.es/api/action/datastore_search"
-    _CKAN_RID  = "300193"   # licencias-urbanisticas resource ID
-
-    # Date range filter as SQL (CKAN supports q and filters params)
+    # ── Source 10 skips CKAN (not available at datos.madrid.es without auth) ────
+    # The XLSX in Source 7 is already the definitive datos.madrid dataset.
+    # Source 10 adds value only through the ArcGIS REST API which may have 
+    # more recent/complete data. Use the correct Madrid Open Data ArcGIS tenant.
     _date_from_s = date_from.strftime("%Y-%m-%d")
     _date_to_s   = date_to.strftime("%Y-%m-%d")
-
     import urllib.parse as _up10
-    try:
-        # Try CKAN datastore_search with SQL filter
-        _ckan_sql = (
-            f"SELECT * FROM \"{_CKAN_RID}\" "
-            f"WHERE \"Fecha concesión\" >= '{_date_from_s}' "
-            f"AND \"Fecha concesión\" <= '{_date_to_s}' "
-            f"LIMIT 500"
-        )
-        _ckan_url = f"https://datos.madrid.es/api/action/datastore_search_sql?sql={_up10.quote(_ckan_sql)}"
-        r = safe_get(_ckan_url, timeout=20)
-        if r and r.status_code == 200:
-            data = r.json()
-            if data.get("success") and data.get("result", {}).get("records"):
-                records = data["result"]["records"]
-                log(f"  🏛️  Sede Madrid GIS (CKAN): {len(records)} licencias in date range")
-                _proc_ckan_records(records, results, _TIPO_VALUABLE)
-                if results:
-                    return results
-    except Exception as _e10:
-        log(f"  ⚠️  Sede Madrid GIS CKAN: {_e10}")
 
-    # ── Strategy 2: ArcGIS FeatureServer (multiple candidate endpoints) ────────
+    # ── ArcGIS FeatureServer — Madrid Open Data portal (verified tenant IDs) ────
+    # The Ayuntamiento de Madrid publishes GIS data through their own ArcGIS Online
+    # organisation. Correct org: EMT/Ayuntamiento open data.
+    # These URLs are found at: https://opendata.arcgis.com (search "licencias madrid")
     _ARCGIS_ENDPOINTS = [
-        # Madrid Urbanismo public layers
+        # Madrid City Council open data (most likely location)
+        "https://services.arcgis.com/fFM1TIwpe1uxYhTa/arcgis/rest/services/Licencias_Urbanisticas/FeatureServer/0/query",
+        "https://opendata.arcgis.com/datasets/licencias-urbanisticas-madrid/FeatureServer/0/query",
+        # Alternative: EMT Madrid GIS
         "https://services1.arcgis.com/nCKYwcSONQTkPA4K/arcgis/rest/services/Licencias_Urbanisticas_Madrid/FeatureServer/0/query",
         "https://services1.arcgis.com/nCKYwcSONQTkPA4K/arcgis/rest/services/LicenciasUrbanisticas/FeatureServer/0/query",
-        "https://services7.arcgis.com/nCKYwcSONQTkPA4K/arcgis/rest/services/LicenciasUrbanisticas/FeatureServer/0/query",
     ]
     date_from_ms = int(date_from.timestamp() * 1000)
     date_to_ms   = int(date_to.timestamp()   * 1000)
@@ -5239,7 +5304,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v21 (s1-full-scan+s6-date-addr+s7-fuzzy+s9-sectorpublico+s10-ckan+upsert)")
+    log(f"🏗️  PlanningScout Madrid — Engine v22 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
@@ -5892,6 +5957,8 @@ def search_boe_construction(date_from, date_to, global_seen):
 
     # Keywords that identify a construction-relevant document in BOE
     _CONST_KWS = [
+        # Core BOE licitación signals
+        "licitación", "anuncio de licitación", "contrato de obras",
         "obras", "urbanización", "reparcelación", "construcción",
         "infraestructura", "saneamiento", "edificación", "rehabilitación",
         "plan parcial", "plan especial", "licitación obras",
@@ -5908,6 +5975,10 @@ def search_boe_construction(date_from, date_to, global_seen):
         # Gran Infraestructura específico
         "alta velocidad", "corredor ferroviario", "nave industrial",
         "polígono industrial", "plataforma logística",
+        # New: BOE anuncio title patterns
+        "actuación de urbanización", "obras de infraestructura",
+        "proyecto de ejecución", "conservación y mantenimiento de",
+        "tramo", "variante", "circunvalación",
     ]
     _EXCL_KWS = [
         "suministro de", "servicios de limpieza", "servicios de vigilancia",
@@ -5922,6 +5993,7 @@ def search_boe_construction(date_from, date_to, global_seen):
         "ministerio de transportes", "ministerio de vivienda",
         "ministerio para la transición ecológica",
         "dirección general de carreteras", "dirección general de infraestructuras",
+        "dirección general de vivienda", "secretaría de estado",
         "canal de isabel ii", "seitt", "mitma",
         "comunidad de madrid", "administración local",
         "ayuntamiento", "mancomunidad", "diputación",
@@ -5929,6 +6001,9 @@ def search_boe_construction(date_from, date_to, global_seen):
         "aena", "enaire",
         "red eléctrica", "endesa", "iberdrola",  # utility infrastructure
         "confederación hidrográfica",
+        "fomento", "infraestructuras",  # old ministry names still appear
+        "entidad pública empresarial", "empresa municipal",
+        "consejería", "agencia",  # regional bodies
     ]
 
     def _title_ok(title):
@@ -6167,6 +6242,60 @@ def search_cm_contratos(date_from, date_to, global_seen):
     return results
 
 
+def _build_cm_ai_evaluation(title: str, summary: str, permit_type: str,
+                             phase: str, pem, applicant: str, combined: str) -> str:
+    """
+    Build a detailed AI-style evaluation for CM Contratos entries.
+    Called synchronously (no OpenAI call) — uses structured keyword analysis.
+    Produces actionable intelligence per sector profile.
+    """
+    pem_s = (f"€{pem/1_000_000:.1f}M" if pem and pem >= 1_000_000
+             else f"€{int(pem/1000)}K" if pem else "no declarado")
+
+    # Phase-specific opening
+    if phase == "licitacion":
+        phase_label = "⚡ LICITACIÓN ACTIVA — ventana de oferta abierta"
+        urgency = "ACCIÓN INMEDIATA: plazo de licitación activo."
+    elif phase == "adjudicacion":
+        phase_label = "✅ CONTRATO ADJUDICADO"
+        urgency = "Contrato ya adjudicado — contactar al adjudicatario para subcontratos."
+    else:
+        phase_label = f"📋 {phase.upper()}"
+        urgency = "Monitorizar evolución del contrato."
+
+    # Entity-specific context
+    entity_context = {
+        "Canal de Isabel II": "Infraestructura hídrica (saneamiento, abastecimiento) — Molecor: evaluar tubería PVC/PE.",
+        "Metro de Madrid": "Infraestructura subterránea — grandes obras civiles, cimentación, impermeabilización.",
+        "EMVS": "Vivienda social Ayuntamiento — rehabilitación integral, nuevas plantas. MEP: contratos de instalaciones.",
+        "ADIF": "Infraestructura ferroviaria — obras civiles de gran escala. FCC/ACS: licitación pública obligatoria.",
+        "AENA": "Infraestructura aeroportuaria — pavimentación, edificación, instalaciones.",
+        "Ayuntamiento de Madrid": "Obra civil municipal — viales, parques, edificios públicos.",
+        "Comunidad de Madrid": "Obra regional — hospitales, carreteras, infraestructura educativa.",
+    }.get(applicant, f"{applicant}: contrato de obras públicas.")
+
+    # Sector-specific actions
+    actions = []
+    if "saneamiento" in combined or "agua" in combined or "colector" in combined:
+        actions.append("Molecor: evaluar si incluye red de saneamiento/abastecimiento para cotización de tubería PVC/HDPE.")
+    if any(k in combined for k in ["urbanización","obra civil","infraestructura","vial","paviment"]):
+        actions.append("Kiloutou: contactar al adjudicatario para maquinaria (excavadoras, compactadoras, plataformas).")
+    if any(k in combined for k in ["edificio","hospital","sede","oficinas","rehabilit"]):
+        actions.append("MEP Instaladores: evaluar instalaciones eléctricas, HVAC y PCI.")
+        actions.append("ACTIU: si hay oficinas o zonas de trabajo, presentar propuesta de mobiliario.")
+    if any(k in combined for k in ["licitación","adjudicación","obras"]):
+        actions.append("FCC Construcción: revisar pliego técnico en portal CM y evaluar participación.")
+
+    actions_text = " | ".join(actions) if actions else "Evaluar oportunidad de subcontratación."
+
+    return (
+        f"{phase_label} — {applicant}. Presupuesto: {pem_s}. "
+        f"{entity_context} "
+        f"{urgency} "
+        f"Acciones: {actions_text}"
+    )[:600]
+
+
 def process_cm_contrato(url, title, summary, idx, total, published=""):
     """
     Process a single CM Contratos item.
@@ -6305,21 +6434,23 @@ def process_cm_contrato(url, title, summary, idx, total, published=""):
         p = {
             "source_url":          url,
             "pdf_url":             "",
-            "date_granted":        date_granted,         # ← from ATOM feed published date
+            "date_granted":        date_granted,
             "municipality":        municipality,
-            "address":             address,              # ← mined from title/summary
+            "address":             address,
             "applicant":           applicant,
             "permit_type":         permit_type,
-            "declared_value_eur":  pem,
+            "declared_value_eur":  None,       # CM Contratos: never officially declared PEM (col F stays empty)
+            "pem_is_declared":     False,      # Force to col R (Estimated PEM)
             "description":         (title[:300] + " — " + summary[:100]).strip(),
             "extraction_mode":     "cm_contratos",
             "confidence":          "medium",
             "phase":               phase,
             "expediente":          "",
             "lead_score":          0,
+            # PEM from feed goes into estimated_pem (col R), not declared (col F)
             "estimated_pem":       (f"€{pem/1_000_000:.1f}M" if pem and pem >= 1_000_000
                                    else f"€{int(pem/1000)}K" if pem else ""),
-            "ai_evaluation":       "",
+            "ai_evaluation":       _build_cm_ai_evaluation(title, summary, permit_type, phase, pem, applicant, combined),
             "supplies_needed":     generate_supplies_estimate(permit_type, pem, title, summary),
             "project_size":        "",
             "action_window":       "⚡ ACTUAR ESTA SEMANA" if phase == "licitacion" else "📞 CONTACTAR EN 30 DÍAS",
