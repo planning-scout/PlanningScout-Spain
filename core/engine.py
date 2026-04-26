@@ -3529,240 +3529,404 @@ Structure:
    RE / Promotores: "Inversión RE: entrada en JC / adquisición de suelo — evaluar ahora."
 5. QUANTITIES: any m², viviendas, pipes, machinery from document.
 
-SECTOR-SPECIFIC JSON FIELDS — FILL ALL THAT ARE APPLICABLE (empty string "" if not relevant):
+SECTOR-SPECIFIC JSON FIELDS — RESEARCH-BACKED INTELLIGENCE FOR EACH PROFILE
+════════════════════════════════════════════════════════════════════════════════
+Fill ALL applicable fields based on what you can extract from the document +
+what you know about Madrid geography, market benchmarks, and urbanismo law.
+Use "" for fields that genuinely don't apply to this document type.
+NEVER invent data — use "estimado" or "~" to flag estimates.
 
-═══════════════════════════════════════════════════════════════
-GRAN INFRAESTRUCTURA fields (fill for licitaciones, urbanizaciones >€5M):
-═══════════════════════════════════════════════════════════════
-"infra_cpv_codes": "45000000; 45231300" (CPV codes from pliego or estimated)
-"infra_pbl_eur": 4800000  (presupuesto base licitación as number, not string)
-"infra_deadline": "15/06/2026" or "estimado Q3 2026" (bid submission deadline)
-"infra_criteria": "Precio 60% + Técnico 40%" (adjudicación criteria from pliego)
-"infra_clasificacion": "Grupo E Subgrupo 1 Categoría F" (empresa solvency classification)
-"infra_procedure": "Abierto" or "Restringido" or "Negociado" (tender procedure)
-"infra_contracting_body": "Ayuntamiento de Getafe — Div. Contratación"
+━━━ 🏗️ GRAN INFRAESTRUCTURA (licitaciones, urbanizaciones > €5M) ━━━
+These are the fields that bid departments need. Critical 2026 context:
+- Spain construction market: €83.5B total in 2026, CAGR 3.1% to 2030
+- Madrid: ADIF/MITMA Corredor Central AVE upgrade (~€12B pipeline), A-5 widening, M-40/M-50 improvements
+- Canal de Isabel II: €800M capex plan 2025-2030 (saneamiento + abastecimiento)
+- Data centre corridor Madrid/Alcalá de Henares: Microsoft, Blackstone, Amazon, Telefónica all building
+- CPV classification mandatory for EU-funded tenders (FEDER/MRR) — extract always
+- Clasificación empresarial: required for contracts > €500K (RD 1098/2001 Ley LCSP)
 
-═══════════════════════════════════════════════════════════════
-GRAN CONSTRUCTORA fields (fill for obra mayor, plan parcial, urbanización):
-═══════════════════════════════════════════════════════════════
-"const_num_viviendas": "571 viviendas plurifamiliares + 48 VPO" (extract from PDF)
-"const_uso_previsto": "residencial libre + VPO 30%" (from plan)
-"const_tipologia": "plurifamiliar 12 plantas + 2 sótanos + PB comercial"
-"const_promotor_cif": "A-28123456" (from PDF if available, else "")
-"const_aparejador": "Arquitecto técnico / aparejador from PDF"
-"const_plazo_ejecucion": "24 meses" or "Fase I: 18m | Fase II: 30m"
+"infra_cpv_codes":
+  Extract from pliego. If not found, estimate from project type:
+  45000000=obras construcción | 45231300=tuberías distribución | 45233100=autopistas
+  45214200=centros enseñanza | 45213150=plataformas logísticas | 45315100=instalaciones eléctricas
+"infra_pbl_eur":
+  NUMERIC ONLY. Presupuesto Base de Licitación = total contract value as integer.
+  Extract "base imponible", "presupuesto de licitación", "valor estimado contrato"
+"infra_deadline":
+  Bid submission deadline. Extract "plazo de presentación de ofertas" or "fecha límite".
+  Format: "15/06/2026" or "15 días hábiles desde publicación" or "estimado Q3 2026"
+"infra_criteria":
+  "Precio 60% + Criterios técnicos 40%" — extract from pliego criterios adjudicación.
+  If not found: infer from procedure type (abierto = price-heavy; restringido = technical)
+"infra_clasificacion":
+  Spanish solvency classification: "Grupo E Subgrupo 1 Categoría F" (road works)
+  Groups: A=movimiento tierras | B=puentes | C=edificación | D=ferroviario | E=hidráulico
+  F=marítimo | G=viales | H=instalaciones | I=instalaciones eléctricas
+  Category based on PBL: A<€150K | B<€360K | C<€840K | D<€2.4M | E<€4.8M | F>€4.8M
+"infra_procedure":
+  "Abierto" (>€5.35M obras) | "Restringido" | "Negociado sin publicidad" | "Diálogo competitivo"
+"infra_contracting_body":
+  Full name of contracting authority from document header.
 
-═══════════════════════════════════════════════════════════════
-EXPANSIÓN RETAIL fields (fill for ALL urbanizaciones, plan parcial, cambio de uso, lic. actividad):
-THIS IS THE MOST IMPORTANT SECTOR — be exhaustive. Retail expansion directors
-need to act 18-36 months before a new neighbourhood is habitable.
-═══════════════════════════════════════════════════════════════
-"retail_pob_futura_est": "~4,200 residentes (1,680 viv × 2.5 hab/viv)" (compute from viviendas)
-"retail_renta_capita": "€24,300/año (municipio: Valdemoro — clase media)" (use your knowledge of Madrid renta by municipality)
-  Madrid renta reference (use to fill if not in document):
-  Madrid capital: €32,400 | Las Rozas: €34,100 | Majadahonda: €36,200 | Pozuelo: €41,500
+━━━ 🏢 GRAN CONSTRUCTORA (obra nueva, planes parciales, urbanizaciones) ━━━
+Key insight from real BOCM PDFs: plazo 24 meses from acta de replanteo is standard.
+10% suelo cesión obligatoria al Ayuntamiento (LSCM art. 18).
+Suelos contaminados declaration ALWAYS present in reparcelación documents.
+
+"const_num_viviendas":
+  Extract "X viviendas" from plan. Also note: "VPO X%" if mixed.
+  If plan parcial: estimate from m² edificables ÷ 90m²/vivienda (Madrid standard).
+"const_uso_previsto":
+  "residencial libre 70% + VPO 30% + PB terciario"
+  Madrid VPO requirement: 30% of residential in protected soils.
+"const_tipologia":
+  "Plurifamiliar X plantas + Y sótanos" | "Unifamiliar adosado" | "Industrial"
+  Extract from proyecto básico, plan especial, or estimate from PEM/m²
+"const_promotor_cif":
+  CIF from PDF header or Junta de Compensación membership list. Format: A-28XXXXXX
+"const_aparejador":
+  Director de Ejecución / Aparejador from project documentation.
+  This is who approves subcontractor access to site.
+"const_plazo_ejecucion":
+  ALWAYS look for "plazo de ejecución de X meses a contar desde firma del acta de replanteo"
+  Also note etapas: "Etapa 1: 18m | Etapa 2: 24m" if phased.
+"const_suelo_contaminado":
+  "Declaración conforme: sin actividad contaminante previa" (standard text in reparcelación)
+  or "PENDIENTE informe Confederación Hidrográfica" if near water bodies.
+
+━━━ 🏪 EXPANSIÓN RETAIL — MOST IMPORTANT SECTOR (9 + 3 extra fields) ━━━
+REAL MARKET DATA (JLL/CBRE/Savills 2024-2026):
+  - Spain opened 17M sqm commercial space in 2024, projects 500K+ sqm new for 2025-26
+  - Prime Madrid rents: €267.5/sqm/month | Secondary: €80-120/sqm/month
+  - 70% new openings in shopping centres; 30% high-street
+  - Standard supermarket (Mercadona, Dia): 1,000-1,800m² | Mango: 300-800m²
+  - Saona/restaurant: 150-400m² PB ideally with terrace
+  - Key expansion chains 2025-26: Aldi (40/yr), Mercadona, Dia, Mango, Action, Rossmann
+
+Fill for EVERY urbanización, plan parcial, cambio de uso, licencia de actividad.
+
+"retail_pob_futura_est":
+  Compute: viviendas × 2.5 hab/viv = residentes futuros (INE 2024 avg 2.5 personas/hogar Madrid)
+  "~4,200 residentes (1,680 viviendas × 2.5 hab/viv) — horizonte 2028"
+"retail_renta_capita":
+  Use INE 2023 Atlas de Distribución de Renta Urbana (ADRHU) by municipality:
+  Madrid capital: €32,400 | Pozuelo: €41,500 | Boadilla: €42,100 | Las Rozas: €34,100
+  Majadahonda: €36,200 | Tres Cantos: €33,500 | Alcobendas: €31,200
   Getafe: €22,400 | Fuenlabrada: €19,800 | Móstoles: €20,100 | Alcorcón: €23,600
-  Valdemoro: €24,300 | Alcalá de Henares: €22,100 | Coslada: €21,800
-  Tres Cantos: €33,500 | Alcobendas: €31,200 | Boadilla: €42,100
-"retail_m2_comercial_est": "~3,360 m² demanda retail (4,200 hab × 0.8 m²/hab)" (compute)
-"retail_competencia_1km": "Mercadona ~1.2km · Lidl ~2.1km · SIN Dia/Mango/Zara en zona" (use geography knowledge)
-"retail_zona_tipo": "Residencial clase media-alta / familiar / universitaria / obrera"
-"retail_transporte": "Cercanías C-3 a 800m · A-42 salida 18 · Bus L152" (from geography)
-"retail_apertura_est": "Viviendas habitables estimado: Q2 2028 (urbanización definitiva + 18m construcción)"
-"retail_local_m2": "235 m² PB" (for cambio de uso / licencia actividad — extract from PDF)
-"retail_fachada_m": "14m fachada a calle principal" (extract from PDF if available)
-"retail_oportunidad": one sentence: WHY this is relevant for retail expansion.
-  Examples:
-  - "Nueva zona residencial con 4,200 habitantes en 2028 y CERO competencia Dia/supermercado — primer operador = ventaja decisiva."
-  - "Local PB 235m² en nueva calle peatonal zona universitaria — alta rotación hostelería/retail moda."
-  - "Cambio de uso a local comercial en barrio obrero densamente poblado sin supermercado moderno en 800m."
+  Leganés: €20,900 | Parla: €17,600 | Alcalá de Henares: €22,100 | Valdemoro: €24,300
+  Coslada: €21,800 | Torrejón: €22,600 | Colmenar Viejo: €27,800 | Navalcarnero: €26,500
+  Profile: "€24,300/año — clase media-baja, sensible al precio, favorable a Dia/Aldi/Lidl"
+"retail_m2_comercial_est":
+  Compute: residentes × 0.8 m²/hab (CBRE retail density Madrid metro area)
+  "~3,360 m² demanda retail total (4,200 hab × 0.8m²/hab)"
+  Note if PAU plan specifies suelo terciario %: add that m² figure.
+"retail_competencia_1km":
+  Use your knowledge of Madrid urban geography to identify:
+  "Mercadona ~1.2km (calle X) · Lidl ~2.1km · SIN Dia ni Mango en radio 1km"
+  If you cannot estimate reliably: "Sin datos disponibles — verificar con Google Maps"
+"retail_zona_tipo":
+  Classify using renta per cápita + zona geography:
+  >€35K/año = "Alta gama — moda premium, restauración ticket alto" (Pozuelo, Boadilla)
+  €25-35K = "Clase media — alimentación + moda media-alta" (Madrid centro, Tres Cantos)
+  €20-25K = "Clase media-baja — discount, restauración quick service" (Getafe, Alcorcón)
+  <€20K = "Sensible precio — descuento puro, supermercados proximidad" (Parla, Fuenlabrada)
+"retail_transporte":
+  Extract from geography: cercanías (C1-C10), metro (M1-M12), autovía exits.
+  "Cercanías C-4 a 600m · Metro L1 a 400m · A-4 salida 18 a 2km"
+  Critical threshold: >500m from metro/cercanías = significant footfall penalty for non-food retail
+"retail_apertura_est":
+  Timeline: urbanización inicial + 24m construcción + 6m comercialización local
+  "Urbanización definitiva + 24m obra = viviendas habitables estimado Q2 2028.
+   Ventana apertura local: Q3 2028 – Q1 2029 (pre-population = negociar mejor renta)"
+"retail_local_m2":
+  For cambio de uso / licencia actividad: extract exact m² from PDF.
+  Note floor level: "PB" (ideal), "P1" (20-30% footfall penalty), "SS" (require escalators)
+"retail_oportunidad":
+  ONE sentence bottom-line verdict. Be specific. Use real data from above fields.
+  Format: "[TIPO OPERACIÓN] en [ZONA + DESCRIPCIÓN] — [MOTIVO URGENCIA]"
+  Good: "Nueva zona 4,200 residentes sin supermercado en 1km — ventana 18m antes de población."
+  Good: "Local PB 320m² nueva calle peatonal zona universitaria €22K renta — hostelería A/B."
+  Bad: "Oportunidad de expansión en zona en crecimiento." ← too generic
 
-═══════════════════════════════════════════════════════════════
-PROMOTORES / RE fields (fill for urbanización, plan parcial, reparcelación):
-═══════════════════════════════════════════════════════════════
-"re_sup_total_m2": "42,350 m² ámbito total"
-"re_sup_edificable_m2": "18,200 m² edificables (FAR 0.43)"
-"re_num_parcelas": "47 parcelas aportadas"
-"re_junta_contacto": "Presidente: Pedro García Sanz | Gerente: Urbanizaciones Siglo XXI SL"
-"re_cargas_pendientes": "€2.1M cuota urbanización pendiente (estimado)"
-"re_tipo_suelo": "SGPLU-3 / APR 08.21 — suelo urbano no consolidado"
-"re_plazo_urbanizacion": "Fase I: 24m | Fase II: 36m desde aprobación"
+━━━ 📐 PROMOTORES / RE (urbanización, plan parcial/especial, reparcelación) ━━━
+Based on actual BOCM reparcelación documents: key data always present:
+1 punto/m² terreno aportado (valoración standard), cesión 10% aprovechamiento lucrativo,
+plazo 24 meses desde acta de replanteo, declaración suelos contaminados.
 
-═══════════════════════════════════════════════════════════════
-INSTALADORES MEP fields (fill for obra mayor, rehabilitación, primera ocupación):
-═══════════════════════════════════════════════════════════════
-"mep_num_plantas": "12 plantas + 2 sótanos" (extract or estimate from m²/PEM)
-"mep_sup_m2": "8,450 m² construidos" (from PDF or estimate)
-"mep_uso_tipo": "residencial libre" or "hotel 4*" or "oficinas clase A"
-"mep_hvac_est": "VRF ~180kW (residencial multifamiliar) · 48 ud interiores estimadas"
-  HVAC reference:
-  Residencial <3 plantas: split individual | 4-12 plantas: VRF ~120-200kW
-  Oficinas: VRF o clima centralizado ~40W/m² | Hotel: HVAC zonal + ACS centralizado
-"mep_ascensores_est": "3 ascensores × 10 paradas (≥8 plantas obligatorio)" (Norma CTE SI)
-"mep_pci_tipo": "Rociadores automáticos (>28m altura) + BIEs + detección" (CTE DB-SI)
-"mep_cert_energetica": "Clase A objetivo (inferido de PEM/m² y zona climática C3)"
-"mep_director_tecnico": "From PDF: Aparejador / Director de Ejecución"
+"re_sup_total_m2":
+  "Superficie total ámbito: X m²" — look for "ámbito", "superficie total", "suelo afectado"
+"re_sup_edificable_m2":
+  m² edificables = aprovechamiento lucrativo × coeficiente uso.
+  "X m² edificables (FAR 0.XX)" — FAR = sup.edificable / sup.parcela
+  Benchmark Madrid: Residencial general 0.35-0.60 | APR 0.40-0.90 | Centro 1.5-3.0
+"re_num_parcelas":
+  "X parcelas aportadas por Y propietarios" — from Junta de Compensación data
+"re_junta_contacto":
+  PRIORITY FIELD: Extract from PDF:
+  "Presidente de la Junta: [NAME] | Gerente/Administrador: [ENTITY]"
+  Also note: "Secretario: [NAME]" if present.
+"re_cargas_pendientes":
+  "€X.XM cuota de urbanización (X €/m²)" — extract from cuenta de liquidación provisional
+  Benchmark: urbanización Madrid municipal 150-400 €/m² suelo
+"re_tipo_suelo":
+  Official classification from plan:
+  APR = Área Planeamiento Remitido | APE = Área Planeamiento Específico
+  SGPLU = Sistema General Parques Línea Urbana | UZP = Unidad de Zonificación
+  PP = Plan Parcial | SAU = Sector Ámbito Urbanístico
+"re_suelo_contaminado":
+  Standard BOCM text: "Todos los propietarios declaran no haber realizado actividad
+  potencialmente contaminante" = LIMPIO. Flag if missing or conditional.
+"re_plazo_urbanizacion":
+  "Fase I: 24m desde acta de replanteo + Garantía 2 años recepción definitiva"
+  Note: 3 months from recepción definitiva → cesión suelo al Ayuntamiento (LSCM)
 
-═══════════════════════════════════════════════════════════════
-INDUSTRIAL / LOG. fields (fill for nave industrial, urbanización industrial, polígono):
-═══════════════════════════════════════════════════════════════
-"ind_sup_parcela_m2": "15,200 m² parcela" (from PDF)
-"ind_sup_nave_m2": "9,800 m² nave" (from PDF or estimate as 65% of parcela)
-"ind_altura_libre_m": "12m libre interior (estimado desde tipología logística)"
-  Reference: estándar logístico Madrid ≥10m; e-commerce/last-mile ≥8m; manufactura 6-8m
-"ind_muelles_est": "~12 muelles (1 muelle / 800m² nave, estándar logístico)"
-"ind_potencia_kva": "630 kVA (desde pliego)" or "~400 kVA estimado (industria media)"
-"ind_poligono_nombre": "P.I. La Isla — Getafe" or "Sector PAU Industrial Valdemoro"
-"ind_dist_autopista_km": "A-4 salida 18 a 0.8km (estimado desde ubicación)"
+━━━ 🔧 INSTALADORES MEP (obra nueva, rehabilitación, primera ocupación) ━━━
+Legal reference: CTE DB-SI (fire), CTE DB-SU (accessibility), RITE (thermal),
+REBT (electrical). Key Spanish construction law thresholds:
+- Rociadores obligatorios: edificios > 28m altura o > 1,000m² en uso administrativo
+- Ascensor obligatorio: ≥ 4 plantas o ≥ 3 si hay personas con movilidad reducida
+- Ventilación mecánica: garajes > 5 vehículos; baños sin ventilación natural
 
-═══════════════════════════════════════════════════════════════
-ALQUILER MAQUINARIA fields (fill for adjudicación, urbanización en obra, demolición):
-═══════════════════════════════════════════════════════════════
-"alq_contratista": "Ferrovial Servicios SA — adjudicatario confirmado" (from adjudicación)
-"alq_importe_adj": "€4,800,000" (adjudicación amount)
-"alq_inicio_obra_est": "Septiembre 2026 (estimado: +3 meses desde adjudicación)"
-"alq_maquinaria_est": "Excavadora 30t × 8sem · Compactadora vibratoria × 6sem · Dumper · Retroexcavadora 20t"
-  Reference per PEM:
-  <€500K: retroexcavadora + dumper | €500K-€2M: exc.20t + comp. + dumper
-  €2M-€10M: exc.30t × 2 + comp. + grúa torre | >€10M: flota completa + grúa pluma
-"alq_m3_tierras_est": "~45,000 m³ movimiento tierras (estimado 8m³/m² urbanización)"
-"alq_duracion_meses": "18 meses (desde pliego)" or "~12 meses (estimado)"
-"alq_jefe_obra": "From PDF: Director de Obra / Jefe de Obra"
+"mep_num_plantas":
+  Extract from PDF. If not found: estimate from PEM/m² ratio.
+  Note sótanos: "12 plantas + 2 sótanos (3,200m² garaje aprox.)"
+"mep_sup_m2":
+  Superficie total construida. If not in PDF: PEM ÷ 850 €/m² (residencial standard)
+  or PEM ÷ 1,200 €/m² (oficinas) or PEM ÷ 600 €/m² (industrial)
+"mep_hvac_est":
+  Estimate based on use type and Spanish CTE + market norms:
+  Residencial < 3 plantas: "splits individuales por vivienda — sin contrato centralizado"
+  Residencial 4-8 plantas: "VRF ~80-140kW (estimado) — cotizar sistema central"
+  Residencial > 8 plantas: "VRF ~150-220kW o geotermia — sistema centralizado obligatorio"
+  Oficinas: "Clima centralizado ~40W/m² = [X*40/1000]kW total — VRF o enfriadoras"
+  Hotel: "HVAC zonal por habitación + ACS centralizado + cocina industrial"
+  Hospital/residencia: "Sistema cuádruple tubo + 100% renovación aire — alta complejidad"
+"mep_ascensores_est":
+  CTE SU threshold: "3+ plantas = ascensor obligatorio en residencial colectivo"
+  Estimate: 1 ascensor per 4-6 viviendas | 1 per 1,500-2,000m² oficinas
+  "3 ascensores × 10 paradas (CTE SU — obligatorio ≥3 plantas)"
+"mep_pci_tipo":
+  Apply CTE DB-SI automatically:
+  H>28m: "Rociadores automáticos OBLIGATORIOS (CTE DB-SI) + BIEs + detección automática"
+  H<28m residencial: "BIEs en escalera + detección básica + extintores"
+  Parking > 5 veh: "Ventilación forzada antihumos + detección CO + rociadores si > 500m²"
+  Uso terciario > 1,000m²: "Rociadores + BIEs + central incendios + voz evacuación"
+"mep_cert_energetica":
+  Infer from: location (Madrid = Zona climática C/D), PEM/m², and use type.
+  New residential Madrid 2026: "Clase A/B (obligatorio CTE HE1 2022 — demanda casi nula)"
+  Rehabilitation: "Clase C/D objetivo (mejora desde clase E/F existente)"
+"mep_director_tecnico":
+  Extract "director de ejecución" or "aparejador" from PDF. This person approves MEP bids.
 
-═══════════════════════════════════════════════════════════════
-COMPRAS / MATERIALES fields (fill for urbanización, obra nueva, licitación):
-═══════════════════════════════════════════════════════════════
-"mat_colector_dn_km": "DN-400 ~3.2km + DN-300 ~1.8km (saneamiento separativo)"
-  Reference: urbanización ~200m colector per ha; DN400 for colectores principales
-"mat_red_abast_dn_km": "DN-200 ~2.4km abastecimiento potable"
-"mat_hormigon_m3_est": "~4,800 m³ HA-25 (estimado: 0.35m³/m² urbanización + estructura)"
-"mat_aridos_t_est": "~12,000t áridos Z-1 (zahorra artificial base viario)"
-"mat_acero_t_est": "~380t B500S (estimado: 45kg/m² edificación)"
-"mat_contratista": "Empresa adjudicataria para contactar jefe de compras"
-"mat_plazo_entrega": "Inicio suministro estimado: Q4 2026 · JIT requerido"
+━━━ 🏭 INDUSTRIAL / LOG. (obra mayor industrial, licencia nave, urbanización industrial) ━━━
+MARKET DATA (Naves Madrid / JLL 2025):
+  - Corredor A-2 (Coslada, Torrejón, Alcalá): 5.5-6.5€/m²/mes, prime logistics
+  - Corredor A-4 (Getafe, Pinto, Valdemoro): 4.5-5.5€/m²/mes, distribution
+  - Corredor A-42 (Fuenlabrada, Leganés): 4.0-4.8€/m²/mes, industrial
+  - Standard clear height: logistics ≥10m | manufacturing 6-8m | last-mile ≥8m
+  - Loading docks: 1/1,000m² logistics | 1/800m² e-commerce
+  - Madrid gross yield industrial: 6.5-7.5% (Naves Madrid 2025)
 
-═══════════════════════════════════════════════════════════════
-CONTRACT & OFICINAS fields (fill for oficinas, hotel, universidad, hospital):
-═══════════════════════════════════════════════════════════════
-"cont_uso_edificio": "Oficinas clase A / Hotel 4* / Residencia universitaria / Hospital"
-"cont_m2_oficinas": "4,200 m² plantas diáfanas"
-"cont_num_plantas": "8 plantas tipo + PB + 2 sótanos"
-"cont_puestos_trabajo": "~560 puestos estimados (4,200m² ÷ 7.5m²/puesto NIA)"
-  Reference: 7.5m²/puesto = flex/open plan; 10m²/puesto = celdular; hotel = por habitación
-"cont_arquitecto": "From PDF: estudio de arquitectura / firma interior design"
-"cont_certificacion": "LEED Gold objetivo (desde pliego o tipología)"
-"cont_entrega_est": "1ª ocupación estimada: Q1 2028 (aprobación definitiva + 24m obra)"
+"ind_sup_parcela_m2": Extract total land area. "15,200 m² parcela total"
+"ind_sup_nave_m2":
+  Built area = 60-70% of parcela (includes campa/patio for trucks).
+  Extract from PDF or: "~9,800 m² nave (65% parcela — estándar logístico)"
+"ind_altura_libre_m":
+  CRITICAL: extract from PDF or estimate by typology:
+  Nueva construcción logística 2024-26: "12-15m libre interior (estándar clase A)"
+  Nave industrial existente pre-2000: "6-8m libre interior (clase B/C)"
+  If unclear: "Estimado ~Xm (verificar con promotor)"
+"ind_muelles_est":
+  Standard: 1 muelle/1,000m² logistics | 1/800m² e-commerce
+  "~X muelles niveladoras + X puertas seccionales (ratio estándar Madrid)"
+  Note if campa available: "Campa ~X m² para tráileres"
+"ind_potencia_kva":
+  Extract from pliego or estimate:
+  Logística estándar: 400-630 kVA | Industria alimentaria: 800-1,200 kVA
+  Data centre / cold chain: 2,000+ kVA | Manufactura pesada: 1,600+ kVA
+"ind_poligono_nombre":
+  Named polígono from address. Key Madrid polígonos:
+  A-2: Centro Transportes Coslada, P.I. Los Gavilanes, San Fernando Empresarial
+  A-4: P.I. Los Olivos Getafe, P.I. La Isla, Parque Empresarial Carpetania
+  A-42: Cobo Calleja Fuenlabrada, P.I. Leganés, P.I. Las Canteras Valdemoro
+"ind_renta_mercado":
+  Benchmark from location: "~5.0-5.5€/m²/mes (zona Getafe A-4 estándar 2025)"
+  Helps industrial developer value the project and assess ROI.
+"ind_yield_est":
+  "~7% yield bruto estimado (referencia Madrid industrial zona sur 2025)"
+  Source: Naves Madrid market data.
 
-═══════════════════════════════════════════════════════════════
-FLEXLIVING & HOSTELERÍA fields (fill for cambio de uso, rehab, primera ocupación):
-═══════════════════════════════════════════════════════════════
-"flex_anno_construccion": "1978" (extract from PDF or estimate from typology/zone)
-  Reference: Centro/Salamanca/Malasaña: 1930-1970 | PAU years: 1995-2010 | New: >2010
-"flex_num_unidades": "48 unidades (pisos/habitaciones)" (from PDF)
-"flex_sup_total_m2": "3,240 m² totales" (from PDF)
-"flex_uso_anterior": "Oficinas 100% — en desocupación parcial desde 2022" (from PDF)
-"flex_propietario_tipo": "Único propietario: Fondo Inmobiliario XYZ" or "Comunidad de Propietarios (≥20 copropietarios)"
-  NOTE: Único propietario = HIGH priority for Sharing Co (can lease whole building)
-        Comunidad de propietarios = LOW priority (complex deal structure)
-"flex_estado_actual": "Vacío / Parcialmente ocupado / En rehabilitación activa"
-"flex_barrio_tipo": "Centro histórico / Universitario (UAM 1.2km) / Negocios AZCA / Residencial familiar"
-"flex_potencial_coliving": "ALTO — único propietario + >40 unidades + centro + desocupado" or "BAJO" or "MEDIO"
-  Scoring:
-  HIGH: único propietario + ≥40 unidades + zona central/universitaria + vacío
-  MEDIUM: único propietario + <40 unidades OR comunidad + buena zona
-  LOW: comunidad copropietarios + periferia + pequeño
-"flex_irr_est": "~6.2% yield neto estimado (€18/m²/mes × 3,240m² × 12 - capex €800K)"
-  Reference yields Madrid coliving 2024: prime zones 5.5-7%, suburban 7-9%
+━━━ 🚧 ALQUILER MAQUINARIA (adjudicaciones, urbanizaciones, demoliciones) ━━━
+Kiloutou Madrid locations: Torrejón de Ardoz (main depot, Av. del Sol 11).
+Most rented in Madrid construction: excavadoras 20-30t, compactadoras vibratorias,
+dumpers articulados, plataformas tijera/articuladas, retroexcavadoras.
+Commercial window after adjudicación publication: 24-48 HOURS maximum.
 
-GOOD ai_evaluation (NO company names — use sector roles):
-"Proyecto de urbanización definitivo APE 08.21 Las Tablas Oeste, Fuencarral-El Pardo — PEM €106.7M confirmado. Uno de los 3 mayores proyectos urbanización Madrid capital en 5 años: >200.000m² suelo nuevo, viario completo, redes BT/MT, saneamiento y telecomunicaciones. Etapa 1: 24 meses | Etapa 2: 36 meses desde hoy. Gran Constructora / Infraestructura: pre-calificarse para licitación civil — pliego técnico estimado en 6-12 meses. Alquiler Maquinaria: excavadoras 30t + compactadores para movimiento de tierras — inicio obra Q4 2026 estimado. Materiales Saneamiento: colector DN400-500 ~3.5km + red abastecimiento DN200 ~2.4km — cotizar YA. Inversión RE: área residencial futura — evaluar posición en JC."
+"alq_contratista":
+  MOST IMPORTANT FIELD. From adjudicación document: company name + CIF.
+  "Ferrovial Servicios SA (A-28543124) — adjudicatario confirmado"
+  If licitación (not yet awarded): "EN LICITACIÓN — adjudicación estimada: [fecha]"
+"alq_importe_adj":
+  Adjudicación amount as number. "€4,800,000"
+"alq_inicio_obra_est":
+  Estimate: adjudicación + 30 días firma contrato + 15 días replanteo = inicio real.
+  "Estimado: [mes+45 días] (adjudicación + 45 días trámites + firma acta replanteo)"
+"alq_maquinaria_est":
+  Use PEM tiers (Kiloutou market knowledge):
+  <€500K: "Retroexcavadora + dumper + compactadora pequeña"
+  €500K-€2M: "Excavadora 20t × 6-8 semanas + compactadora vibratoria + dumper 10t"
+  €2M-€10M: "Excavadora 30t × 2 unidades × 12 semanas + compactadora + grúa torre 30m"
+  >€10M: "Flota completa: exc.30t × 3 + compactadora + grúa pluma + plataformas + dumpers"
+  Add: "Plataformas elevadoras para fase acabados (X unidades)"
+"alq_m3_tierras_est":
+  Urbanización: 6-10 m³/m² suelo | Demolición + excavación: 1.5-2.5 m³/m² planta
+  "~45,000 m³ movimiento tierras (8m³/m² × 5,625m² urbanización)"
+"alq_duracion_meses":
+  From pliego or standard: urbanización 18-24m | obra nueva residencial 18-30m
+  "18 meses (desde pliego)" or "~24 meses (estimado urbanización estándar Madrid)"
+"alq_jefe_obra":
+  Extract "director de obra" or "jefe de obra" from PDF. Call this person directly.
+"alq_urgencia":
+  "🔴 LLAMAR HOY" (adjudicación ya publicada) |
+  "🟡 PREPARAR OFERTA" (licitación activa, cierre en X días) |
+  "🟢 PIPELINE" (aprobación inicial/definitiva, obra en 3-12m)
 
-BAD (NEVER — do not do either of these):
-"FCC Construcción: pre-calificarse..." ← FORBIDDEN — real company name
-"Proyecto de construcción en Getafe — PEM no declarado." ← FORBIDDEN — too generic
+━━━ 🛒 COMPRAS / MATERIALES (urbanización, obra nueva, saneamiento, licitación) ━━━
+Reference quantities for Spanish urbanisation (Molecor / Lafarge / Holcim norms):
+  - Colector saneamiento: 200m colector DN-400 per hectare urbanised
+  - Red abastecimiento: DN-200/160 ~0.8km/ha | Pluviales: DN-500+ colector principal
+  - Hormigón: 0.25-0.35m³/m² for pavimentación + 0.15m³/m² for estructuras
+  - Zahorra artificial (áridos): 0.3m³/m² road base = ~600kg/m² = 0.6t/m²
+  - Acero B500S: 45kg/m² residencial | 60kg/m² oficinas | 30kg/m² industrial
+  - Tubería PVC corrugada: colector saneamiento | PVC rígido: abastecimiento
 
-SUPPLIES NEEDED — ULTRA-DETAILED WITH EXACT QUANTITIES from [TABLA_DATOS_FINANCIEROS]:
-Urbanización: "🔧 Red BT 20kV + X CT-630kVA + alumbrado LED Xm | 🛒 Hormigón HA-25 Xm³, tubería PVC DN-X Lkm, zahorra Z-1 Xt | 🚧 Excavadora 30t, compactador 12t, extendedora"
-Nueva construcción: "🔧 Ascensores X ud (X+X), HVAC VRF XkW, PCI rociadores + BIEs | 🛒 Hormigón HA-25 Xm³, acero B500S Xt, cerramiento Xm² | 🚧 Grúa torre, plataformas, retroexcavadora"
-Industrial: "🔧 Eléctrica MT XkVA, iluminación LED industrial | 🛒 Estructura metálica Xt, panel sándwich Xm², solera Xm² | 🚧 Grúas, explanación, pavimentación"
-Rehab/CdU: "🔧 HVAC completo, fontanería nueva, eléctrica BT | 🛒 Tabiquería, acabados, carpintería RPT | 🚧 Plataformas tijera, andamios, herramientas menores"
-If no quantities found: estimate intelligently using PEM ratios. NEVER generic placeholders.
-ABSOLUTE RULE: NEVER return "🏗️ Proyecto N/D — analizar PDF técnico para especificaciones"
-That is a useless placeholder. Even with zero information from the document, estimate
-based on permit_type alone:
-- plan especial / parcial (no PEM): "🔧 Redes servicios estimadas: eléctrica BT, saneamiento, abastecimiento | 🛒 Hormigón, tuberías PVC, áridos | 🚧 Maquinaria urbanización según fase"
-- plan especial actividad: "🔧 HVAC terciario, eléctrica BT, PCI | 🛒 Tabiquería, carpintería, acabados | 🚧 Plataformas tijera, andamios"
-- urbanización sin PEM: "🔧 Viario + redes BT/MT + alumbrado | 🛒 Hormigón HA-25, tuberías PVC DN200-400, bordillos | 🚧 Excavadoras 20-30t, compactadores"
-Always provide a BEST-EFFORT estimate based on tipo. Zero placeholders.
+"mat_colector_dn_km":
+  Compute from ámbito m²: 1ha → ~200m DN-400 collector + 300m DN-300 laterals
+  "Saneamiento: colector principal DN-400 ~X.Xkm + laterales DN-300 ~X.Xkm (separativo)"
+"mat_red_abast_dn_km":
+  "Abastecimiento: DN-200 red distribución ~X.Xkm + DN-160 acometidas ~X.Xkm"
+"mat_pluviales_dn_km":
+  "Pluviales: colector principal DN-600 ~X.Xkm + sumideros ~X uds"
+"mat_hormigon_m3_est":
+  "~X,XXX m³ HA-25/B/20/IIa (pavimentación + cunetas + bordillos estándar)"
+"mat_aridos_t_est":
+  "~X,XXXt zahorra artificial Z-1 (base sub-base viario)"
+"mat_acero_t_est":
+  Only for obra edificación: "~XXXt B500S (45kg/m² × X,XXXm² construidos)"
+"mat_contratista":
+  If adjudicado: company name to call for supply contract.
+  If licitación: "EN LICITACIÓN — adjudicatario pendiente — cotizar a licitadores"
+"mat_plazo_entrega":
+  When materials are needed on site:
+  "Inicio suministro estimado: [fase] → JIT requerido (plazo obra: Xm)"
 
-PROFILE_FIT — CRITICAL: Return MULTIPLE profiles for every project. NEVER return only ["promotores"].
-Profiles:
-"infrastructura" — urbanización >€10M, obra civil, licitaciones estado
-"constructora" — edificios plurifamiliares, licitaciones municipales, cualquier obra mayor
-"mep" — edificios con ascensores/HVAC, rehab integral, primera ocupación
-"industrial" — naves, almacenes, polígonos, logística
-"retail" — locales comerciales, centros comerciales, cambio de uso terciario
-"alquiler" — obra mayor, urbanización, demolición, movimiento tierras (ALWAYS for obra)
-"materiales" — urbanización, nueva construcción, rehab, industrial (ALMOST ALWAYS)
-"promotores" — reparcelación, DIR, segregación, plan parcial, convenio
-"hospe" — cambio de uso residencial/hospedaje, rehab edificios, plurifamiliar, primera ocupación
-"actiu" — oficinas, coworking, hoteles, hospitales, universidades, edificios terciarios
-  "kiloutou" — alquiler maquinaria: demolición, vaciado, excavación, cimentación = ACTUAR YA
-            acta de inicio de obras / certificado de replanteo = maquinaria en DÍAS
-  "molecor" — tuberías PVC: saneamiento, colector, red abastecimiento, pluviales
-            colector de pluviales, instalación de tubería, red de distribución
-  "sharing co" — coliving, flexliving, cambio de uso residencial/terciario
-               residencia de estudiantes, apartamentos turísticos, primera ocupación
-  "kinépolis" — gran superficie comercial, complejo de ocio, equipamiento cultural
-              parque comercial, sala de espectáculos, plan especial gran superficie
+━━━ 💼 CONTRACT & OFICINAS (oficinas, hotel, universidad, hospital, obra nueva terciario) ━━━
+MARKET DATA (Cushman & Wakefield / JLL 2025-2026):
+  - Office fit-out standard Madrid: 7.5m²/puesto open plan | 10m²/puesto celdular
+  - Hotel: 45-55m² por habitación constructivo | 25-35m² útil habitación
+  - LEED Gold / BREEAM Very Good = standard for class A offices Madrid 2024+
+  - Contract furniture typical spend: 300-600€/m² officinas | 1,200-2,500€/hab hotel
+  - Timeline: contact promotor at "proyecto básico" stage → 18m before ocupación
 
-MANDATORY MULTI-PROFILE RULES (always apply):
-- Urbanización/reparcelación → ALWAYS: ["promotores","constructora","alquiler","materiales"] + "infrastructura" if >€10M
-- Licitación de obras → ALWAYS: ["constructora","materiales","alquiler"] + "infrastructura" if >€5M
-- Edificio nueva construcción → ALWAYS: ["constructora","mep","materiales","alquiler","hospe"]
-- Cambio de uso/rehabilitación → ALWAYS: ["hospe","mep","materiales"]
-- Plan especial/parcial → ALWAYS: ["promotores","constructora"] + others based on use
-- Nave/industrial → ALWAYS: ["industrial","alquiler","materiales"]
-- Primera ocupación → ALWAYS: ["hospe","mep"]
-- Saneamiento in project → ALWAYS add: "materiales" (Molecor PVC pipes opportunity)
+"cont_uso_edificio":
+  "Oficinas clase A open plan" | "Hotel 4* (70 habitaciones)" | "Residencia universitaria 200 plazas"
+  | "Hospital/clínica terciario" | "Centro de datos" | "Coworking/flex offices"
+"cont_m2_oficinas":
+  Useful m² for fitting-out. Gross-to-net ratio: offices ~80% | hotels ~65%
+  "4,200 m² útiles oficinas (gross-to-net 80% de 5,250m² totales)"
+"cont_puestos_trabajo":
+  Compute: m² útiles ÷ 7.5m²/puesto open plan | ÷ 10m²/puesto mixto
+  "~560 puestos (4,200m² ÷ 7.5m²/puesto NIA open plan 2024)"
+"cont_num_plantas":
+  "8 plantas tipo + PB + 2 sótanos garaje"
+"cont_arquitecto":
+  Extract architecture firm from PDF. They specify furniture and equipment.
+  This is the MOST IMPORTANT contact for Contract & Oficinas sector.
+"cont_certificacion":
+  Infer from: use (Class A offices 2024 = LEED/BREEAM mandatory for institutional investors)
+  "LEED Gold objetivo (estándar edificios oficinas clase A Madrid 2024-2026)"
+  Hotel: "Certificación BREEAM In-Use prevista (SOCIMI/REIT requirement)"
+"cont_entrega_est":
+  Timeline: aprobación definitiva + 20m obra + 2m equipamiento = primera ocupación
+  "1ª ocupación estimada: [mes/año] — ventana de equipamiento: [3-6 meses antes]"
+"cont_fit_out_presupuesto_est":
+  Estimate furniture/equipment budget for the promotor:
+  Oficinas A: "€300-500/m² = ~€[m²×400/1000]M equipamiento estimado"
+  Hotel 4*: "€1,500-2,500/habitación × N hab = ~€[N*2000/1000]M"
+  Residencia: "€8,000-15,000/plaza × N plazas"
 
-PROFILE_FIT EXAMPLES (follow exactly):
-Urbanización €50M → ["infrastructura","constructora","alquiler","materiales","promotores"]
-Urbanización €3M → ["constructora","alquiler","materiales","promotores"]
-Plan especial residencial → ["promotores","constructora","alquiler","materiales","hospe"]
-Plan especial comercial → ["promotores","constructora","retail"]
-571 viviendas nueva construcción → ["constructora","mep","materiales","alquiler","hospe"]
-Cambio uso oficinas→residencial → ["hospe","mep","materiales","retail"]
-Rehabilitación integral edificio → ["hospe","mep","materiales","alquiler"]
-Nave industrial 5.000m² → ["industrial","alquiler","materiales"]
-Licitación obras públicas €8M → ["constructora","materiales","alquiler","infrastructura"]
-Primera ocupación residencial → ["hospe","mep"]
-Reparcelación terrenos → ["promotores","constructora","materiales"]
+━━━ 🏠 FLEXLIVING & HOSTELERÍA (cambio de uso, rehabilitación, primera ocupación) ━━━
+REAL MARKET DATA (CBRE/Savills/Geräh 2025-2026):
+  - Madrid coliving stock: 11,375 units active + 14,000 in development (CBRE 2024)
+  - Average tariff: €1,000/mes coliving Madrid | €3,000 corporate | €1,180 suburban
+  - Occupancy professionally managed: 90-95% | private: 70-80%
+  - Yield: 8-11% coliving vs 4-6% traditional rental (Geräh Real Estate 2025)
+  - OPEX = 30-35% total revenue (Cushman & Wakefield)
+  - Investment ticket 2024: avg €40M (fell to €30M in 2025)
+  - CRITICAL: 80% investors need <20 min from metro/train (suburban CBRE standard)
+  - Fastest growing: Smart Living (suelo terciario, periferias) — oficinas reconversión
+  - Muppy: 825 units, Grupo HIVE: 700+ units, PIMCO: NUGA Castellana
 
-DOCUMENT RULES:
-"base imponible del ICIO" → declared_value_eur = exact number, confidence:"high"
-"aprobación definitiva" OR "se aprueba" + plan/urbanización → phase:"definitivo"
-"aprobación inicial" → phase:"inicial"
-"primera ocupación" → phase:"primera_ocupacion", action_window:"⚡ ACTUAR ESTA SEMANA"
-"adjudicación" / "acta de inicio" → phase:"adjudicacion"/"en_obra", action_window:"⚡ ACTUAR ESTA SEMANA"
-"se ha solicitado" → phase:"en_tramite"
+"flex_anno_construccion":
+  Extract from PDF or estimate by area/typology:
+  Ensanche Salamanca/Chamberí: 1890-1960 | Ciudad Lineal/Tetuán: 1950-1975
+  PAU years: Sanchinarro/Las Tablas: 2000-2010 | New developments: 2020+
+"flex_num_unidades":
+  Minimum viable for operators: 30 units (Muppy/Sharing Co standard)
+  Professional management threshold: 50+ units
+  "48 unidades residenciales (viviendas/apartamentos) — VIABLE para coliving"
+"flex_sup_total_m2":
+  Extract from PDF. Note m²/unidad: <25m² = habitaciones | 25-50m² = estudios | >50m² = 1-2bed
+"flex_uso_anterior":
+  CRITICAL field. Conversion path value:
+  "Oficinas → coliving" = GOLD (suelo terciario, adaptación normativa compleja but high yield)
+  "Residencial vacío → coliving" = SILVER (less conversion, lower capex)
+  "Hostelería → flexliving" = PLATINUM (ya tiene uso turístico, mínima adaptación)
+"flex_propietario_tipo":
+  MAKE-OR-BREAK VARIABLE:
+  "Único propietario: [Fondo/Empresa] — ALTO potencial (operación en bloque posible)"
+  "Comunidad X propietarios — BAJO potencial (consenso imposible para gestión unitaria)"
+  Extract: Junta de Compensación president = usually single or small group control
+"flex_dist_metro_min":
+  Compute from geography: "Metro L1 a 800m (~10 min a pie) — CUMPLE criterio CBRE <20min"
+  CBRE benchmark: <20 min from metro/cercanías in suburban = investment grade
+"flex_potencial_coliving":
+  Score using real market criteria:
+  ALTO: único propietario + ≥40 unidades + <20min metro + vacío/partial + suelo terciario
+  MEDIO: único/few propietarios + 25-40 unidades + buena zona + uso mixto
+  BAJO: comunidad copropietarios OR <25 unidades OR solo residencial sin posibilidad CdU
+"flex_irr_est":
+  Use real Madrid yields (CBRE/Geräh 2025-2026):
+  Centro (<M-30): "~6-7% yield neto (tarifa €1,000/mes, ocupación 93%, OPEX 33%)"
+  Suburban (cercanías <20min): "~8-10% yield neto (tarifa €1,180/mes suburban 2025)"
+  Corporate target: "~8-11% yield bruto (€3,000/mes corporate, OPEX 35%)"
+  Compute: (ingresos_anuales × 0.67) ÷ valor_activo × 100 = % yield neto
 
-CAMBIO DE USO (all → permit_type:"cambio de uso", profile_fit MUST include "hospe"):
-"cambio de uso"|"cambio de destino"|"modificación de uso"|"cambio de actividad"
-"variación de uso"|"alteración de uso"|"implantación de nuevo uso"|"reconversión"
-"división horizontal"|"segregación de viviendas"
 
-REHABILITACIÓN (→ permit_type:"obra mayor rehabilitación", profile_fit MUST include "hospe","mep"):
-"rehabilitación integral"|"reforma integral"|"renovación integral"|"gran rehabilitación"
-"actuación de regeneración"|"regeneración urbana"|"rehabilitación de edificio"
+━━━ 🖥️ DATA CENTERS & ENERGÍA (NEW SECTOR 2026) ━━━
+Madrid: Microsoft, Blackstone ($5B), Amazon, Telefónica all building.
+Alcalá de Henares corridor = #1 data centre zone in Southern Europe 2025-2026.
+Every data centre = 200-2,000 kVA electrical supply + UPS + cooling = major MEP.
 
-"saneamiento" + quantities → profile_fit MUST include "materiales" (Molecor PVC pipes)
-"licitación" ANY budget → profile_fit MUST include "constructora","materiales","alquiler"
-"primera ocupación" → profile_fit MUST include "hospe","mep"
+"dc_potencia_mw": Extract or estimate: "50MW IT load phase 1" — standard hyperscale
+"dc_tipo": "Hyperscale (>20MW)" | "Colocation (5-20MW)" | "Edge/Campus (<5MW)"
+"dc_tier": "Tier III objetivo (99.982% uptime — estándar comercial 2024)" or from pliego
+"dc_pue_target": "PUE < 1.3 objetivo (estándar 2024 — UE Energy Efficiency Directive)"
+"dc_m2_terreno": Extract or estimate: typical hyperscale = 10-50ha
+"energia_tipo": "Fotovoltaica" | "Eólica" | "Mixta + BESS" | "Grid-connected"
+"energia_mw_instalado": MW capacity from permit/plan
 
-TABLA_DATOS: Extract ALL from [TABLA_DATOS_FINANCIEROS]. Use [TABLA_PARCELAS] m² for quantities.
-Extract contacts from [DATOS_PROMOTORES_PROPIETARIOS] for key_contacts field.
-If PEM estimated: confidence:"medium", explain method in ai_evaluation.
+━━━ 🏢 RESIDENCIAS / SENIOR LIVING (FAST-GROWING 2026-2030) ━━━
+CBRE: Madrid needs 40,000+ senior beds by 2030 — only 12,000 exist today.
+Typical investment: €8,000-15,000/plaza × 100-200 plazas = €1-3M per facility.
+Revenue model: €1,500-3,000/mes por plaza (private) | €900-1,200 público.
+
+"senior_num_plazas": Extract from permit. Minimum viable: 50 plazas.
+"senior_tipo": "Residencia tercera edad" | "Centro de día" | "Viviendas tuteladas" | "Senior living activo"
+"senior_promotor_tipo": "SOCIMI/fondo" | "Grupo hospitalario" | "Promotor privado"
+"senior_yield_est": "~7-9% yield bruto estimado (referencia Madrid senior living 2025)"
+"senior_capex_est": "~€X.XM capex construcción (€X,000/plaza × N plazas)"
+
 """
 
         # Build the richest possible context for the AI:
@@ -3801,6 +3965,29 @@ If PEM estimated: confidence:"medium", explain method in ai_evaluation.
         d["extraction_mode"] = "ai"
         dg = d.get("date_granted") or pub_date
         d["date_granted"] = parse_spanish_date(str(dg)) if dg else extract_date_from_url(url)
+
+        # ── Catastro enrichment — non-blocking, fills building age + floors ───
+        # For flexliving, MEP, and Contract profiles: look up Catastro data.
+        # This gives us building construction year (anno_construccion for flex),
+        # number of floors (mep_num_plantas), and m² (mep_sup_m2) without AI tokens.
+        _cat_profiles = ("hospe", "mep", "actiu", "retail")
+        _cat_fit = str(d.get("profile_fit","")).lower()
+        if (any(pt in _cat_fit for pt in _cat_profiles)
+                and d.get("address") and not d.get("flex_anno_construccion")):
+            try:
+                _cat = catastro_enrich(d.get("address",""), d.get("municipality","Madrid"))
+                if _cat.get("anno_construccion") and not d.get("flex_anno_construccion"):
+                    d["flex_anno_construccion"] = _cat["anno_construccion"]
+                if _cat.get("num_plantas") and not d.get("mep_num_plantas"):
+                    d["mep_num_plantas"] = f"{_cat['num_plantas']} plantas (Catastro)"
+                if _cat.get("sup_m2") and not d.get("mep_sup_m2"):
+                    d["mep_sup_m2"] = f"{_cat['sup_m2']} m² (Catastro)"
+                if _cat.get("uso_catastral"):
+                    d["_catastro_uso"] = _cat["uso_catastral"]
+                if _cat.get("ref_catastral"):
+                    d["_ref_catastral"] = _cat["ref_catastral"]
+            except Exception:
+                pass  # enrichment is best-effort only
 
         val = d.get("declared_value_eur")
         if isinstance(val, str):
@@ -4055,9 +4242,21 @@ HDRS_SECTOR = [
     # 💼 Contract & Oficinas (6)
     "cont_uso_edificio","cont_m2_oficinas","cont_puestos_trabajo",
     "cont_arquitecto","cont_certificacion","cont_entrega_est",
-    # 🏠 Flexliving & Hostelería (7)
+    # 🏠 Flexliving & Hostelería (9)
     "flex_anno_construccion","flex_num_unidades","flex_sup_total_m2",
-    "flex_uso_anterior","flex_propietario_tipo","flex_potencial_coliving","flex_irr_est",
+    "flex_uso_anterior","flex_propietario_tipo","flex_dist_metro_min",
+    "flex_potencial_coliving","flex_irr_est",
+    # Extra deep-research fields across sectors
+    "const_suelo_contaminado",       # Gran Constructora
+    "re_suelo_contaminado",          # Promotores/RE
+    "re_plazo_urbanizacion",         # Promotores/RE
+    "ind_renta_mercado",             # Industrial/Log (market rent benchmark)
+    "ind_yield_est",                 # Industrial/Log (gross yield estimate)
+    "alq_urgencia",                  # Alquiler (urgency traffic light)
+    "alq_jefe_obra",                 # Alquiler (site manager to call)
+    "mat_pluviales_dn_km",           # Materiales (storm drainage pipe)
+    "cont_num_plantas",              # Contract (number of floors)
+    "cont_fit_out_presupuesto_est",  # Contract (furniture budget estimate)
 ]
 
 HDRS = HDRS_BASE + HDRS_SECTOR
@@ -4460,8 +4659,21 @@ def write_permit(p, pdf_url=""):
             (p.get("flex_sup_total_m2")     or "")[:80],
             (p.get("flex_uso_anterior")     or "")[:200],
             (p.get("flex_propietario_tipo") or "")[:200],
-            (p.get("flex_potencial_coliving")or"")[:50],
-            (p.get("flex_irr_est")          or "")[:100],
+            (p.get("flex_propietario_tipo") or "")[:200],
+            (p.get("flex_dist_metro_min")    or "")[:80],
+            (p.get("flex_potencial_coliving")or "")[:50],
+            (p.get("flex_irr_est")           or "")[:100],
+            # ── Deep-research extra fields ────────────────────────────────────
+            (p.get("const_suelo_contaminado")or "")[:200],
+            (p.get("re_suelo_contaminado")   or "")[:200],
+            (p.get("re_plazo_urbanizacion")  or "")[:150],
+            (p.get("ind_renta_mercado")      or "")[:100],
+            (p.get("ind_yield_est")          or "")[:100],
+            (p.get("alq_urgencia")           or "")[:50],
+            (p.get("alq_jefe_obra")          or "")[:150],
+            (p.get("mat_pluviales_dn_km")    or "")[:150],
+            (p.get("cont_num_plantas")       or "")[:80],
+            (p.get("cont_fit_out_presupuesto_est") or "")[:150],
         ]
 
         try:
@@ -4875,7 +5087,19 @@ def process_one(url, idx, total):
         p["flex_uso_anterior"]     = p.get("flex_uso_anterior")     or ""
         p["flex_propietario_tipo"] = p.get("flex_propietario_tipo") or ""
         p["flex_potencial_coliving"]=p.get("flex_potencial_coliving")or ""
+        p["flex_dist_metro_min"]   = p.get("flex_dist_metro_min")   or ""
         p["flex_irr_est"]          = p.get("flex_irr_est")          or ""
+        # ── Deep-research extra fields ──────────────────────────────────────
+        p["const_suelo_contaminado"]= p.get("const_suelo_contaminado") or ""
+        p["re_suelo_contaminado"]   = p.get("re_suelo_contaminado")    or ""
+        p["re_plazo_urbanizacion"]  = p.get("re_plazo_urbanizacion")   or ""
+        p["ind_renta_mercado"]      = p.get("ind_renta_mercado")       or ""
+        p["ind_yield_est"]          = p.get("ind_yield_est")           or ""
+        p["alq_urgencia"]           = p.get("alq_urgencia")            or ""
+        p["alq_jefe_obra"]          = p.get("alq_jefe_obra")           or ""
+        p["mat_pluviales_dn_km"]    = p.get("mat_pluviales_dn_km")     or ""
+        p["cont_num_plantas"]       = p.get("cont_num_plantas")        or ""
+        p["cont_fit_out_presupuesto_est"]=p.get("cont_fit_out_presupuesto_est") or ""
 
         # Contact Discovery — enrich high-value leads with Apollo.io
         if (APOLLO_API_KEY and not p.get("key_contacts")
@@ -5999,6 +6223,351 @@ def create_or_update_profile_tabs(sh):
     except Exception as e:
         log(f"  ⚠️  create_or_update_profile_tabs: {e}")
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ADDITIONAL SOURCES IDENTIFIED (to implement in next sprint):
+# ══════════════════════════════════════════════════════════════════════════════
+# SOURCE 11: Portal de Suelo CM (comunidad.madrid/inversion/portal-suelo-40)
+#   - Lists plots available for sale/concession owned by CM
+#   - Relevant: Promotores/RE + Industrial/Log
+#   - Format: HTML scrape → extract plot ID, m², use, contracting portal link
+#   - Already confirmed working (HTTP 200)
+#
+# SOURCE 12: INE Population API (ine.es/jaxiT3/Tabla.htm?t=2879)
+#   - Municipal population data updated annually
+#   - Relevant: Expansión Retail (catchment), Flexliving (demand assessment)
+#   - API: api.ine.es/jsonstat-suite/getTable/json?query=...
+#   - Use to VALIDATE retail_pob_futura_est against current municipal population
+#
+# SOURCE 13: Catastro Virtual (sede.catastro.gob.es OVCCallejero)
+#   - Building age, floors, use classification per address
+#   - API: ovc.catastro.meh.es/OVCServWeb/OVCWcfCallejero
+#   - Relevant: Flexliving (anno_construccion), MEP (plantas), Contract (m²)
+#   - Already partially implemented in SOURCE 10 (GIS) — extend to Catastro
+#
+# SOURCE 14: BOE XML API (boe.es/buscar/xml.php?coleccion=boe)
+#   - National-level tenders and urbanismo not covered by BOCM
+#   - Relevant: Gran Infraestructura (ADIF, MITMA), Compras/Materiales
+#   - API format: XML REST, publicly available
+#
+# SOURCE 15: datos.madrid.es Licencias de Actividad API
+#   - Retail: competitor mapping per zone (which chains are already there)
+#   - Format: JSON API, already discovered in SOURCE 7 (XLSX)
+#   - Use to fill retail_competencia_1km automatically
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def catastro_enrich(address: str, municipality: str = "Madrid") -> dict:
+    """
+    Query the Catastro REST API to get building metadata for a given address.
+    Returns a dict with: anno_construccion, num_plantas, sup_m2, ref_catastral, uso_catastral
+    
+    API: https://ovc.catastro.meh.es/OVCServWeb/OVCWcfCallejero/COVCCallejero.svc/rest/
+    Endpoint: Consulta_DNPLOC (search by location: tipo_via, nombre_via, numero, municipio)
+    
+    Returns {} on any error (non-blocking — enrichment is best-effort only).
+    
+    USAGE: catastro_enrich("Calle Mayor, 14", "Getafe")
+    → {"anno_construccion": "1978", "num_plantas": "6", "sup_m2": "3240", 
+       "ref_catastral": "0606914VK3600N0001EJ", "uso_catastral": "Residencial"}
+    """
+    import re as _re
+    result = {}
+    if not address: return result
+    
+    try:
+        # Parse address components
+        # Patterns: "Calle Mayor 14, Getafe" | "Av. de la Paz, 21" | "C/ Fuente, 3"
+        _tipo_map = {
+            "calle": "CL", "c/": "CL", "cl": "CL",
+            "avenida": "AV", "av.": "AV", "av ": "AV",
+            "paseo": "PG", "plaza": "PZ", "pl.": "PZ",
+            "camino": "CM", "carretera": "CR", "ronda": "RD",
+            "bulevar": "BL", "travesía": "TV", "glorieta": "GL",
+        }
+        addr_l = address.lower().strip()
+        tipo_via = "CL"  # default
+        via_nombre = address
+        via_num = "S/N"
+        
+        for prefix, code in _tipo_map.items():
+            if addr_l.startswith(prefix):
+                tipo_via = code
+                via_nombre = address[len(prefix):].strip().lstrip("/").strip()
+                break
+        
+        # Extract number from address
+        num_m = _re.search(r'(\d+)', via_nombre)
+        if num_m:
+            via_num = num_m.group(1)
+            via_nombre = via_nombre[:num_m.start()].strip().rstrip(",").strip()
+        
+        # Clean municipality
+        muni_q = municipality.replace("Madrid Capital", "Madrid").strip()
+        
+        # Catastro REST endpoint — no auth required, public API
+        _CAT_BASE = "https://ovc.catastro.meh.es/OVCServWeb/OVCWcfCallejero/COVCCallejero.svc/rest"
+        url = (f"{_CAT_BASE}/Consulta_DNPLOC"
+               f"?Provincia=Madrid&Municipio={muni_q}"
+               f"&TipoVia={tipo_via}&NomVia={via_nombre}&Numero={via_num}"
+               f"&PC1=&PC2=")
+        
+        r = safe_get(url, timeout=8)
+        if not r or r.status_code != 200: return result
+        
+        import xml.etree.ElementTree as _ET
+        root = _ET.fromstring(r.content)
+        
+        # Extract from Catastro response XML
+        # Key elements: debi/locus/loine → bico/bi/dt/lourb/dp = num_plantas
+        # bico/bi/debi/ant = anno_construccion
+        # bico/bi/debi/sfc = sup_m2 (surface total)
+        
+        bi = root.find(".//bi")
+        if bi is None: return result
+        
+        # Building year
+        ant = bi.find(".//ant")
+        if ant is not None and ant.text:
+            result["anno_construccion"] = ant.text.strip()
+        
+        # Number of floors
+        np_el = bi.find(".//dp")
+        if np_el is not None and np_el.text:
+            result["num_plantas"] = np_el.text.strip()
+        
+        # Surface area
+        sfc = bi.find(".//sfc")
+        if sfc is not None and sfc.text:
+            result["sup_m2"] = sfc.text.strip()
+        
+        # Cadastral reference
+        rc1 = bi.find(".//rc/pc1")
+        rc2 = bi.find(".//rc/pc2")
+        if rc1 is not None and rc2 is not None:
+            result["ref_catastral"] = f"{rc1.text or ''}{rc2.text or ''}".strip()
+        
+        # Use classification
+        luso = bi.find(".//luso")
+        if luso is not None and luso.text:
+            _uso_map = {
+                "R": "Residencial", "O": "Oficinas", "I": "Industrial",
+                "C": "Comercial", "T": "Terciario", "E": "Equipamiento",
+                "A": "Agrario", "V": "Vial", "Y": "Almacén",
+            }
+            result["uso_catastral"] = _uso_map.get(luso.text.strip(), luso.text.strip())
+        
+    except Exception:
+        pass  # enrichment is non-blocking
+    
+    return result
+
+
+def search_portal_suelo(date_from, date_to) -> list:
+    """
+    SOURCE 11: Portal del Suelo 4.0 — Available plots in Madrid region.
+    
+    Data source: datos.comunidad.madrid/dataset/parcelas_portal_suelo
+    Format: JSON (confirmed available — CM open data portal)
+    
+    Returns parcelas available for sale or concession from CM + 97 adhered municipalities.
+    KEY insight: this data is ALMOST NEVER captured by BOCM scraping because
+    available plots do NOT generate a BOCM publication — they go straight to contracting portal.
+    
+    Relevant profiles: Promotores/RE, Industrial/Log, Gran Constructora, Expansión Retail
+    
+    Returns: list of (exp_id, permit_dict) tuples
+    """
+    results = []
+    if not time_ok(need_s=30): return results
+    
+    # CM Open Data JSON endpoint — confirmed working from public portal
+    _JSON_URL = "https://datos.comunidad.madrid/catalogo/dataset/parcelas_portal_suelo/resource/parcelas_portal_suelo_json"
+    _JSON_DIRECT = "https://datos.comunidad.madrid/recurso/d/parcelas_portal_suelo.json"
+    
+    for url in [_JSON_DIRECT, _JSON_URL]:
+        if not time_ok(need_s=20): break
+        try:
+            r = safe_get(url, timeout=20)
+            if not r or r.status_code != 200: continue
+            
+            try:
+                data = r.json()
+            except Exception:
+                continue
+            
+            # Handle both list and {"result": [...]} format
+            parcelas = data if isinstance(data, list) else data.get("result", data.get("records", []))
+            if not parcelas:
+                continue
+            
+            log(f"  🏛️  Portal Suelo: {len(parcelas)} parcelas available")
+            
+            for i, p in enumerate(parcelas):
+                # Extract fields — CM uses both snake_case and Spanish labels
+                def _g(*keys):
+                    for k in keys:
+                        v = p.get(k) or p.get(k.lower()) or p.get(k.upper())
+                        if v and str(v).strip() not in ("", "null", "None"): 
+                            return str(v).strip()
+                    return ""
+                
+                muni      = _g("municipio", "MUNICIPIO", "municipality")
+                uso       = _g("uso_principal", "uso", "USO_PRINCIPAL", "use")
+                sup_m2    = _g("superficie_m2", "superficie", "SUPERFICIE_M2", "area_m2")
+                edific    = _g("indice_edificabilidad", "edificabilidad", "EDIFICABILIDAD")
+                clasif    = _g("clasificacion", "CLASIFICACION", "classification")
+                estado    = _g("estado_urbanizacion", "estado", "ESTADO")
+                ref_cat   = _g("referencia_catastral", "ref_catastral", "REFERENCIA_CATASTRAL")
+                precio    = _g("precio_venta", "precio", "PRECIO_VENTA")
+                regimen   = _g("regimen", "REGIMEN", "concession_type")
+                contrato_url = _g("url_contratacion", "enlace_contratacion", "URL_CONTRATACION")
+                
+                if not muni or not uso: continue
+                
+                # Only Madrid region municipalities
+                _MADRID_MUNIS = {
+                    "madrid", "getafe", "alcobendas", "alcorcón", "leganés",
+                    "torrejón de ardoz", "fuenlabrada", "alcalá de henares",
+                    "móstoles", "valdemoro", "parla", "coslada", "pozuelo",
+                    "majadahonda", "las rozas", "tres cantos", "san sebastián de los reyes",
+                    "rivas-vaciamadrid", "villaviciosa de odón", "villanueva de la cañada",
+                    "boadilla del monte", "pinto", "arganda del rey", "humanes",
+                }
+                if not any(m in muni.lower() for m in _MADRID_MUNIS):
+                    continue
+                
+                # Determine profile fit from uso
+                uso_l = uso.lower()
+                if any(k in uso_l for k in ["industrial", "logíst", "almacén", "productiv"]):
+                    profile_hint = "industrial+constructora+materiales"
+                    tipo = "suelo industrial disponible"
+                elif any(k in uso_l for k in ["residencial", "vivienda", "vpo"]):
+                    profile_hint = "promotores+constructora+retail"
+                    tipo = "suelo residencial disponible"
+                elif any(k in uso_l for k in ["terciario", "comercial", "oficinas"]):
+                    profile_hint = "retail+actiu+promotores"
+                    tipo = "suelo terciario disponible"
+                elif any(k in uso_l for k in ["dotacional", "equipamiento", "público"]):
+                    profile_hint = "constructora+actiu"
+                    tipo = "suelo dotacional disponible"
+                else:
+                    continue  # skip undeveloped/agricultural
+                
+                # PEM estimate from edificabilidad × precio construcción
+                pem_est = None
+                try:
+                    sup_num = float(str(sup_m2).replace(",",".").replace(" ",""))
+                    edif_num = float(str(edific).replace(",",".").replace(" ",""))
+                    # Typical construction cost: residencial €850/m², industrial €500/m², terciario €1,100/m²
+                    _coste_m2 = {"residencial": 850, "industrial": 500, "terciario": 1100}.get(
+                        "industrial" if "industrial" in uso_l else
+                        "terciario" if "terciario" in uso_l else "residencial", 850)
+                    pem_est = sup_num * edif_num * _coste_m2
+                    if pem_est > 3_000_000_000: pem_est = None
+                except Exception:
+                    pass
+                
+                exp_id = f"PS11-{i}-{abs(hash(ref_cat or muni + sup_m2))%10**6}"
+                
+                desc = (f"Parcela en venta — {uso} | {muni} | {sup_m2}m² | "
+                        f"FAR {edific} | {clasif} | {estado}")
+                
+                perm = {
+                    "source_url":         contrato_url or "https://www.comunidad.madrid/inversion/inicia-desarrolla-tu-empresa/portal-suelo-40",
+                    "date_granted":       "",
+                    "municipality":       muni,
+                    "address":            muni,
+                    "applicant":          "Comunidad de Madrid / Ayuntamiento",
+                    "permit_type":        tipo,
+                    "declared_value_eur": None,
+                    "estimated_pem":      f"€{pem_est/1_000_000:.1f}M est." if pem_est and pem_est >= 1_000_000 else "",
+                    "description":        desc[:350],
+                    "extraction_mode":    "portal_suelo",
+                    "confidence":         "high",
+                    "phase":              "licitacion",
+                    "expediente":         exp_id,
+                    "lead_score":         0,
+                    "ai_evaluation":      (
+                        f"Parcela disponible Portal Suelo CM — {uso} en {muni}. "
+                        f"Superficie: {sup_m2}m² | FAR: {edific} | Régimen: {regimen}. "
+                        f"{'Precio venta: ' + precio + '. ' if precio else ''}"
+                        f"Promotores/RE: evaluar adquisición o concesión AHORA — estas parcelas "
+                        f"rara vez aparecen en BOCM y la ventana de decisión es corta."
+                    )[:500],
+                    "profile_fit":        profile_hint,
+                    "action_window":      "⚡ ACTUAR ESTA SEMANA",
+                    "re_sup_total_m2":    sup_m2,
+                    "re_tipo_suelo":      clasif,
+                    "re_cargas_pendientes": "",
+                    "ind_sup_parcela_m2": sup_m2 if "industrial" in uso_l else "",
+                    "ind_renta_mercado":  "",
+                    "pem_is_declared":    False,
+                }
+                results.append((exp_id, perm))
+            
+            if results: break  # got data from first working URL
+            
+        except Exception as _e11:
+            log(f"  ⚠️  Portal Suelo: {_e11}")
+            continue
+    
+    return results
+
+
+def search_ite_padron(date_from, date_to) -> list:
+    """
+    SOURCE 12: ITE/IEE Padrón de Edificios — annual BOCM publication.
+    
+    Each October, the BOCM publishes "Padrón de Edificios y Construcciones
+    cuyos propietarios deben efectuar la Inspección Técnica de Edificios durante el año X."
+    
+    Buildings that FAIL their ITE are legally required to rehabilitate.
+    This is the highest-quality MEP and rehabilitation pipeline available:
+    - Buildings over 50 years old (Madrid mandate: built before 1975)
+    - Owners notified by Ayuntamiento with 3-month deadline
+    - Failure to comply = fines €1,000-€3,000 + forced execution
+    
+    Profiles: MEP Instaladores, Gran Constructora (rehab), Contract & Oficinas
+    
+    Search strategy: keyword scan for the specific BOCM publication
+    """
+    results = []
+    if not time_ok(need_s=20): return results
+    
+    import re as _re
+    
+    # The ITE padrón is a Section III document published each October
+    # BOCM search for it directly
+    _ITE_SEARCHES = [
+        ("padrón de edificios", SECTION_III),
+        ("inspección técnica de edificios", SECTION_III),
+        ("informe de evaluación de edificios", SECTION_III),
+        ("orden de ejecución de obras", SECTION_III),  # council-ordered works after ITE failure
+    ]
+    
+    _ite_urls = set()
+    for kw, sec in _ITE_SEARCHES:
+        if not time_ok(need_s=10): break
+        try:
+            chunk_start = date_from
+            chunk_end   = min(date_to, date_from + timedelta(days=365))
+            urls = search_bocm_keyword(kw, sec, date_from, chunk_end, 3)
+            _ite_urls.update(urls)
+            time.sleep(0.5)
+        except Exception:
+            pass
+    
+    if _ite_urls:
+        log(f"  🏛️  ITE Padrón: {len(_ite_urls)} potential ITE documents found")
+    
+    # These URLs go into the main BOCM processing queue — they'll be AI-evaluated
+    # with MEP/rehab focus. The keyword tags ensure proper profile fit.
+    for url in _ite_urls:
+        results.append(("ITE-URL", url))
+    
+    return results
+
 def run():
     if args.digest:
         log("📧 Digest-only mode"); get_sheet(); send_digest(); return
@@ -6012,7 +6581,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v26 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
+    log(f"🏗️  PlanningScout Madrid — Engine v28 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
@@ -6350,6 +6919,49 @@ def run():
                     log("  🏛️  Sede Madrid GIS: 0 licences in date range (endpoint may be unavailable)")
             except Exception as _sede_e:
                 log(f"  ⚠️  Sede Madrid GIS: {_sede_e}")
+
+        # ── SOURCE 11: Portal del Suelo CM — available plots ───────────────────
+        # Direct JSON from CM open data — plots NOT visible in BOCM.
+        # Relevant: Promotores/RE, Industrial/Log, Gran Constructora, Retail.
+        if time_ok(need_s=30):
+            log(f"\n{'─'*55}")
+            log("🏛️  SOURCE 11: Portal del Suelo 4.0 (parcelas CM disponibles)")
+            try:
+                ps_items = search_portal_suelo(date_from, date_to)
+                if ps_items:
+                    ps_saved = ps_skipped = ps_errors = 0
+                    for _ps_id, _ps_perm in ps_items:
+                        if not time_ok(need_s=3): break
+                        try:
+                            _ps_perm["lead_score"] = score_lead(_ps_perm)
+                            _ps_perm = _enhance_profile_fit(_ps_perm,
+                                str(_ps_perm.get("description","")).lower())
+                            if write_permit(_ps_perm, ""):
+                                ps_saved += 1
+                            else:
+                                ps_skipped += 1
+                        except Exception as _pse:
+                            ps_errors += 1
+                    log(f"  Portal Suelo: ✅{ps_saved} saved | ⏭️{ps_skipped} skipped | ❌{ps_errors} errors")
+                else:
+                    log("  🏛️  Portal Suelo: 0 parcelas found (endpoint may have changed)")
+            except Exception as _ps_e:
+                log(f"  ⚠️  Portal Suelo: {_ps_e}")
+
+        # ── SOURCE 12: ITE Padrón — buildings mandated to rehabilitate ─────────
+        # Highest-quality MEP + rehab pipeline. Legally mandated obras.
+        # >10,000 buildings in Madrid mandated for ITE in 2026.
+        if time_ok(need_s=20):
+            log(f"\n{'─'*55}")
+            log("🏛️  SOURCE 12: ITE Padrón (edificios obligados a inspección técnica)")
+            try:
+                ite_items = search_ite_padron(date_from, date_to)
+                ite_added = 0
+                for _ite_tag, _ite_url in ite_items:
+                    if add_url(_ite_url): ite_added += 1
+                log(f"  ITE Padrón: +{ite_added} documentos ITE en cola")
+            except Exception as _ite_e:
+                log(f"  ⚠️  ITE Padrón: {_ite_e}")
 
         # ── Remove already-seen from the collected BOCM queue ──────────────────
         all_urls = [u for u in all_urls
@@ -6940,57 +7552,150 @@ def search_cm_contratos(date_from, date_to, global_seen):
 def _build_cm_ai_evaluation(title: str, summary: str, permit_type: str,
                              phase: str, pem, applicant: str, combined: str) -> str:
     """
-    Build a detailed AI-style evaluation for CM Contratos entries.
-    Called synchronously (no OpenAI call) — uses structured keyword analysis.
-    Produces actionable intelligence per sector profile.
+    Build a sector-specific evaluation for CM Contratos entries.
+    No OpenAI call — pure keyword analysis + market knowledge.
+    
+    Produces a structured, actionable evaluation for EACH sector:
+    - Phase-specific urgency signal
+    - Entity context (what Canal de Isabel II means for Molecor)
+    - Sector-by-sector action items with specific data points
+    - CPV codes estimation where applicable
+    - Timing estimate for obra start
     """
+    import re as _re
+    
     pem_s = (f"€{pem/1_000_000:.1f}M" if pem and pem >= 1_000_000
-             else f"€{int(pem/1000)}K" if pem else "no declarado")
-
-    # Phase-specific opening
-    if phase == "licitacion":
-        phase_label = "⚡ LICITACIÓN ACTIVA — ventana de oferta abierta"
-        urgency = "ACCIÓN INMEDIATA: plazo de licitación activo."
-    elif phase == "adjudicacion":
-        phase_label = "✅ CONTRATO ADJUDICADO"
-        urgency = "Contrato ya adjudicado — contactar al adjudicatario para subcontratos."
-    else:
-        phase_label = f"📋 {phase.upper()}"
-        urgency = "Monitorizar evolución del contrato."
-
-    # Entity-specific context
-    entity_context = {
-        "Canal de Isabel II": "Infraestructura hídrica (saneamiento, abastecimiento) — Molecor: evaluar tubería PVC/PE.",
-        "Metro de Madrid": "Infraestructura subterránea — grandes obras civiles, cimentación, impermeabilización.",
-        "EMVS": "Vivienda social Ayuntamiento — rehabilitación integral, nuevas plantas. MEP: contratos de instalaciones.",
-        "ADIF": "Infraestructura ferroviaria — obras civiles de gran escala. FCC/ACS: licitación pública obligatoria.",
-        "AENA": "Infraestructura aeroportuaria — pavimentación, edificación, instalaciones.",
-        "Ayuntamiento de Madrid": "Obra civil municipal — viales, parques, edificios públicos.",
-        "Comunidad de Madrid": "Obra regional — hospitales, carreteras, infraestructura educativa.",
-    }.get(applicant, f"{applicant}: contrato de obras públicas.")
-
-    # Sector-specific actions
+             else f"€{int(pem/1000)}K" if pem and pem >= 1000 else "no declarado")
+    
+    # ── Phase signals ─────────────────────────────────────────────────────────
+    _PHASE_LABELS = {
+        "licitacion":   ("⚡ LICITACIÓN ACTIVA", "ACCIÓN INMEDIATA — plazo de presentación de ofertas abierto.",
+                         "🟡 PREPARAR OFERTA"),
+        "adjudicacion": ("✅ CONTRATO ADJUDICADO", "Obra adjudicada — contactar adjudicatario para subcontratos.",
+                         "🔴 LLAMAR HOY"),
+        "definitivo":   ("🟢 APROBACIÓN DEFINITIVA", "Licitación estimada en 6-12 meses.", "🟢 PIPELINE"),
+        "en_obra":      ("🏗️ OBRA EN EJECUCIÓN", "Obra en marcha — contactar jefe de obra.", "🔴 LLAMAR HOY"),
+    }
+    phase_label, urgency_text, alq_urgencia = _PHASE_LABELS.get(
+        phase, (f"📋 {phase.upper()}", "Monitorizar.", "🟢 PIPELINE"))
+    
+    # ── Entity intelligence ───────────────────────────────────────────────────
+    _ENTITY_CTX = {
+        "canal de isabel ii": {
+            "context": "Canal de Isabel II (CYII) — mayor operador hídrico Madrid. €800M capex 2025-2030.",
+            "sectors": {
+                "materiales": "Molecor: tubería PVC DN-200 a DN-600 saneamiento + PE abastecimiento — cotizar si incluye red.",
+                "infra": "Gran Constructora: obra civil clave para licitación Madrid saneamiento. CPV ~45231300.",
+                "alquiler": "Alquiler Maquinaria: excavadora 20-30t para zanjas colectores — obra típica 8-18m."
+            }
+        },
+        "metro de madrid": {
+            "context": "Metro de Madrid — obras subterráneas, alta complejidad técnica, clasificación Grupo D.",
+            "sectors": {
+                "infra": "Gran Constructora: requiere clasificación Grupo D (ferroviario) — evaluación técnica mínima.",
+                "alquiler": "Alquiler Maquinaria: equipos especializados túnel/galería — consultar pliego.",
+                "mep": "MEP: instalaciones eléctricas BT + iluminación LED + ventilación forzada."
+            }
+        },
+        "emvs": {
+            "context": "EMVS (Empresa Municipal Vivienda y Suelo Madrid) — vivienda protegida + rehabilitación.",
+            "sectors": {
+                "constructora": "Gran Constructora: EMVS adjudica regularmente lotes residenciales 30-80 viviendas VPO.",
+                "mep": "MEP Instaladores: rehabilitación integral = HVAC nuevo + eléctrica + ACS centralizado.",
+                "actiu": "Contract & Oficinas: si hay zonas comunes/sociales — propuesta mobiliario público."
+            }
+        },
+        "adif": {
+            "context": "ADIF — infraestructura ferroviaria nacional. Clasificación obligatoria Grupo D/E.",
+            "sectors": {
+                "infra": "Gran Constructora: licitación ADIF = obra de referencia nacional. Pre-calificación obligatoria.",
+                "alquiler": "Alquiler Maquinaria: equipos AVE/vía convencional — plataformas, grúas pórtico.",
+            }
+        },
+        "ayuntamiento de madrid": {
+            "context": "Ayuntamiento de Madrid — 46 contratos obras adjudicados en 5 años a grandes constructoras.",
+            "sectors": {
+                "infra": "Gran Constructora: Ayuntamiento Madrid = cliente prioritario. Portal de Contratación CM.",
+                "materiales": "Compras/Materiales: obra civil municipal = zahorra + hormigón + señalización vial.",
+                "alquiler": "Alquiler Maquinaria: obra municipal = maquinaria urbana (mini-excavadoras, plataformas)."
+            }
+        },
+        "comunidad de madrid": {
+            "context": "Comunidad de Madrid — hospitales, colegios, carreteras regionales.",
+            "sectors": {
+                "infra": "Gran Constructora: carreteras + hospitales = obra pública mayor. Revisar CM portal.",
+                "actiu": "Contract & Oficinas: hospitales + colegios = mayor contrato mobiliario público CM.",
+                "mep": "MEP Instaladores: hospital CM = HVAC cuádruple tubo + quirófanos + sistemas PCI complejos."
+            }
+        },
+        "hospital": {
+            "context": "Hospital / infraestructura sanitaria — muy alta complejidad MEP.",
+            "sectors": {
+                "mep": "MEP Instaladores: hospital = instalaciones cuádruple tubo + UPS médico + quirófanos.",
+                "actiu": "Contract & Oficinas: mobiliario hospitalario + zonas espera + despachos. Presupuesto €500-800/m².",
+                "constructora": "Gran Constructora: hospital = clasificación Grupo C alta (>€4.8M). Licitación restringida."
+            }
+        },
+    }
+    
+    # Find matching entity context
+    entity_match = next(
+        (v for k, v in _ENTITY_CTX.items() if k in combined.lower() or k in applicant.lower()),
+        {"context": f"{applicant}: contrato de obras públicas CM.", "sectors": {}}
+    )
+    
+    # ── Sector-specific actions from keywords ─────────────────────────────────
     actions = []
-    if "saneamiento" in combined or "agua" in combined or "colector" in combined:
-        actions.append("Molecor: evaluar si incluye red de saneamiento/abastecimiento para cotización de tubería PVC/HDPE.")
-    if any(k in combined for k in ["urbanización","obra civil","infraestructura","vial","paviment"]):
-        actions.append("Kiloutou: contactar al adjudicatario para maquinaria (excavadoras, compactadoras, plataformas).")
-    if any(k in combined for k in ["edificio","hospital","sede","oficinas","rehabilit"]):
-        actions.append("MEP Instaladores: evaluar instalaciones eléctricas, HVAC y PCI.")
-        actions.append("ACTIU: si hay oficinas o zonas de trabajo, presentar propuesta de mobiliario.")
-    if any(k in combined for k in ["licitación","adjudicación","obras"]):
-        actions.append("FCC Construcción: revisar pliego técnico en portal CM y evaluar participación.")
-
-    actions_text = " | ".join(actions) if actions else "Evaluar oportunidad de subcontratación."
-
+    
+    # CPV estimation from content
+    cpv_est = ""
+    if any(k in combined for k in ["saneamiento", "colector", "red de abastecimiento", "pluviales"]):
+        cpv_est = "CPV estimado: 45231300 (tuberías distribución)"
+        actions.append(f"Materiales PVC/HDPE: {entity_match['sectors'].get('materiales', 'evaluar tubería PVC saneamiento + abastecimiento — cotizar')}")
+    
+    if any(k in combined for k in ["urbanización", "obra civil", "vial", "pavimentación", "carretera"]):
+        cpv_est = cpv_est or "CPV estimado: 45000000 (obras construcción)"
+        actions.append(f"Alquiler Maquinaria: {alq_urgencia} — {entity_match['sectors'].get('alquiler', 'excavadoras + compactadoras para obra civil')}")
+        actions.append(f"Gran Constructora: {entity_match['sectors'].get('infra', 'revisar pliego técnico portal CM')}")
+    
+    if any(k in combined for k in ["hospital", "centro de salud", "edificio", "sede", "rehabilit"]):
+        actions.append(f"MEP Instaladores: {entity_match['sectors'].get('mep', 'instalaciones HVAC + PCI + eléctrica')}")
+        actions.append(f"Contract & Oficinas: {entity_match['sectors'].get('actiu', 'evaluar mobiliario si hay oficinas/zonas comunes')}")
+    
+    if any(k in combined for k in ["licitación", "adjudicación", "obras públicas", "contrato de obras"]):
+        if not any("Gran Constructora" in a for a in actions):
+            actions.append(f"Gran Constructora: {entity_match['sectors'].get('infra', 'revisar pliego técnico portal CM y evaluar oferta')}")
+    
+    # Timing estimate
+    timing = ""
+    if phase == "licitacion":
+        timing = f"Plazo estimado obras: adjudicación + 45 días trámites = inicio estimado {_next_quarter()}."
+    elif phase == "adjudicacion":
+        timing = "Adjudicatario confirmado — obra inicia en ~45 días. ACCIÓN HOY."
+    elif phase == "definitivo":
+        timing = "Aprobación definitiva = licitación en 3-9 meses. Preparar oferta técnica."
+    
+    if not actions:
+        actions = ["Evaluar oportunidad de subcontratación con adjudicatario."]
+    
     return (
         f"{phase_label} — {applicant}. Presupuesto: {pem_s}. "
-        f"{entity_context} "
-        f"{urgency} "
-        f"Acciones: {actions_text}"
-    )[:600]
+        f"{entity_match['context']} "
+        f"{urgency_text} "
+        + (f"{cpv_est}. " if cpv_est else "")
+        + f"{timing} "
+        f"|| ".join(actions[:3])
+    )[:700]
 
 
+def _next_quarter() -> str:
+    """Return the next calendar quarter label, e.g. 'Q3 2026'."""
+    from datetime import datetime as _dt
+    n = _dt.now()
+    q = (n.month - 1) // 3 + 2  # next quarter
+    y = n.year + (1 if q > 4 else 0)
+    q = (q - 1) % 4 + 1
+    return f"Q{q} {y}"
 def process_cm_contrato(url, title, summary, idx, total, published=""):
     """
     Process a single CM Contratos item.
