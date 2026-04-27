@@ -3520,62 +3520,17 @@ Structure:
 2. SCALE/CONTEXT: extracted data (parcelas, m², viviendas, plazo)
 3. TIMING: phase, extracted plazo, next milestone.
 4. SECTOR CALLOUTS — use ROLE labels, never company names:
-   Gran Constructora / Infraestructura: "Gran Constructora: pre-calificarse para licitación civil — estimado X meses."
-   Alquiler Maquinaria: "Alquiler Maquinaria: excavadoras 30t + compactadores estimado semana [N] de [Mes] — contactar promotor ahora."
-   Flexliving / Hospedaje: "Operador Flexliving: contactar al promotor ANTES de comercialización."
-   Materiales Saneamiento: "Materiales PVC: colector DN-X ~Xkm + red abastecimiento DN-X ~Xkm — cotizar YA."
-   Retail / Restauración: "Expansión Retail: zona [tipo] en [muni] — evaluar superficie disponible."
-   Contract Furniture: "Mobiliario Contract: contactar promotor en fase de proyecto básico."
-   RE / Promotores: "Inversión RE: entrada en JC / adquisición de suelo — evaluar ahora."
-5. QUANTITIES: any m², viviendas, pipes, machinery from document.
-
-SECTOR-SPECIFIC JSON FIELDS — RESEARCH-BACKED INTELLIGENCE FOR EACH PROFILE
-════════════════════════════════════════════════════════════════════════════════
-Fill ALL applicable fields based on what you can extract from the document +
-what you know about Madrid geography, market benchmarks, and urbanismo law.
-Use "" for fields that genuinely don't apply to this document type.
-NEVER invent data — use "estimado" or "~" to flag estimates.
-
-━━━ 🏗️ GRAN INFRAESTRUCTURA (licitaciones, urbanizaciones > €5M) ━━━
-These are the fields that bid departments need. Critical 2026 context:
-- Spain construction market: €83.5B total in 2026, CAGR 3.1% to 2030
-- Madrid: ADIF/MITMA Corredor Central AVE upgrade (~€12B pipeline), A-5 widening, M-40/M-50 improvements
-- Canal de Isabel II: €800M capex plan 2025-2030 (saneamiento + abastecimiento)
-- Data centre corridor Madrid/Alcalá de Henares: Microsoft, Blackstone, Amazon, Telefónica all building
-- CPV classification mandatory for EU-funded tenders (FEDER/MRR) — extract always
-- Clasificación empresarial: required for contracts > €500K (RD 1098/2001 Ley LCSP)
-
-"infra_cpv_codes":
-  Extract from pliego. If not found, estimate from project type:
-  45000000=obras construcción | 45231300=tuberías distribución | 45233100=autopistas
-  45214200=centros enseñanza | 45213150=plataformas logísticas | 45315100=instalaciones eléctricas
-"infra_pbl_eur":
-  NUMERIC ONLY. Presupuesto Base de Licitación = total contract value as integer.
-  Extract "base imponible", "presupuesto de licitación", "valor estimado contrato"
-"infra_deadline":
-  Bid submission deadline. Extract "plazo de presentación de ofertas" or "fecha límite".
-  Format: "15/06/2026" or "15 días hábiles desde publicación" or "estimado Q3 2026"
-"infra_criteria":
-  "Precio 60% + Criterios técnicos 40%" — extract from pliego criterios adjudicación.
-  If not found: infer from procedure type (abierto = price-heavy; restringido = technical)
-"infra_clasificacion":
-  Spanish solvency classification: "Grupo E Subgrupo 1 Categoría F" (road works)
-  Groups: A=movimiento tierras | B=puentes | C=edificación | D=ferroviario | E=hidráulico
-  F=marítimo | G=viales | H=instalaciones | I=instalaciones eléctricas
-  Category based on PBL: A<€150K | B<€360K | C<€840K | D<€2.4M | E<€4.8M | F>€4.8M
-"infra_procedure":
-  "Abierto" (>€5.35M obras) | "Restringido" | "Negociado sin publicidad" | "Diálogo competitivo"
-"infra_contracting_body":
-  Full name of contracting authority from document header.
-
-━━━ 🏢 GRAN CONSTRUCTORA (obra nueva, planes parciales, urbanizaciones) ━━━
-Key insight from real BOCM PDFs: plazo 24 meses from acta de replanteo is standard.
-10% suelo cesión obligatoria al Ayuntamiento (LSCM art. 18).
-Suelos contaminados declaration ALWAYS present in reparcelación documents.
-
-"const_num_viviendas":
-  Extract "X viviendas" from plan. Also note: "VPO X%" if mixed.
-  If plan parcial: estimate from m² edificables ÷ 90m²/vivienda (Madrid standard).
+   🏗️ Gran Constructora / Infraestructura: "Gran Constructora: pre-calificarse para licitación civil — PBL €XM — estimado X meses."
+   🚧 Alquiler Maquinaria: "Alquiler Maquinaria: exc.30t × N semanas + compactadora estimado [Mes YYYY] — llamar promotor/contratista hoy."
+   🏠 Flexliving / Hospedaje: "Operador Flexliving: edificio [año est.], [N] plantas, único/comunidad propietario — ANTES de comercialización."
+   🛒 Materiales: "Materiales PVC: colector DN-400 ~X.Xkm + abast. DN-200 ~X.Xkm — ~Xt PVC — cotizar YA."
+   🏪 Retail: "Expansión Retail: [N] hab. futuros | renta €X/año | [competidores] — ventana apertura [fecha est.]."
+   💼 Contract: "Contract: [N] puestos | €X-XM equipamiento | arquitecto: [nombre] — contactar en proyecto básico."
+   📐 RE / Promotores: "Inversión RE: [m² ámbito], FAR [X], cargas ~€XM — JC: [contacto] — actuar ahora."
+   🔧 MEP: "MEP: [N] plantas | [Xm²] | HVAC [tipo] | [N] ascensores CTE — ventana subcontrata [X] meses."
+   🏭 Industrial: "Industrial: [Xm² nave] | alt. libre [Xm] | corredor [A-X] | yield ~[X]% — llamar promotor."
+5. QUANTITIES: m², viviendas, pipes, machinery, CPV codes from document.
+6. TIMING: "⚡ ACTUAR HOY" (adjudicación/1ª ocupación/CdU) | "📞 ESTA SEMANA" (definitivo) | "📅 30 DÍAS" (inicial) | "🔮 PIPELINE 6-18M" (solicitud/plan parcial: estimate from m² edificables ÷ 90m²/vivienda (Madrid standard).
 "const_uso_previsto":
   "residencial libre 70% + VPO 30% + PB terciario"
   Madrid VPO requirement: 30% of residential in protected soils.
@@ -5358,8 +5313,12 @@ def search_borme_new_companies(date_from, date_to):
     results   = []
     _consec_err = 0   # abort after 5 consecutive connection errors
 
-    # Only scan WEEKLY/FULL — too slow for daily (one request per working day)
-    d = date_from
+    # Always scan at least 7 working days to avoid missing BORME days
+    from datetime import timedelta as _td_b
+    _borme_start = min(date_from, date_to - _td_b(days=10))
+    if (date_to - _borme_start).days > 14:
+        _borme_start = date_to - _td_b(days=14)  # cap at 14 days to avoid timeout
+    d = _borme_start
     while d <= date_to:
         if d.weekday() >= 5:            # skip weekends
             d += timedelta(days=1); continue
@@ -5829,122 +5788,124 @@ def search_place_national(date_from, date_to):
 
 def search_sede_madrid_obras(date_from, date_to) -> list:
     """
-    SOURCE 10: Licencias urbanísticas complementarias al dataset Source 7.
+    SOURCE 10: Licencias urbanísticas del Ayuntamiento de Madrid — complemento de Source 7.
 
-    STRATEGY (v29 fix):
-    Source 7 already downloads the main datos.madrid.es XLSX (300193).
-    Source 10 adds value by querying a DIFFERENT resource: the CKAN
-    datastore for recent concesiones NOT yet in the quarterly XLSX,
-    and by trying the CM Sede Electrónica search for tipos not in Source 7.
+    Source 7 downloads the quarterly XLSX. Source 10 queries the CKAN API for
+    the same dataset to get entries NOT yet in the XLSX (more recent).
 
-    Working approach: datos.madrid.es CKAN API (same domain as Source 7,
-    confirmed accessible from GitHub Actions).
-    Resource 300193-2 covers 2026 year-to-date with more recent data than
-    the XLSX download which may be cached.
+    Uses DATOS_MADRID_PROXY (same Cloudflare Worker as Source 7) for reliability.
+    Tries multiple resource IDs (Madrid increments these yearly).
 
-    Falls back to BOCM keyword search for specific high-value licences
-    not covered by datos.madrid.es.
+    Returns list of (exp, rec_dict, source_url, profile_hint) tuples.
     """
-    results = []
+    results  = []
     if not time_ok(need_s=30): return results
 
-    # Types that complement Source 7 (which already covers most licencias)
+    import urllib.parse as _up10
+
+    _CKAN_BASE     = "https://datos.madrid.es"
+    # Madrid increments resource IDs yearly: 300193-1=2024, 300193-2=2025, 300193-3=2026
+    _RESOURCE_IDS  = [
+        f"300193-{date_to.year - 2024 + 2}",  # most likely current year
+        f"300193-{date_to.year - 2024 + 1}",  # previous year
+        "300193-2", "300193-3",               # known IDs
+    ]
+
     _TIPO_VALUABLE = {
-        "primera ocupacion", "primera ocupación", "cambio de uso",
-        "cambio de destino", "obra mayor", "rehabilitacion integral",
-        "rehabilitación integral", "licencia urbanistica de actividad",
-        "licencia urbanística de actividad", "demolicion", "demolición",
-        "urbanizacion", "urbanización", "obra mayor nueva planta",
-        "obra mayor rehabilitacion", "licencia de obras",
-        "declaracion responsable", "declaración responsable",
+        "primera ocupacion","primera ocupación","cambio de uso","cambio de destino",
+        "obra mayor","rehabilitacion integral","rehabilitación integral",
+        "licencia urbanistica de actividad","licencia urbanística de actividad",
+        "demolicion","demolición","urbanizacion","urbanización",
+        "obra mayor nueva planta","obra mayor rehabilitacion","licencia de obras",
+        "declaracion responsable","declaración responsable",
     }
 
-    import urllib.parse as _up10
-    from datetime import datetime as _dt10
+    _d_from_str = (date_from.strftime("%Y-%m-%d") if hasattr(date_from,"strftime")
+                   else str(date_from)[:10])
 
-    # ── CKAN datastore query — datos.madrid.es (confirmed accessible) ────────
-    # The CKAN API paginates at 1000 rows. Use offset for full coverage.
-    _CKAN_BASE = "https://datos.madrid.es"
-    _RESOURCE_ID = "300193-2"  # 2026 licencias dataset (year-to-date)
-
-    # Date window for filtering
-    _d_from_str = date_from.strftime("%Y-%m-%d") if hasattr(date_from, 'strftime') else str(date_from)[:10]
-    _d_to_str   = date_to.strftime("%Y-%m-%d")   if hasattr(date_to,   'strftime') else str(date_to)[:10]
-
-    for _offset in (0, 1000, 2000):
-        if not time_ok(need_s=15): break
-        _ckan_url = (
-            f"{_CKAN_BASE}/api/3/action/datastore_search"
-            f"?resource_id={_RESOURCE_ID}"
-            f"&limit=1000&offset={_offset}"
-            f"&sort=_id+desc"
-        )
-        try:
-            r = safe_get(_ckan_url, timeout=20)
-            if not r or r.status_code != 200: break
+    def _ckan_fetch(url):
+        """Fetch CKAN URL via proxy if configured, else direct via safe_get."""
+        if DATOS_MADRID_PROXY and "datos.madrid.es" in url:
+            _px = f"{DATOS_MADRID_PROXY}?url={_up10.quote(url, safe='')}"
             try:
-                _ckan_data = r.json()
-            except Exception:
+                _pr = requests.get(_px, timeout=25, verify=False,
+                                   headers={"User-Agent":"PlanningScout/1.0","Accept":"*/*"})
+                if _pr.status_code == 200: return _pr
+            except Exception: pass
+        return safe_get(url, timeout=20)
+
+    _got_data = False
+    for _RID in dict.fromkeys(_RESOURCE_IDS):  # deduplicate while preserving order
+        if _got_data or not time_ok(need_s=15): break
+        for _offset in (0, 1000, 2000):
+            if not time_ok(need_s=12): break
+            _url = (f"{_CKAN_BASE}/api/3/action/datastore_search"
+                    f"?resource_id={_RID}&limit=1000&offset={_offset}&sort=_id+desc")
+            try:
+                r = _ckan_fetch(_url)
+                if not r or r.status_code != 200: break
+                try:
+                    _data = r.json()
+                except Exception:
+                    break
+                if not _data.get("success"): break
+                _records = _data.get("result", {}).get("records", [])
+                if not _records: break
+
+                _batch = 0
+                for rec in _records:
+                    fecha_raw = str(rec.get("FECHA_CONCESION") or
+                                    rec.get("Fecha concesión") or "")[:10]
+                    if fecha_raw and fecha_raw < _d_from_str: continue
+
+                    tipo = str(rec.get("TIPO_EXPEDIENTE") or
+                               rec.get("Tipo de expediente") or "").strip()
+                    if tipo.lower() not in _TIPO_VALUABLE:
+                        if not any(t in tipo.lower() for t in
+                                   ["obra mayor","cambio de uso","primera ocupaci","rehab"]):
+                            continue
+
+                    addr = " ".join(filter(None, [
+                        rec.get("NOMBRE_VIA") or rec.get("Nombre Via") or "",
+                        rec.get("NUM_VIA")    or rec.get("Número")     or "",
+                        rec.get("DISTRITO")   or rec.get("Distrito")   or "",
+                        rec.get("BARRIO")     or rec.get("Barrio")     or "",
+                    ])).strip().title()
+
+                    exp_raw = str(rec.get("EXPEDIENTE") or
+                                  rec.get("Número de expediente") or "").strip()
+                    if not exp_raw:
+                        exp_raw = f"SEDE10-{abs(hash(addr+tipo+fecha_raw))%10**8}"
+
+                    try:
+                        pem_val = float(str(rec.get("PEM") or 0).replace(",","."))
+                    except Exception:
+                        pem_val = 0
+
+                    _src = (f"https://sede.madrid.es/portal/site/tramites/menuitem"
+                            f".62876cb64654a55e2dbd7003a8a409a0/?q={_up10.quote(addr[:50])}")
+                    results.append((exp_raw,
+                        {"TIPO_EXPEDIENTE":tipo,"DIRECCION":addr,
+                         "DISTRITO":str(rec.get("DISTRITO") or ""),
+                         "FECHA_OTORGAMIENTO":fecha_raw,"PEM":pem_val,
+                         "EXPEDIENTE":exp_raw,"INTERESADO":"Persona jurídica",
+                         "BARRIO":str(rec.get("BARRIO") or ""),"PROCEDIMIENTO":tipo},
+                        _src, "mep+constructora+hospe+retail+actiu+alquiler"))
+                    _batch += 1
+
+                if _batch > 0: _got_data = True
+                if _batch == 0 and _offset > 0: break
+                if len(_records) < 1000: break
+
+            except Exception as _ce:
+                log(f"  ⚠️  Sede Madrid GIS (CKAN {_RID} @{_offset}): {_ce}")
                 break
-            if not _ckan_data.get("success"): break
-            _records = _ckan_data.get("result", {}).get("records", [])
-            if not _records: break
-
-            _found_in_batch = 0
-            for rec in _records:
-                # Extract date and filter
-                fecha_raw = str(rec.get("FECHA_CONCESION") or rec.get("Fecha concesión") or "")[:10]
-                if fecha_raw and fecha_raw < _d_from_str: continue
-
-                tipo = str(rec.get("TIPO_EXPEDIENTE") or rec.get("Tipo de expediente") or "").strip()
-                if tipo.lower() not in _TIPO_VALUABLE:
-                    # Accept partial matches too
-                    if not any(t in tipo.lower() for t in ["obra mayor", "cambio de uso", "primera ocupaci", "rehab"]):
-                        continue
-
-                addr = " ".join(filter(None, [
-                    rec.get("NOMBRE_VIA") or rec.get("Nombre Via") or "",
-                    rec.get("NUM_VIA")    or rec.get("Número")     or "",
-                    rec.get("DISTRITO")   or rec.get("Distrito")   or "",
-                    rec.get("BARRIO")     or rec.get("Barrio")     or "",
-                ])).strip().title()
-
-                exp_raw = str(rec.get("EXPEDIENTE") or rec.get("Número de expediente") or "").strip()
-                pem_raw = rec.get("PEM") or 0
-                try: pem_val = float(str(pem_raw).replace(",",".")) if pem_raw else 0
-                except: pem_val = 0
-
-                if not exp_raw:
-                    exp_raw = f"SEDE10-{abs(hash(addr+tipo+fecha_raw))%10**8}"
-
-                _source_url = (f"https://sede.madrid.es/portal/site/tramites/menuitem"
-                               f".62876cb64654a55e2dbd7003a8a409a0/?q={_up10.quote(addr[:50])}")
-                rec_dict = {
-                    "TIPO_EXPEDIENTE": tipo,
-                    "DIRECCION":       addr,
-                    "DISTRITO":        str(rec.get("DISTRITO") or ""),
-                    "FECHA_OTORGAMIENTO": fecha_raw,
-                    "PEM":             pem_val,
-                    "EXPEDIENTE":      exp_raw,
-                    "INTERESADO":      "Persona jurídica",
-                    "BARRIO":          str(rec.get("BARRIO") or ""),
-                    "PROCEDIMIENTO":   tipo,
-                }
-                results.append((exp_raw, rec_dict, _source_url,
-                                "mep+constructora+hospe+retail+actiu+alquiler"))
-                _found_in_batch += 1
-
-            if _found_in_batch == 0 and _offset > 0: break  # no more relevant data
-            if len(_records) < 1000: break  # no more pages
-
-        except Exception as _ckan_e:
-            log(f"  ⚠️  Sede Madrid GIS (CKAN): {_ckan_e}")
-            break
 
     if results:
-        log(f"  🏛️  Sede Madrid GIS (CKAN {_RESOURCE_ID}): {len(results)} licencias")
+        log(f"  🏛️  Sede Madrid GIS: {len(results)} licencias (CKAN)")
+    elif not _got_data:
+        log(f"  🏛️  Sede Madrid GIS: CKAN unavailable — Source 7 covers Madrid capital")
     return results
-
 
 def _proc_ckan_records(records: list, results: list, valid_tipos: set):
     """Process CKAN datastore records into (exp, rec, source_url, profile_hint) tuples."""
@@ -6379,10 +6340,22 @@ def search_portal_suelo(date_from, date_to) -> list:
         "https://datos.comunidad.madrid/catalogo/dataset/parcelas_portal_suelo/resource/parcelas_portal_suelo_json",
     ]
 
+    def _suelo_get(url):
+        """Fetch Portal Suelo URL via proxy if configured, else direct."""
+        if DATOS_MADRID_PROXY and ("comunidad.madrid" in url or "datos.madrid" in url):
+            from urllib.parse import quote as _q11
+            _px = f"{DATOS_MADRID_PROXY}?url={_q11(url, safe='')}"
+            try:
+                _pr = requests.get(_px, timeout=25, verify=False,
+                                   headers={"User-Agent":"PlanningScout/1.0","Accept":"*/*"})
+                if _pr.status_code == 200: return _pr
+            except Exception: pass
+        return safe_get(url, timeout=25)
+
     for url in _SUELO_URLS:
         if not time_ok(need_s=20): break
         try:
-            r = safe_get(url, timeout=25)
+            r = _suelo_get(url)
             if not r or r.status_code != 200: continue
             
             try:
@@ -6569,11 +6542,24 @@ def search_ite_padron(date_from, date_to) -> list:
     for kw, sec in _ITE_SEARCHES:
         if not time_ok(need_s=10): break
         try:
-            chunk_start = date_from
-            chunk_end   = min(date_to, date_from + timedelta(days=365))
-            urls = search_bocm_keyword(kw, sec, date_from, chunk_end, 3)
+            # Use up to 18 months back — mandatory orders can reference old buildings
+            _ite_start = min(date_from, date_to - timedelta(days=540))
+            urls = search_bocm_keyword(kw, sec, _ite_start, date_to, max_pages=4)
             _ite_urls.update(urls)
-            time.sleep(0.5)
+            time.sleep(0.4)
+        except Exception:
+            pass
+
+    # Section II (Anuncios Ayuntamientos) — mandatory works orders year-round
+    _SECTION_II_ITE = "8386"
+    for kw in ["orden de ejecución de obras", "declaración de ruina",
+               "rehabilitación forzosa", "expediente de ruina"]:
+        if not time_ok(need_s=8): break
+        try:
+            _start2 = min(date_from, date_to - timedelta(days=180))
+            urls2 = search_bocm_keyword(kw, _SECTION_II_ITE, _start2, date_to, max_pages=3)
+            _ite_urls.update(urls2)
+            time.sleep(0.3)
         except Exception:
             pass
     
@@ -6600,7 +6586,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v29 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
+    log(f"🏗️  PlanningScout Madrid — Engine v30 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
@@ -8169,19 +8155,32 @@ def search_datos_madrid(date_from, date_to, global_seen):
         profile_hint, phase, action_window = _TIPO_MAP.get(
             tipo, ("constructora+mep", "solicitud", "📅 MONITORIZAR"))
 
-        # Date filter — Fecha concesión
-        # Use full date_from→date_to window.
-        if fecha_raw:
-            try:
-                # Handle both DD/MM/YYYY and YYYY-MM-DD formats
-                if "/" in fecha_raw:
-                    rec_date = _dp.parse(fecha_raw[:10], dayfirst=True).date()
-                else:
-                    rec_date = _dp.parse(fecha_raw[:10]).date()
-                if rec_date < date_from.date() or rec_date > date_to.date():
-                    return
-            except Exception:
-                pass  # if date can't be parsed, include the row
+        # Date filter — Fecha concesión (handles Excel serial → "DD/MM/YYYY" from _cell_val)
+        if fecha_raw and str(fecha_raw).strip() not in ("", "nan", "None"):
+            _include_row = True
+            _fecha_str = str(fecha_raw).strip()
+            for _fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                try:
+                    import datetime as _dtf_mod
+                    _rdate = _dtf_mod.datetime.strptime(_fecha_str[:10], _fmt).date()
+                    # 6-month buffer: accept records up to 6m before date_from
+                    _buf = (date_from - _dtf_mod.timedelta(days=180)).date()
+                    if _rdate < _buf or _rdate > date_to.date():
+                        _include_row = False
+                    break
+                except ValueError:
+                    continue
+            else:
+                # Last resort: dateutil
+                try:
+                    _rdate = _dp.parse(_fecha_str, dayfirst=True).date()
+                    _buf2 = (date_from - __import__("datetime").timedelta(days=180)).date()
+                    if _rdate < _buf2 or _rdate > date_to.date():
+                        _include_row = False
+                except Exception:
+                    pass  # unparseable → include (conservative)
+            if not _include_row:
+                return
 
         # Build address
         try:
@@ -8310,8 +8309,18 @@ def search_datos_madrid(date_from, date_to, global_seen):
                 if ct == "inlineStr":
                     t = cell_el.find(f".//{{{_NS}}}t")
                     return t.text if t is not None else ""
-                # number/date — return raw text
-                return v.text
+                # number/date: detect Excel serial dates (40000-55000 ≈ 2009-2050)
+                raw_val = v.text
+                try:
+                    _n = float(raw_val)
+                    if 40000 <= _n <= 55000:
+                        import datetime as _dt_mod
+                        _base = _dt_mod.datetime(1899, 12, 31)
+                        _converted = _base + _dt_mod.timedelta(days=_n)
+                        return _converted.strftime("%d/%m/%Y")
+                except (TypeError, ValueError):
+                    pass
+                return raw_val
 
             def _col_idx(ref):
                 """Convert column letter(s) to 0-based index: A→0, B→1, Z→25, AA→26"""
