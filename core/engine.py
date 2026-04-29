@@ -2730,24 +2730,163 @@ def classify_permit(text):
 # LEAD SCORING (0–100)
 # ════════════════════════════════════════════════════════════
 def score_lead(p):
+    """
+    Score a lead 0-100.
+
+    Scoring is weighted toward the 6 profiles with proven commercial value:
+      🚧 Alquiler Maquinaria  — adjudicaciones, urbanizaciones, actas de inicio
+      🛒 Compras / Materiales — licitaciones saneamiento, urbanizaciones, materiales
+      🔧 Instaladores MEP     — obra mayor, rehabilitación, primera ocupación
+      📐 Promotores / RE      — reparcelación, plan parcial, junta compensación
+      🏢 Gran Constructora    — obras grandes, licitaciones, adjudicaciones
+      🏗️ Gran Infraestructura — licitaciones >€5M, infraestructura civil
+
+    Lower priority (kept but not boosted):
+      🏪 Expansión Retail     — strategic signal only (18-month horizon)
+      🏠 Flexliving/Hostelería — niche, cambio de uso only
+      💼 Contract & Oficinas  — obra mayor terciario only
+      🏭 Industrial / Log.    — subset of Constructora + Maquinaria
+    """
     score = 0
     desc  = ((p.get("description","") or "") + " " + (p.get("permit_type","") or "")).lower()
     muni  = (p.get("municipality","") or "").lower()
+    pt    = p.get("permit_type","").lower()
 
-    # Project type
-    pt = p.get("permit_type","").lower()
-    if pt in ("urbanización","plan especial / parcial"):
-        score += 40
+    # ── 1. PROJECT TYPE — the most important signal ───────────────────────────
+    # Tier A: directly actionable for top 3 profiles
+    if pt in ("urbanización", "plan especial / parcial"):
+        score += 40   # Alquiler + Materiales + Constructora + Promotores all need this
     elif pt in ("licitación de obras",):
-        score += 38
+        score += 38   # Active tender = immediate commercial window
     elif pt in ("obra mayor industrial",):
-        score += 35
+        score += 35   # Industrial Constructora + Maquinaria
     elif pt in ("obra mayor nueva construcción",):
-        score += 30
-    elif pt in ("plan especial",):
-        score += 28
-    elif pt in ("obra mayor rehabilitación","cambio de uso","declaración responsable obra mayor"):
-        score += 25   # bumped from 22 — cambio de uso is high-value for hospe/retail
+        score += 32   # MEP + Constructora
+    elif pt in ("contribuciones especiales",):
+        score += 30   # Confirmed active obra with declared budget
+    elif pt in ("plan especial", "plan parcial"):
+        score += 28   # Promotores early signal
+    elif pt in ("obra mayor rehabilitación", "declaración responsable obra mayor"):
+        score += 25   # MEP rehab window
+    elif pt in ("cambio de uso",):
+        score += 22   # Flexliving + Retail signal
+    elif pt in ("demolición y nueva planta",):
+        score += 28   # Constructora + Maquinaria (demo = machinery NOW)
+    elif pt in ("licencia primera ocupación",):
+        score += 18   # MEP maintenance + Hospe operators
+    elif pt in ("obra mayor",):
+        score += 20
+    elif pt in ("licencia de actividad",):
+        score += 10   # Low priority — operational signal
+    else:
+        # Keyword fallback for documents not cleanly classified
+        if any(k in desc for k in ["proyecto de urbanización","junta de compensación","reparcelación"]):
+            score += 40
+        elif any(k in desc for k in ["nave industrial","centro logístico","parque empresarial","polígono"]):
+            score += 35
+        elif any(k in desc for k in ["nueva construcción","nueva planta"]):
+            score += 28
+        elif "obra mayor" in desc:
+            score += 20
+        else:
+            score += 5
+
+    # ── 2. PHASE — commercial urgency multiplier ──────────────────────────────
+    phase = (p.get("phase","") or "").lower()
+    if phase == "adjudicacion":    score += 20  # 🔴 contract awarded — call TODAY
+    elif phase == "en_obra":       score += 18  # 🔴 on-site — machinery/materials needed NOW
+    elif phase == "primera_ocupacion": score += 15  # 🟡 building done — MEP maintenance window
+    elif phase == "licitacion":    score += 15  # 🟡 active tender — bid deadline approaching
+    elif phase == "definitivo":    score += 10  # 🟡 final approval — 3-6 month action window
+    elif phase == "inicial":       score += 2   # 🟢 early stage — pipeline only
+    elif phase == "solicitud":     score += 1
+
+    # ── 3. BUDGET — size of commercial opportunity ────────────────────────────
+    val = p.get("declared_value_eur")
+    if not val:
+        # Try to parse estimated PEM
+        est_raw = str(p.get("estimated_pem","") or "")
+        try:
+            import re as _re
+            m = _re.search(r"[\d.,]+", est_raw.replace(".","").replace(",","."))
+            if m: val = float(m.group())
+        except: pass
+    if val and isinstance(val, (int, float)) and val > 0:
+        if val >= 50_000_000:   score += 38
+        elif val >= 10_000_000: score += 35
+        elif val >= 2_000_000:  score += 28
+        elif val >= 500_000:    score += 20
+        elif val >= 100_000:    score += 12
+        elif val >= 50_000:     score += 6
+        else:                   score += 2
+    else:
+        score += 4   # small bonus for having any data at all
+
+    # ── 4. PROFILE-SPECIFIC SIGNAL BOOSTS ────────────────────────────────────
+    # These represent the specific keywords that make a lead directly actionable
+    # for one of the 6 priority profiles.
+
+    # 🚧 ALQUILER MAQUINARIA — excavation, earthwork, demolition = machinery needed
+    _alq_signals = [
+        "demolición", "movimiento de tierras", "excavación", "urbanización",
+        "acta de inicio", "adjudicación de obras", "zanjas", "saneamiento",
+        "pavimentación", "firmes", "explanación",
+    ]
+    if any(k in desc for k in _alq_signals):
+        score += 8   # machinery rental rep needs to call the contratista
+
+    # 🛒 COMPRAS / MATERIALES — pipe, concrete, rebar = material order upcoming
+    _mat_signals = [
+        "saneamiento", "abastecimiento", "colector", "red de agua", "tubería",
+        "hormigón", "acero", "áridos", "pavimentación", "materiales",
+        "renovación de red", "reparación de colector",
+    ]
+    if any(k in desc for k in _mat_signals):
+        score += 8
+
+    # 🔧 INSTALADORES MEP — buildings with electrical, HVAC, lifts
+    _mep_signals = [
+        "plurifamiliar", "edificio de viviendas", "hotel", "hospital",
+        "centro de salud", "colegio", "universidad", "oficinas",
+        "rehabilitación integral", "primera ocupación", "instalaciones",
+        "hvac", "climatización", "ascensores", "electricidad", "pci",
+    ]
+    if any(k in desc for k in _mep_signals):
+        score += 7
+
+    # 📐 PROMOTORES / RE — land and planning
+    _pro_signals = [
+        "reparcelación", "junta de compensación", "plan parcial",
+        "plan de sectorización", "agrupación de parcelas", "segregación",
+        "suelo urbanizable", "sector residencial", "unidad de ejecución",
+    ]
+    if any(k in desc for k in _pro_signals):
+        score += 8
+
+    # ── 5. PURE SERVICE CONTRACT PENALTY ─────────────────────────────────────
+    # "Asistencia Técnica para vigilancia/coordinación" = service, not construction
+    # No profile benefits from these. Hard penalty.
+    _service_noise = [
+        "asistencia técnica", "coordinación de seguridad y salud",
+        "vigilancia y control de obras", "dirección facultativa",
+        "redacción de proyecto técnico", "consultoría de gestión",
+        "control de calidad de las obras", "trabajos de vigilancia",
+    ]
+    _construction_confirmed = [
+        "ejecución de obras", "contrato de obras", "licitación de obras",
+        "urbanización", "nueva construcción", "reparcelación",
+    ]
+    if any(k in desc for k in _service_noise):
+        if not any(k in desc for k in _construction_confirmed):
+            score -= 30   # sink below min_score for all profiles
+
+    # ── 6. DATA QUALITY ───────────────────────────────────────────────────────
+    if p.get("address"):    score += 6
+    if p.get("applicant"):  score += 5
+    if p.get("expediente"): score += 2
+    if muni and muni not in ("", "madrid"):  score += 2
+
+    return min(max(score, 0), 100)
 
     # Hospitality / Flexliving bonus — cambio de uso to residential/hospedaje
     _hospe_signals = [
@@ -6586,7 +6725,7 @@ def run():
     date_from = today - timedelta(weeks=WEEKS_BACK)
 
     log("=" * 70)
-    log(f"🏗️  PlanningScout Madrid — Engine v30 (s3-icio-fix+s4-rss+s5-boe+s6-ai-eval+s7-pem+s8-borme+s9-place+s10-gis)")
+    log(f"🏗️  PlanningScout Madrid — Engine v31 (single-tab+6-profile-scoring+noise-penalty)")
     log(f"📅  {today.strftime('%Y-%m-%d %H:%M')}  |  Mode: {MODE.upper()}")
     log(f"📆  {date_from.strftime('%d/%m/%Y')} → {date_to.strftime('%d/%m/%Y')} ({WEEKS_BACK}w)")
     log(f"⚙️  {N_WORKERS} processing workers  |  ⏱️ Budget: {MAX_RUN_MINUTES}min")
@@ -7035,16 +7174,10 @@ def run():
     except Exception as _wa_err:
         log(f"  ⚠️ Watchlist alerts error: {_wa_err}")
 
-    # ── Refresh profile-specific tabs ──────────────────────────────────────────
-    # Creates/updates one tab per sector profile in Google Sheets.
-    # Each tab shows only rows+columns relevant to that profile.
-    try:
-        _sh_for_tabs = get_sheet().spreadsheet
-        log(f"\n{chr(9472)*55}")
-        log("📊 Refreshing profile tabs…")
-        create_or_update_profile_tabs(_sh_for_tabs)
-    except Exception as _pt_err:
-        log(f"  ⚠️  Profile tabs refresh: {_pt_err}")
+    # ── Profile tabs DISABLED — all data in single "Leads" tab ───────────────
+    # The dashboard handles all profile filtering client-side.
+    # Separate tabs caused confusion, duplicate data, and slower runs.
+    # create_or_update_profile_tabs() still exists but is never called.
 
 
 # ──────────────────────────────────────────────────────────────
