@@ -946,44 +946,165 @@ SNO  = f"{_FM};font-size:10px;color:#94a3b8;margin-left:auto;"
 # ════════════════════════════════════════════════════════════════════════════
 PROFILES = {
 
-    # ── GRAN INFRAESTRUCTURA ─────────────────────────────────────────────────
-    # Who: Ferrovial, ACS, FCC, Sacyr division of infrastructure
-    # Trigger: Public tenders for roads, metro, water networks, major urbanisation
-    # Window: Strategic 365 days (contract cycles are 12-36 months)
-    # NOT useful: residential obra mayor, cambio de uso, small projects
-    "🏗️ Gran Infraestructura": {
-        "key": "infrastructura",
+    # ══════════════════════════════════════════════════════════════════
+    # TIER 1 — BEST FIT: Daily commercial pain. Direct ROI. Will pay.
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── 🚧 ALQUILER MAQUINARIA ────────────────────────────────────────
+    # Who: Técnicos comerciales at Kiloutou, Loxam, Cramo, Riwal
+    # Why they pay: One adjudicación call = €15-40k machinery contract.
+    # €99/month pays itself in the first week of the first deal found.
+    # What they need: Adjudicaciones + active licitaciones + urbanizaciones
+    # with the contratista name and estimated earthwork volume.
+    # What they DO NOT need: Plans, licencias de actividad, cambios de uso.
+    "🚧 Alquiler Maquinaria": {
+        "key": "alquiler",
         "tip": (
-            "💡 <strong>Licitación activa = presenta oferta ESTA SEMANA.</strong> "
-            "Aprobación definitiva = licitación pública en 6–18 meses. "
-            "Contribuciones especiales = el municipio va a ejecutar obras."
+            "💡 <strong>🔴 Adjudicación = llama al contratista HOY.</strong> "
+            "🟡 Licitación activa = prepara oferta de maquinaria. "
+            "🟢 Aprobación definitiva = obra en 3-12 meses — pipeline."
         ),
-        "min_score": 40, "min_value": 500_000, "days": 365,
+        "min_score": 30, "min_value": 200_000, "days": 180,
         "types": [
             "urbanización",
-            "plan especial", "plan especial / parcial", "plan parcial",
             "licitación de obras",
-            "contribuciones especiales",
+            "obra mayor nueva construcción",
+            "obra mayor industrial",
+            "demolición y nueva planta",
+            "contribuciones especiales",    # confirmed active obra
         ],
-        # Service contracts have no value for gran infraestructura bidders
         "exclude_keywords": [
-            "asistencia técnica", "coordinación de seguridad y salud",
-            "vigilancia y control", "redacción de proyecto",
-            "trabajos de vigilancia", "consultoría", "asesoramiento técnico",
-            "dirección facultativa", "control de calidad de las obras",
+            "asistencia técnica", "redacción de proyecto", "consultoría",
+            "coordinación de seguridad", "licencia de actividad",
+            "cambio de uso", "primera ocupación",
         ],
         "fase_boost": {
-            "licitacion":  +25,
-            "adjudicacion":+20,
-            "definitivo":  +15,
-            "en_obra":     +10,
+            "adjudicacion": +30,   # 🔴 LLAMAR HOY — contract awarded, obra starts in 45 days
+            "en_obra":      +25,   # 🔴 on-site — machinery needed NOW
+            "licitacion":   +15,   # 🟡 bid open — prepare offer
+            "definitivo":   +8,    # 🟢 pipeline
         },
     },
 
-    # ── GRAN CONSTRUCTORA ─────────────────────────────────────────────────────
-    # Who: FCC Construcción, Acciona, Dragados, OHL, Sacyr Construcción
-    # Trigger: Large obra nueva, adjudicaciones públicas, urbanisations > €1M
-    # Window: 365 days (they track all pipeline even if 2 years out)
+    # ── 🛒 COMPRAS / MATERIALES ───────────────────────────────────────
+    # Who: Directores de Compras at Molecor, Holcim, Saint-Gobain, Knauf
+    # Why they pay: Know about a €20M saneamiento project 6 months early
+    # = negotiate material pricing before demand spikes. 3% savings on
+    # €5M materials budget = €150k saved. Subscription is noise.
+    # What they need: Saneamiento, abastecimiento, urbanizaciones with
+    # pipe/concrete quantities estimated by AI.
+    "🛒 Compras / Materiales": {
+        "key": "materiales",
+        "tip": (
+            "💡 <strong>Licitación Canal de Isabel II = pedido de tubería en 90 días.</strong> "
+            "Urbanización definitiva = hormigón + acero + áridos en 6 meses. "
+            "Negocia con proveedores ANTES de que empiece la obra."
+        ),
+        "min_score": 30, "min_value": 200_000, "days": 365,
+        "types": [
+            "urbanización",
+            "licitación de obras",
+            "obra mayor nueva construcción",
+            "obra mayor industrial",
+            "contribuciones especiales",
+        ],
+        "exclude_keywords": [
+            "asistencia técnica", "redacción de proyecto",
+            "coordinación de seguridad", "consultoría",
+            "licencia de actividad", "cambio de uso",
+        ],
+        "fase_boost": {
+            "licitacion":   +25,   # active tender = material order in 3 months
+            "adjudicacion": +30,   # awarded = material order in 6 weeks
+            "en_obra":      +20,   # on-site = ordering NOW
+            "definitivo":   +10,   # approved = pipeline for 6 months
+        },
+    },
+
+    # ── 🔧 Instaladores MEP ───────────────────────────────────────────
+    # Who: Directors at Grupo Gamma, Imtech, Fain Ascensores, HVAC cos
+    # Why they pay: Know about a €10M obra mayor 6 months before the
+    # main contractor adjudicates MEP subcontracts. Their window to
+    # pitch the promoter/constructor is narrow — 3-6 months.
+    # What they need: Obra mayor + rehabilitación + 1ª ocupación.
+    # NOT urbanización (no buildings = no MEP). NOT plan parcial (3+ years away).
+    "🔧 Instaladores MEP": {
+        "key": "instaladores",
+        "tip": (
+            "💡 <strong>Obra mayor aprobada = instalaciones en 3–6 meses.</strong> "
+            "Contacta al promotor ahora, antes de que el constructor adjudique. "
+            "1ª Ocupación = instalaciones finalizadas — propón mantenimiento."
+        ),
+        "min_score": 30, "min_value": 80_000, "days": 365,
+        "types": [
+            "obra mayor nueva construcción",
+            "obra mayor rehabilitación",
+            "obra mayor",
+            "demolición y nueva planta",
+            "declaración responsable obra mayor",
+            "licencia primera ocupación",
+        ],
+        "exclude_keywords": [
+            "saneamiento de aguas", "red de abastecimiento", "colector",
+            "asistencia técnica", "coordinación de seguridad y salud",
+            "obras viarias", "pavimentación", "consultoría",
+            "redacción de proyecto",
+        ],
+        "fase_boost": {
+            "adjudicacion":      +30,   # main contractor confirmed — call NOW
+            "en_obra":           +25,   # on-site — sub-contract bidding open
+            "definitivo":        +20,   # approved — contact promoter NOW
+            "licitacion":        +15,   # active tender — bid for MEP sub
+            "primera_ocupacion": +10,   # done — maintenance contract window
+        },
+    },
+
+    # ══════════════════════════════════════════════════════════════════
+    # TIER 2 — EXCELLENT FIT: Clear ROI. Slightly longer sales cycle.
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── 📐 Promotores / RE ────────────────────────────────────────────
+    # Who: Neinor, Aedas, Vía Célere, family offices, SOCIMIs, CBRE
+    # Why they pay: A reparcelación approval is invisible to most market
+    # participants. PlanningScout shows it the day it's published —
+    # weeks before it appears anywhere else. First to the Junta de
+    # Compensación = land at cost price.
+    # What they need: Reparcelación, plan parcial, junta de compensación.
+    # NOT small obras, NOT licencias de actividad.
+    "📐 Promotores / RE": {
+        "key": "promotores",
+        "tip": (
+            "💡 <strong>Reparcelación aprobada = contacta a la Junta ANTES de que salga al mercado.</strong> "
+            "Plan parcial definitivo = el suelo ya es urbanizable. "
+            "Aprobación inicial = pipeline — empieza a hacer relaciones ahora."
+        ),
+        "min_score": 45, "min_value": 500_000, "days": 365,
+        "types": [
+            "urbanización",
+            "plan parcial",
+            "plan especial",
+            "plan especial / parcial",
+            "obra mayor nueva construcción",
+        ],
+        "exclude_keywords": [
+            "saneamiento", "abastecimiento", "tubería", "colector",
+            "asistencia técnica", "coordinación de seguridad",
+            "obras viarias", "pavimentación",
+            "redacción de proyecto", "consultoría",
+        ],
+        "fase_boost": {
+            "definitivo":  +25,   # approved = land deal window OPEN
+            "inicial":     +8,    # initial = start tracking
+            "en_tramite":  +5,
+        },
+    },
+
+    # ── 🏢 Gran Constructora ──────────────────────────────────────────
+    # Who: FCC (bid dept), Sacyr, Acciona, OHL, medium constructoras
+    # Why they pay: Aprobación definitiva of a €50M urbanización = they
+    # have 12-18 months to prepare a competitive bid. Without PlanningScout
+    # they find out from word of mouth when it's already in licitación.
+    # What they need: Obras grandes + licitaciones + adjudicaciones.
     "🏢 Gran Constructora": {
         "key": "constructora",
         "tip": (
@@ -1001,58 +1122,77 @@ PROFILES = {
             "demolición y nueva planta",
             "contribuciones especiales",
         ],
+        "exclude_keywords": [
+            "asistencia técnica", "coordinación de seguridad y salud",
+            "vigilancia y control", "redacción de proyecto",
+            "consultoría", "asesoramiento",
+        ],
         "fase_boost": {
             "adjudicacion": +25,
             "licitacion":   +20,
             "definitivo":   +12,
             "en_obra":      +10,
         },
-        # Terms that indicate the project is NOT for private constructoras
+    },
+
+    # ── 🏗️ Gran Infraestructura ───────────────────────────────────────
+    # Who: Ferrovial, ACS, Dragados bid divisions
+    # Why they pay: Licitaciones >€5M with CPV codes and bid deadlines
+    # from CM Contratos Públicos and BOE — in one place, classified.
+    # What they need: Public tenders, large urbanizaciones, civil works.
+    "🏗️ Gran Infraestructura": {
+        "key": "infrastructura",
+        "tip": (
+            "💡 <strong>Licitación activa = presenta oferta ESTA SEMANA.</strong> "
+            "Aprobación definitiva = licitación pública en 6–18 meses. "
+            "Contribuciones especiales = el municipio va a ejecutar obras."
+        ),
+        "min_score": 40, "min_value": 500_000, "days": 365,
+        "types": [
+            "urbanización",
+            "plan especial", "plan especial / parcial", "plan parcial",
+            "licitación de obras",
+            "contribuciones especiales",
+        ],
         "exclude_keywords": [
             "asistencia técnica", "coordinación de seguridad y salud",
             "vigilancia y control", "redacción de proyecto",
-            "consultoría", "asesoramiento",
+            "trabajos de vigilancia", "consultoría", "asesoramiento técnico",
+            "dirección facultativa", "control de calidad de las obras",
         ],
+        "fase_boost": {
+            "licitacion":  +25,
+            "adjudicacion":+20,
+            "definitivo":  +15,
+            "en_obra":     +10,
+        },
     },
 
-    # ── EXPANSIÓN RETAIL ──────────────────────────────────────────────────────
-    # Who: Mango, Dia, Saona, Malvón, Kiloutou (expansion directors)
-    # Trigger: New population zones, commercial use permits, market entry signals
-    #
-    # THE EXAMPLE YOU ASKED ABOUT:
-    # "Servicios de Asistencia Técnica para la realización de los trabajos de
-    # vigilancia, control y de coordinación de seguridad y salud, durante la
-    # ejecución de las obras del Proyecto de Renovación de la Red de Saneamiento"
-    # → This is a SAFETY COORDINATION SERVICE tender for a sewer renovation.
-    # → ZERO relevance for a retail expansion director.
-    # → It appeared because its type was "licitación de obras" which was in their
-    #   types[] list — WRONG. Infrastructure tenders have nothing to do with retail.
-    # → FIX: Remove "licitación de obras" from Retail types.
-    #   Also add exclude_keywords for infra noise.
-    #
-    # What retail directors ACTUALLY care about:
-    #   1. Urbanización definitiva (new neighbourhood = future customers in 2-3 years)
-    #   2. Plan parcial/especial aprobado (same signal, earlier stage)
-    #   3. Cambio de uso (vacant space opening = potential store location)
-    #   4. Licencia de actividad (competitor or complementary store opening = market intel)
-    #   5. Gran superficie comercial / parque comercial (anchor tenant opportunity)
+    # ══════════════════════════════════════════════════════════════════
+    # TIER 3 — SECONDARY: Kept but not the sales focus.
+    # These are real but have longer sales cycles or niche markets.
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── 🏪 Expansión Retail (STRATEGIC ONLY) ──────────────────────────
+    # NOTE: Malvón feedback confirmed they need spaces available TODAY.
+    # This profile is only useful for large chains (Mango, Inditex) that
+    # plan 18-36 months ahead and want early density signals.
+    # NOT for F&B operators, franchise expansion, or anyone needing
+    # current available space — they need Idealista, not PlanningScout.
     "🏪 Expansión Retail": {
         "key": "expansion",
         "tip": (
-            "💡 <strong>Urbanización definitiva = nuevo barrio en 2–3 años.</strong> "
-            "Cambio de uso = espacio disponible HOY. "
-            "Plan parcial = identifica el suelo antes de que suban los precios."
+            "💡 <strong>Señal estratégica 18-36 meses.</strong> "
+            "Urbanización definitiva = nuevo barrio con futuros clientes. "
+            "NOTA: Si buscas locales disponibles hoy, PlanningScout no es la herramienta adecuada."
         ),
-        "min_score": 40, "min_value": 0, "days": 365,
+        "min_score": 45, "min_value": 0, "days": 365,
         "types": [
             "urbanización",
             "plan especial", "plan especial / parcial", "plan parcial",
             "cambio de uso",
-            "licencia de actividad",
-            "obra mayor nueva construcción",   # large new buildings = commercial anchor
+            "obra mayor nueva construcción",
         ],
-        # DO NOT include "licitación de obras" — infrastructure tenders have zero
-        # relevance for store expansion decisions.
         "exclude_keywords": [
             "saneamiento", "abastecimiento", "tubería", "colector",
             "asistencia técnica", "coordinación de seguridad",
@@ -1061,276 +1201,50 @@ PROFILES = {
             "redacción de proyecto", "obras viarias",
         ],
         "fase_boost": {
-            "definitivo":        +20,  # approved zone = plan your store now
-            "licitacion":        -10,  # infra tender = not relevant (penalty)
-            "primera_ocupacion": +15,  # building occupied = commercial area active
+            "definitivo":        +20,
+            "primera_ocupacion": +15,
+            "licitacion":        -10,   # infra tender = irrelevant for retail
         },
     },
 
-    # ── PROMOTORES / RE ───────────────────────────────────────────────────────
-    # Who: Real estate developers, investment funds, CBRE, Muppy, VIMAD
-    # Trigger: Land deals — reparcelación, junta de compensación, plan parcial
-    # Min value €500K: sub-€500K operations are below their investment threshold
-    # Window: 365 days (land deal cycles are 12-36 months)
-    # NOT useful: obras menores, licencias de actividad (operational, not investment)
-    "📐 Promotores / RE": {
-        "key": "promotores",
-        "tip": (
-            "💡 <strong>Reparcelación aprobada = suelo a precio de coste.</strong> "
-            "Contacta a la Junta de Compensación ANTES de que salga al mercado. "
-            "Plan parcial definitivo = el suelo ya es urbanizable."
-        ),
-        "min_score": 45, "min_value": 500_000, "days": 365,
-        "types": [
-            "urbanización",
-            "plan parcial",
-            "plan especial", "plan especial / parcial",
-            "obra mayor nueva construcción",  # large residential/tertiary new builds
-        ],
-        "exclude_keywords": [
-            "saneamiento", "abastecimiento", "tubería", "colector",
-            "asistencia técnica", "coordinación de seguridad",
-            "obras viarias", "pavimentación",
-            "redacción de proyecto", "consultoría",
-        ],
-        "fase_boost": {
-            "definitivo":  +25,  # approved = land deal timing window open
-            "inicial":     +10,  # initial = pipeline, start tracking
-            "en_tramite":  +5,
-        },
-    },
-
-    # ── INSTALADORES MEP ──────────────────────────────────────────────────────
-    # Who: Electrical, HVAC, plumbing, PCI, lift contractors
-    # Trigger: Building permits for obra nueva or full rehab
-    # Key insight: Their commercial window is NARROW — from aprobación definitiva
-    # to when the main contractor adjudicates sub-contracts (~3-6 months).
-    # Urbanización has NO direct MEP content (it's roads and pipes, not buildings).
-    # min_value €80K = minimum viable MEP subcontract.
-    "🔧 Instaladores MEP": {
-        "key": "instaladores",
-        "tip": (
-            "💡 <strong>Obra mayor aprobada = instalaciones en 3–6 meses.</strong> "
-            "Contacta al promotor ahora, antes de que el constructor adjudique subs. "
-            "1ª Ocupación = instalaciones finalizadas — cita de mantenimiento."
-        ),
-        "min_score": 30, "min_value": 80_000, "days": 365,
-        "types": [
-            "obra mayor nueva construcción",
-            "obra mayor rehabilitación",
-            "demolición y nueva planta",
-            "declaración responsable obra mayor",
-            "licencia primera ocupación",   # follow-up: maintenance contracts
-        ],
-        # Urbanización removed: road/sewer projects don't have building MEP
-        # Plan especial/parcial removed: 3+ years away, no action needed now
-        "exclude_keywords": [
-            "saneamiento de aguas", "red de abastecimiento", "colector",
-            "asistencia técnica", "coordinación de seguridad y salud",
-            "obras viarias", "pavimentación", "consultoría",
-        ],
-        "fase_boost": {
-            "definitivo":        +20,  # approved = contact promoter NOW
-            "licitacion":        +15,  # active tender = sub-contract bid
-            "adjudicacion":      +25,  # awarded = main contractor confirmed, call them
-            "en_obra":           +20,  # in construction = immediate opportunity
-            "primera_ocupacion": +10,  # done = maintenance follow-up
-        },
-    },
-
-    # ── INDUSTRIAL / LOG. ─────────────────────────────────────────────────────
-    # Who: Logistics developers, industrial park operators, warehouse REITs
-    # Trigger: Industrial obra nueva, logistics park licences, cambio de uso industrial
-    # Key corridors: Valdemoro, Getafe (south), Coslada, Alcalá de Henares (east),
-    #                Torrejón, San Fernando de Henares
-    # min_value €200K: sub-€200K industrial project is a workshop, not a warehouse
-    "🏭 Industrial / Log.": {
-        "key": "industrial",
-        "tip": (
-            "💡 <strong>Corredor sur (Valdemoro, Getafe) y este (Coslada, Alcalá).</strong> "
-            "Licencia obra industrial = obra en 3–6 meses. "
-            "Licitación adjudicada = llama al ganador hoy."
-        ),
-        "min_score": 35, "min_value": 200_000, "days": 365,
-        # require_keywords: at least one must appear in desc or tipo
-        # (prevents residential urbanizaciones from appearing in industrial feed)
-        "require_keywords": [
-            "industrial", "logístic", "almacén", "nave", "parque empresarial",
-            "polígono", "plataforma logística", "centro de distribución",
-        ],
-        "types": [
-            "obra mayor industrial",
-            "obra mayor nueva construcción",  # logistics/industrial new builds
-            "cambio de uso",                  # office→warehouse or industrial changeover
-            "licitación de obras",            # public industrial infrastructure
-            "urbanización",                   # industrial park development
-        ],
-        "exclude_keywords": [
-            "residencial", "viviendas", "apartamento", "hostelería",
-            "asistencia técnica", "coordinación de seguridad y salud",
-            "consultoría", "redacción de proyecto",
-        ],
-        "fase_boost": {
-            "adjudicacion": +25,
-            "licitacion":   +20,
-            "definitivo":   +12,
-            "en_obra":      +15,
-        },
-    },
-
-    # ── ALQUILER MAQUINARIA ───────────────────────────────────────────────────
-    # Who: Kiloutou, Ramirent, Loxam, Cramo — machinery rental reps
-    # Trigger: Active licitaciones, adjudicaciones, acta de inicio
-    # Window: 60 DAYS (they need leads where dirt is moving NOW, not in 2 years)
-    # Plan especial/parcial REMOVED: 3+ years from machinery need = wasted calls
-    # Key: adjudicación = call the winning contractor TODAY for excavators
-    "🚧 Alquiler Maquinaria": {
-        "key": "alquiler",
-        "tip": (
-            "💡 <strong>Adjudicada = llama al constructor HOY.</strong> "
-            "Acta de inicio = la máquina entra esta semana. "
-            "Licitación activa = preséntate al contratista antes del cierre."
-        ),
-        "min_score": 25, "min_value": 200_000, "days": 60,
-        "types": [
-            "urbanización",
-            "obra mayor nueva construcción",
-            "obra mayor industrial",
-            "licitación de obras",
-            "demolición y nueva planta",
-            "obra mayor rehabilitación",
-            "declaración responsable obra mayor",
-        ],
-        # Removed: plan especial/parcial/plan parcial — too far away for machinery rental
-        # Removed: contribuciones especiales — administrative, no active site
-        "exclude_keywords": [
-            "asistencia técnica", "coordinación de seguridad y salud",
-            "vigilancia y control", "consultoría",
-            "redacción de proyecto", "asesoramiento",
-        ],
-        "fase_boost": {
-            "adjudicacion": +30,  # MAXIMUM URGENCY — call TODAY
-            "en_obra":      +30,  # machinery already needed
-            "licitacion":   +20,  # bid in progress — talk to bidders
-            "definitivo":   +5,   # approved but still far from site
-        },
-    },
-
-    # ── COMPRAS / MATERIALES ──────────────────────────────────────────────────
-    # Who: Suppliers of concrete, steel, PVC pipes, aggregates, timber
-    # Trigger: Urbanización (km of pipes/concrete), obra nueva (structural materials)
-    # Previously had empty types[] → showed everything → 0% precision
-    # Fix: explicit type list, meaningful min_value, exclude pure services
-    "🛒 Compras / Materiales": {
-        "key": "compras",
-        "tip": (
-            "💡 <strong>Urbanización = kilómetros de tubería, hormigón y áridos.</strong> "
-            "Adjudicación = llama al constructor ganador hoy para suministros. "
-            "Licitación activa = presupuesta ahora."
-        ),
-        "min_score": 30, "min_value": 200_000, "days": 365,
-        "types": [
-            "urbanización",                   # highest materials volume
-            "obra mayor nueva construcción",  # structural materials
-            "obra mayor industrial",          # industrial volume orders
-            "licitación de obras",            # quote for tender
-            "demolición y nueva planta",      # post-demo new build = materials
-        ],
-        "exclude_keywords": [
-            "asistencia técnica", "coordinación de seguridad y salud",
-            "vigilancia y control", "consultoría",
-            "redacción de proyecto", "asesoramiento",
-            "servicios de", "trabajos de vigilancia",
-        ],
-        "fase_boost": {
-            "adjudicacion": +25,  # winner confirmed = call them for supply quote
-            "en_obra":      +25,  # active site = immediate supply need
-            "licitacion":   +15,  # tender = prepare your supply quote
-            "definitivo":   +10,  # approved = pipeline, start relationship
-        },
-    },
-
-    # ── CONTRACT & OFICINAS ───────────────────────────────────────────────────
-    # Who: ACTIU, Steelcase, Kinnarps, Haworth — commercial furniture suppliers
-    # Trigger: Office/hotel/coworking buildings nearing completion
-    # Key insight: Their window opens at "aprobación definitiva" and closes at
-    # "1ª ocupación" (after that, the building is already furnished).
-    # Urbanización REMOVED: land development has no furniture for 3+ years.
-    "💼 Contract & Oficinas": {
-        "key": "actiu",
-        "tip": (
-            "💡 <strong>Aprobación definitiva = empieza a hablar con el promotor.</strong> "
-            "1ª Ocupación = el edificio está terminado — cierra el contrato esta semana. "
-            "Cambio de uso a oficina/hotel = alta prioridad."
-        ),
-        "min_score": 35, "min_value": 300_000, "days": 365,
-        "types": [
-            "obra mayor nueva construcción",
-            "obra mayor rehabilitación",
-            "cambio de uso",
-            "declaración responsable obra mayor",
-            "licencia primera ocupación",
-        ],
-        # Urbanización removed (no furniture for 3+ years)
-        # profile_fit_filter ensures only office/hotel/coworking projects score high
-        "profile_fit_filter": "actiu",
-        "exclude_keywords": [
-            "saneamiento", "abastecimiento", "tubería", "urbanización vial",
-            "asistencia técnica", "coordinación de seguridad",
-        ],
-        "fase_boost": {
-            "primera_ocupacion": +30,  # MAXIMUM URGENCY — furniture order closing
-            "adjudicacion":      +20,  # main contractor confirmed = timing clear
-            "en_obra":           +15,  # in construction = contact promoter
-            "definitivo":        +10,  # approved = start relationship
-        },
-    },
-
-    # ── FLEXLIVING & HOSTELERÍA ───────────────────────────────────────────────
-    # Who: Sharing Co, WeHouse, Habyt, hotel operators, coliving funds
-    # Trigger: Cambio de uso (old office → residential = coliving opportunity)
-    # Key insight: They need to contact building OWNERS (not constructors).
-    # Urbanización REMOVED: land development is not hospitality operation.
-    # 1ª Ocupación = building is physically ready, call the owner TODAY.
+    # ── 🏠 Flexliving & Hostelería ────────────────────────────────────
     "🏠 Flexliving & Hostelería": {
         "key": "hospe",
+        "profile_fit_filter": "hospe",
         "tip": (
-            "💡 <strong>Cambio de uso = señal máxima prioridad.</strong> "
-            "1ª Ocupación = edificio listo — llama al propietario HOY. "
-            "Rehabilitación integral = oportunidad de operador antes de reabrir."
+            "💡 <strong>Cambio de uso = espacio para coliving o hotel disponible HOY.</strong> "
+            "Edificio plurifamiliar nuevo = potencial coliving si único promotor. "
+            "1ª Ocupación = edificio entregado — opera desde el día 1."
         ),
-        "min_score": 30, "min_value": 100_000, "days": 365,
+        "min_score": 35, "min_value": 0, "days": 365,
         "types": [
-            "cambio de uso",              # HIGHEST PRIORITY — use change = opportunity
-            "licencia primera ocupación", # building ready = operate immediately
-            "obra mayor rehabilitación",  # full rehab = potential coliving conversion
-            "obra mayor nueva construcción",  # new builds with hostelería keyword
+            "cambio de uso",
+            "obra mayor rehabilitación",
+            "obra mayor nueva construcción",
+            "licencia primera ocupación",
             "declaración responsable obra mayor",
         ],
-        # Urbanización removed: land development ≠ hospitality operation
-        "profile_fit_filter": "hospe",
         "exclude_keywords": [
-            "saneamiento", "abastecimiento", "tubería", "colector",
-            "asistencia técnica", "coordinación de seguridad",
-            "obras viarias", "pavimentación", "industrial",
+            "saneamiento", "abastecimiento", "urbanización de sector",
+            "asistencia técnica", "consultoría", "redacción de proyecto",
+            "obras viarias", "pavimentación",
         ],
         "fase_boost": {
-            "primera_ocupacion": +30,  # building done = contact owner NOW
-            "definitivo":        +15,  # approved = track closely
-            "en_obra":           +12,  # construction = start conversation with owner
-            "adjudicacion":      +10,
+            "primera_ocupacion": +25,
+            "adjudicacion":      +20,
+            "definitivo":        +15,
+            "en_obra":           +12,
         },
     },
 
-    # ── VISTA GENERAL ─────────────────────────────────────────────────────────
+    # ── 🏙️ Vista General ──────────────────────────────────────────────
     "🏙️ Vista General": {
         "key": "general",
-        "tip": "Vista completa de todos los proyectos del BOCM. Selecciona un perfil para filtrar por sector.",
+        "tip": "Vista completa de todos los proyectos detectados. Selecciona un perfil específico para filtrar.",
         "min_score": 0, "min_value": 0, "days": 365,
         "types": [],
     },
 }
-
 # ════════════════════════════════════════════════════════════
 # HELPERS
 # ════════════════════════════════════════════════════════════
