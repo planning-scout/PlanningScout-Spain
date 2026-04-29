@@ -1553,26 +1553,30 @@ def build_card(row, is_watched=False, inside_details=False):
         except Exception:
             pass
 
-    # 🔄 "Actualizado" badge — shown when phase advanced (last_updated within 14 days)
-    _last_upd = str(row.get("last_updated","") or "").strip()[:10]
+    # 🔄 "Actualizado" badge — shown when phase advanced (last_updated present)
+    _last_upd = str(row.get("last_updated","") or "").strip()
     _prev_ph  = str(row.get("previous_phase","") or "").strip()
+    _upd_badge = ""
     if _last_upd and _prev_ph:
         try:
-            _upd_dt  = datetime.strptime(_last_upd, "%Y-%m-%d")
+            _upd_dt   = datetime.strptime(_last_upd[:10], "%Y-%m-%d")
             _upd_days = (datetime.now() - _upd_dt).days
-            if _upd_days <= 14:
-                _PHASE_LABELS_SHORT = {
-                    "inicial":"Inicial","definitivo":"Definitivo","licitacion":"Licitación",
-                    "adjudicacion":"Adjudicación","en_obra":"En Obra","primera_ocupacion":"1ª Ocup.",
-                }
-                _prev_label = _PHASE_LABELS_SHORT.get(_prev_ph.lower(), _prev_ph)
-                _upd_badge = (
-                    f"<span style='font-family:\"JetBrains Mono\",monospace;font-size:9px;"
-                    f"font-weight:700;background:#eff6ff;color:#2563eb;border-radius:4px;"
-                    f"padding:2px 7px;margin-right:4px;"
-                    f"border:1px solid #bfdbfe;' "
-                    f"title='Antes: {_prev_label}'>🔄 Actualizado</span>"
-                )
+            _PHASE_LABELS_SHORT = {
+                "inicial":"Inicial","definitivo":"Definitivo",
+                "licitacion":"Licitación","adjudicacion":"Adjudicación",
+                "en_obra":"En Obra","primera_ocupacion":"1ª Ocup.",
+                "en_tramite":"En Trámite","solicitud":"Pre-lead",
+            }
+            _prev_label = _PHASE_LABELS_SHORT.get(_prev_ph.lower(), _prev_ph)
+            _days_text  = "hoy" if _upd_days == 0 else f"hace {_upd_days}d"
+            _upd_badge  = (
+                f"<span style='font-family:\"JetBrains Mono\",monospace;font-size:9px;"
+                f"font-weight:700;background:#eff6ff;color:#2563eb;border-radius:4px;"
+                f"padding:2px 7px;margin-right:4px;border:1px solid #bfdbfe;"
+                f"cursor:default;' "
+                f"title='Fase anterior: {_prev_label} · Actualizado: {_last_upd[:10]}'>"
+                f"🔄 Actualizado {_days_text}</span>"
+            )
         except Exception:
             pass
 
@@ -3360,8 +3364,11 @@ with _tab_alertas:
                 # ── Phase-change notification banner ──────────────────────────
                 # Shown when the current phase in the sheet is more advanced than
                 # the phase at the time the user saved the alert.
+                # Also shows Last Updated timestamp and Previous Phase from the sheet.
                 _phase_add   = str(_wr.get("phase_at_add","") or "").strip()
                 _phase_now   = str((_row.get("fase","") if _row is not None else "") or "").strip()
+                _last_updated = str((_row.get("last_updated","") if _row is not None else "") or "").strip()
+                _prev_phase   = str((_row.get("previous_phase","") if _row is not None else "") or "").strip()
                 _PHASE_ORDER_A = {"solicitud":1,"inicial":2,"en_tramite":2,"definitivo":3,
                                   "licitacion":4,"adjudicacion":5,"en_obra":6,"primera_ocupacion":7}
                 _PHASE_LABEL_A = {
@@ -3370,21 +3377,45 @@ with _tab_alertas:
                     "en_obra":"Obra en ejecución","primera_ocupacion":"1ª Ocupación",
                     "en_tramite":"En tramitación","solicitud":"Pre-lead",
                 }
+                # Phase advance: current phase > phase when user saved
                 _phase_advanced = (
                     _phase_now and _phase_add and
                     _PHASE_ORDER_A.get(_phase_now.lower(),0) > _PHASE_ORDER_A.get(_phase_add.lower(),0)
                 )
                 if _phase_advanced:
-                    _pl_now = _PHASE_LABEL_A.get(_phase_now.lower(), _phase_now)
-                    _pl_add = _PHASE_LABEL_A.get(_phase_add.lower(), _phase_add)
+                    _pl_now = _PHASE_LABEL_A.get(_phase_now.lower(), _phase_now.title())
+                    _pl_add = _PHASE_LABEL_A.get(_phase_add.lower(), _phase_add.title())
+                    # Format the timestamp nicely if available
+                    _ts_display = ""
+                    if _last_updated:
+                        try:
+                            from datetime import datetime as _dt
+                            _ts = _dt.strptime(_last_updated[:16], "%Y-%m-%d %H:%M")
+                            _ts_display = _ts.strftime("%-d %b %Y, %H:%M")
+                        except Exception:
+                            _ts_display = _last_updated[:16]
+                    # Urgency color by new phase
+                    _urgency_colors = {
+                        "adjudicacion":      ("#fef2f2","#dc2626","#fecaca","🔴"),
+                        "en_obra":           ("#fef2f2","#dc2626","#fecaca","🔴"),
+                        "licitacion":        ("#fffbeb","#b45309","#fde68a","🟡"),
+                        "definitivo":        ("#eff6ff","#1d4ed8","#bfdbfe","🔵"),
+                        "primera_ocupacion": ("#f0fdf4","#15803d","#bbf7d0","🟢"),
+                    }
+                    _bg, _tc, _bd, _emoji = _urgency_colors.get(
+                        _phase_now.lower(), ("#eff6ff","#1d4ed8","#bfdbfe","🔵"))
                     st.markdown(
-                        f'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;'
-                        f'padding:10px 16px;margin-bottom:6px;display:flex;align-items:center;gap:10px;">'
-                        f'<span style="font-size:18px;">🔄</span>'
-                        f'<div>'
-                        f'<span style="font-size:12px;font-weight:700;color:#1d4ed8;">Este proyecto ha avanzado de fase</span>'
-                        f'<span style="font-size:11px;color:#64748b;margin-left:8px;">'
-                        f'{_pl_add} → <strong>{_pl_now}</strong></span>'
+                        f'<div style="background:{_bg};border:1.5px solid {_bd};border-radius:8px;'
+                        f'padding:10px 16px;margin-bottom:6px;">'
+                        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+                        f'<span style="font-size:15px;">{_emoji}</span>'
+                        f'<span style="font-size:12px;font-weight:700;color:{_tc};">'
+                        f'Fase actualizada — {_pl_now}</span>'
+                        f'{"<span style=\"font-size:11px;color:#94a3b8;margin-left:auto;\">" + _ts_display + "</span>" if _ts_display else ""}'
+                        f'</div>'
+                        f'<div style="font-size:11px;color:#64748b;padding-left:23px;">'
+                        f'Cuando guardaste: <em>{_pl_add}</em>&nbsp;'
+                        f'<span style="color:{_tc};font-weight:600;">→ Ahora: {_pl_now}</span>'
                         f'</div>'
                         f'</div>',
                         unsafe_allow_html=True
