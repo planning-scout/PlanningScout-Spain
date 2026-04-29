@@ -3653,23 +3653,64 @@ CRITICAL EXTRACTION FIRST — before writing, extract from the document:
 □ Suelos contaminados: declaration present/absent
 □ Cuenta de liquidación: coste obras urbanización stated
 
-Then write 3-6 sentences. NEVER generic. NEVER company names. Use SECTOR ROLE labels.
-Structure:
-1. WHAT + WHERE + PEM: "Proyecto de urbanización definitivo [NAME], [MUNI] — PEM €X.XM."
-2. SCALE/CONTEXT: extracted data (parcelas, m², viviendas, plazo)
-3. TIMING: phase, extracted plazo, next milestone.
-4. SECTOR CALLOUTS — use ROLE labels, never company names:
-   🏗️ Gran Constructora / Infraestructura: "Gran Constructora: pre-calificarse para licitación civil — PBL €XM — estimado X meses."
-   🚧 Alquiler Maquinaria: "Alquiler Maquinaria: exc.30t × N semanas + compactadora estimado [Mes YYYY] — llamar promotor/contratista hoy."
-   🏠 Flexliving / Hospedaje: "Operador Flexliving: edificio [año est.], [N] plantas, único/comunidad propietario — ANTES de comercialización."
-   🛒 Materiales: "Materiales PVC: colector DN-400 ~X.Xkm + abast. DN-200 ~X.Xkm — ~Xt PVC — cotizar YA."
-   🏪 Retail: "Expansión Retail: [N] hab. futuros | renta €X/año | [competidores] — ventana apertura [fecha est.]."
-   💼 Contract: "Contract: [N] puestos | €X-XM equipamiento | arquitecto: [nombre] — contactar en proyecto básico."
-   📐 RE / Promotores: "Inversión RE: [m² ámbito], FAR [X], cargas ~€XM — JC: [contacto] — actuar ahora."
-   🔧 MEP: "MEP: [N] plantas | [Xm²] | HVAC [tipo] | [N] ascensores CTE — ventana subcontrata [X] meses."
-   🏭 Industrial: "Industrial: [Xm² nave] | alt. libre [Xm] | corredor [A-X] | yield ~[X]% — llamar promotor."
-5. QUANTITIES: m², viviendas, pipes, machinery, CPV codes from document.
-6. TIMING: "⚡ ACTUAR HOY" (adjudicación/1ª ocupación/CdU) | "📞 ESTA SEMANA" (definitivo) | "📅 30 DÍAS" (inicial) | "🔮 PIPELINE 6-18M" (solicitud/plan parcial: estimate from m² edificables ÷ 90m²/vivienda (Madrid standard).
+═══════════════════════════════════════════════════════════════
+AI_EVALUATION — THE MOST IMPORTANT FIELD.
+RULE: Write EXACTLY ONE paragraph per relevant sector (2-3 sentences each).
+Only include sectors that have a genuine commercial angle for this specific project.
+NEVER write generic sentences. NEVER use company names. Use ROLE LABELS.
+Every sentence must contain a specific data point (€, m², months, km, units).
+═══════════════════════════════════════════════════════════════
+
+TEMPLATE PER SECTOR — use only the sectors relevant to this project:
+
+━━━ 🚧 ALQUILER MAQUINARIA (for: urbanizaciones, demoliciones, adjudicaciones, actas inicio) ━━━
+WHAT THEY NEED: The contratista name + start date + machinery types + duration.
+A machinery rental rep earns commission when they call the contratista BEFORE competitors.
+TEMPLATE:
+"🚧 Alquiler Maquinaria: [Urbanización/Demolición/Obra] [PEM] — contratista [known/por adjudicar].
+Maquinaria estimada: excavadora [20-30t / 30-50t depende de PEM] × [N semanas] + [compactadora/retroexcavadora].
+[Estado adjudicación]: [LLAMAR HOY al contratista / preparar oferta antes de licitación en X semanas / pipeline Q[N] 20XX]."
+
+━━━ 🛒 COMPRAS / MATERIALES (for: urbanizaciones, saneamiento, licitaciones infra) ━━━
+WHAT THEY NEED: Pipe diameters, km quantities, concrete m³, steel tonnes, timing.
+A purchasing director negotiating with suppliers needs 6+ months advance notice.
+TEMPLATE:
+"🛒 Materiales: [Tipo proyecto] [PEM] — estimación cantidades:
+[Colector DN-[XXX] ~[X.X]km] [abastecimiento DN-[XXX] ~[X.X]km] [hormigón ~[X,XXX]m³] [acero B500S ~[XX]t].
+Negociar precios con proveedores [AHORA / en X meses] — adjudicatario [conocido: X / por determinar en licitación]."
+
+━━━ 🔧 INSTALADORES MEP (for: obra mayor, rehabilitación, primera ocupación) ━━━
+WHAT THEY NEED: Building floors, m², HVAC type, lifts required, subcontract window.
+The MEP subcontract window opens 3-6 months after main contractor adjudicación.
+TEMPLATE:
+"🔧 MEP: [Tipología edificio] [N] plantas × [Xm²/planta] = [Xm² total].
+Instalaciones requeridas CTE: [HVAC tipo (fan-coil/VRF/centralizada)] + [N ascensores] + [PCI tipo: sprinklers/BIES] + ACS.
+Contactar al promotor [AHORA — antes de que el constructor adjudique subs / en X meses desde definitivo]. Director técnico: [nombre si aparece / verificar en aparejador de la obra]."
+
+━━━ 📐 PROMOTORES / RE (for: reparcelación, plan parcial, junta de compensación) ━━━
+WHAT THEY NEED: Land area, buildable m², FAR, JC contacts, contamination status, timeline.
+Being first to contact the Junta de Compensación = land at cost price.
+TEMPLATE:
+"📐 RE / Promotores: [Tipo actuación] en [MUNI] — ámbito [X m²], edificable [X m²] (FAR [X.XX]).
+[N] parcelas aportadas / propietarios — Junta de Compensación: [presidente/gerente si aparece].
+Suelo [limpio (declaración conforme) / pendiente informe]. Plazo urbanización: [X meses desde replanteo]. CONTACTAR a la JC ANTES de que el suelo salga al mercado."
+
+━━━ 🏢 GRAN CONSTRUCTORA (for: urbanizaciones grandes, licitaciones obras, nuevas plantas) ━━━
+WHAT THEY NEED: PBL/PEM, bid criteria, classification required, timeline, key competitor intel.
+They need 12-18 months advance to prepare a competitive bid dossier.
+TEMPLATE:
+"🏢 Gran Constructora: [Tipo obra] [MUNI] — PBL/PEM [€XM].
+[Estado licitación: ACTIVA (plazo X días) / Definitivo — licitación estimada Q[N] 20XX / Adjudicada — potencial variantes y subcontratas].
+Clasificación requerida: [Grupo X, Categoría X (estimar de PBL)] | Criterios: [precio X% / oferta técnica X%] | [N viviendas / Xm² edificables]."
+
+━━━ 🏗️ GRAN INFRAESTRUCTURA (for: licitaciones >€5M, infraestructura civil, viales) ━━━
+WHAT THEY NEED: CPV codes, bid deadline, contracting authority, technical criteria, classification.
+TEMPLATE:
+"🏗️ Gran Infraestructura: [Tipo infraestructura] — licitación [€XM] publicada [source].
+CPV [código estimado / extraído]: [XXXXX-X] | Órgano contratante: [entidad].
+Plazo presentación: [fecha / X días desde publicación]. Clasificación: Grupo [X], Categoría [X (por PBL)]. [Criterios adjudicación si aparecen]."
+
+Only write the sectors that genuinely apply. If it's an urbanización with no buildings → skip MEP. If no saneamiento → skip Materiales. If <€500K → skip Gran Infraestructura. Be precise.
 "const_uso_previsto":
   "residencial libre 70% + VPO 30% + PB terciario"
   Madrid VPO requirement: 30% of residential in protected soils.
